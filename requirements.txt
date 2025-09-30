@@ -1,4 +1,9 @@
+# Tres Soldados Project Dependencies
+# Data manipulation
 pandas>=2.0.0
+
+# Visualization
 plotly>=5.0.0
-numpy>=1.20.0
+
+# Environment variables
 python-dotenv>=1.0.0

@@ -1,3 +1,7 @@
+# Este toma todo el universo de datos desde el 2015 al 2025 y extrae un día específico
+# Luego crea un CSV con los datos de ese día y usa plot_minute_data para graficar   
+# Cambiar la variable TARGET_DATE para extraer otro día
+
 import pandas as pd
 import os
 import sys

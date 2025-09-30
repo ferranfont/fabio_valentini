@@ -1,18 +1,21 @@
-# main.py
+# Este código toma un fichero de near-tick data y lo convierte a casi-minutos
+# Usa plot_tick_data para graficar los datos resampleados a 1 minuto
+
 import pandas as pd
 import os
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
-from chart_volume import plot_close_and_volume
+from plot_tick_data import plot_tick_data
+from config import DATA_DIR, SYMBOL
 
 
-symbol = 'ES'
+symbol = SYMBOL
 
 # ====================================================
 # 📥 CARGA DE DATOS
 # ====================================================
-directorio = './data'
+directorio = str(DATA_DIR)
 nombre_fichero = 'ES_near_tick_data_27_jul_2025.csv'
 
 ruta_completa = os.path.join(directorio, nombre_fichero)
@@ -27,32 +30,15 @@ print("Columnas disponibles:", df.columns.tolist())
 
 # Convertir datetime a formato pandas y separar fecha y hora
 df['datetime'] = pd.to_datetime(df['datetime'], format='%d/%m/%Y %H:%M', utc=True)
-df['date'] = df['datetime'].dt.date
-df['time'] = df['datetime'].dt.time
 
 # Establecer datetime como índice
 df = df.set_index('datetime')
 
 print("Primeras filas del DataFrame:")
-print(df.tail(20))
+print(df.head(10))
+print("\nÚltimas filas del DataFrame:")
+print(df.tail(10))
 
-# 🔁 Resample a velas diarias
-print("Columnas finales:", df.columns.tolist())
-
-df_daily = df.resample('1D').agg({
-    'open': 'first',
-    'high': 'max',
-    'low': 'min',
-    'close': 'last',
-    'volume': 'sum'
-}).dropna()
-
-# Reset index para usar 'datetime' como columna 'date'
-df_daily = df_daily.reset_index()
-df_daily = df_daily.rename(columns={'datetime': 'date'})
-
-print(df_daily.head())
-
-# Ejecutar gráfico
-timeframe = '1D'
-plot_close_and_volume(symbol, timeframe, df_daily)
+# Ejecutar gráfico con tick data resampled a 1 minuto
+timeframe = 'tick_1min'
+plot_tick_data(symbol, timeframe, df, resample_seconds=60)

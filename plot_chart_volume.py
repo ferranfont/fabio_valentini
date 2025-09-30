@@ -77,3 +77,36 @@ def plot_close_and_volume(symbol, timeframe, df):
     print(f"✅ Gráfico Plotly guardado como HTML: '{html_path}'")
 
     webbrowser.open('file://' + os.path.realpath(html_path))
+
+
+if __name__ == "__main__":
+    from config import DATA_DIR, SYMBOL, OHLCV_AGGREGATION
+
+    symbol = SYMBOL
+    directorio = str(DATA_DIR)
+    nombre_fichero = 'es_1min_data_2015_2025.csv'
+    ruta_completa = os.path.join(directorio, nombre_fichero)
+
+    print("\n======================== 🔍 Cargando datos ===========================")
+    df = pd.read_csv(ruta_completa)
+    print(f'Fichero: {ruta_completa} importado')
+    print(f"Características del Fichero: {df.shape}")
+
+    # Normalizar columnas
+    df.columns = [col.strip().lower() for col in df.columns]
+    df = df.rename(columns={'volumen': 'volume'})
+
+    # Formato datetime
+    df['date'] = pd.to_datetime(df['date'], utc=True)
+    df = df.set_index('date')
+
+    # Resamplear a diario
+    df_daily = df.resample('1D').agg(OHLCV_AGGREGATION).dropna()
+    df_daily = df_daily.reset_index()
+
+    print(f"\nDatos procesados: {df_daily.shape}")
+    print(df_daily.head())
+
+    # Graficar
+    timeframe = '1D'
+    plot_close_and_volume(symbol, timeframe, df_daily)

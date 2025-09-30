@@ -1,9 +1,12 @@
+# Este código toma el fichero completo de datos desde el 2015  al 2025 en 1 minuto
+# y lo resamplea a velas diarias, luego usa plot_chart_volume para graficar cierre y volumen
+
 import pandas as pd
 import os
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
-from chart_volume import plot_close_and_volume
+from plot_chart_volume import plot_close_and_volume
 from config import DATA_DIR, SYMBOL, OHLCV_AGGREGATION
 
 

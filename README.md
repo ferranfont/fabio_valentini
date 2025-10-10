@@ -1,6 +1,6 @@
-# Perdices - ES Futures Analysis
+# Fabio Valentini - ES Futures Analysis
 
-Trading analysis script for ES (E-mini S&P 500) futures data.
+Advanced trading analysis toolkit for ES (E-mini S&P 500) futures data with footprint charts and time & sales visualization.
 
 ## Installation
 
@@ -16,10 +16,12 @@ The script reads 1-minute ES futures data from the local `data/` folder:
 
 ## Features
 
-- **Data Processing**: Loads and processes ES futures data
+- **Data Processing**: Loads and processes ES futures tick data and time & sales
 - **Timeframe Conversion**: Resamples 1-minute data to daily candles
-- **Visualization**: Creates price and volume charts using `chart_volume.py`
-- **Technical Analysis**: Script designed for finding tops and bottoms in ES futures
+- **Footprint Charts**: Volume profile visualization with BID/ASK intensity gradients
+- **Time & Sales**: Real-time tick data visualization with price levels
+- **Visualization**: Creates price and volume charts with interactive Plotly charts
+- **Technical Analysis**: Advanced order flow analysis for ES futures
 
 ## Usage
 
@@ -39,12 +41,18 @@ The script generates:
 ## Project Structure
 
 ```
-perdices/
-├── data/                    # Local data files
+fabio_valentini/
+├── data/                           # Local data files
+│   ├── time_and_sales.csv         # Tick data with BID/ASK
 │   ├── es_1min_data_2015_2025.csv
 │   └── es_1D_data.csv
-├── main.py                  # Main analysis script
-├── chart_volume.py          # Charting functionality
-├── requirements.txt         # Python dependencies
-└── README.md               # This file
+├── utils/                          # Utility scripts
+│   ├── read_tick_data.py          # Tick data reader
+│   └── clean_data_*.py            # Data cleaning utilities
+├── plot_footprint_chart.py        # Footprint chart visualization
+├── plot_time_and_sales.py         # Time & sales display
+├── plot_tick_data.py              # Tick data charting
+├── main.py                        # Main analysis script
+├── config.py                      # Configuration settings
+└── README.md                      # This file
 ```

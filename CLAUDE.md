@@ -1,31 +1,60 @@
-# CLAUDE.md
+# CLAUDE.md - Fabio Valentini Project
 
-## Date Information Sources
+## Project Overview
+This is an advanced ES futures order flow analysis toolkit featuring:
+- Footprint charts with volume intensity gradients
+- Time & Sales tick-by-tick visualization
+- Multi-timeframe analysis
+- Interactive Plotly charts
 
-### Current Date Source
-I get the current date from the system environment information provided to me:
-- **Current date**: September 26, 2025
-- **Source**: System environment variable `Today's date: 2025-09-26`
+## Data Sources
 
-### Local Data Alternative
-You have data files in the `data/` folder that could be used for date information:
-- `es_1D_data.csv` (207 KB)
-- `es_1min_data_2015_2025.csv` (358 MB)
+### Available Data Files
+The project uses tick data and time series from the `data/` folder:
+- `time_and_sales.csv` - Tick-by-tick data with BID/ASK/Volume
+- `es_1D_data.csv` - Daily ES data (207 KB)
+- `es_1min_data_2015_2025.csv` - 1-minute ES data (358 MB)
 
-### Current Code Analysis
-Looking at `main.py:12-17`, your code currently reads from:
-```python
-directorio = '../DATA'
-nombre_fichero = 'export_es_2015_formatted.csv'
+### Data Format
+Time & sales CSV format:
+```
+Timestamp;Precio;Volumen;Lado;Bid;Ask
+2025-10-09 06:00:20.592;6797,5;1;ASK;6797,25;6797,5
 ```
 
-However, this points to a parent directory `../DATA` which may not exist, while you have actual data in the local `data/` folder.
+## Key Visualization Scripts
 
-### Recommendation
-To use the local data folder instead of external date sources:
-1. Change `directorio = '../DATA'` to `directorio = './data'`
-2. Update `nombre_fichero` to match your actual files:
-   - `'es_1D_data.csv'` or
-   - `'es_1min_data_2015_2025.csv'`
+### 1. Footprint Chart (`plot_footprint_chart.py`)
+- Aggregates volume by price level
+- Shows BID (red) and ASK (green) with intensity gradients
+- Alpha transparency based on volume (0.45 to 0.85)
+- Configurable via `n_temp` variable (number of rows to analyze)
 
-This would make your code use the local data files for all date/time information rather than relying on external sources.
+### 2. Time & Sales (`plot_time_and_sales.py`)
+- Table-style visualization of tick data
+- Color-coded: ASK (green), BID (red)
+- Displays: Time, Price, Volume, Side, Bid, Ask
+- Configurable via `limit_rows` variable
+
+### 3. Tick Data Charts (`plot_tick_data.py`)
+- Resamples tick data to candlestick charts
+- Volume bars with color intensity
+- Multiple timeframe support
+
+## Configuration (`config.py`)
+Central configuration for:
+- Chart dimensions (CHART_WIDTH, CHART_HEIGHT)
+- Data directories (DATA_DIR)
+- Symbol settings (SYMBOL = 'ES')
+
+## Important Notes
+- All timestamps are in Madrid time (CET/CEST)
+- CSV files use European format (semicolon separator, comma decimal)
+- Charts are saved to `charts/` directory and auto-open in browser
+- No emojis in console output (Windows compatibility)
+
+## Development Guidelines
+- Always use the local `data/` folder for data sources
+- Maintain European CSV format (sep=';', decimal=',')
+- Keep chart width minimal for footprint (400px)
+- Use alpha gradients for volume intensity visualization

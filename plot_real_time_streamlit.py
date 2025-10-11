@@ -251,10 +251,18 @@ if df is not None and len(df) > 0:
         df_bid = df_buffer[df_buffer[col_lado] == 'BID']
         df_ask = df_buffer[df_buffer[col_lado] == 'ASK']
 
+        # Crear índices correctamente
+        indices = list(range(len(df_buffer)))
+        bid_mask = df_buffer[col_lado] == 'BID'
+        ask_mask = df_buffer[col_lado] == 'ASK'
+
+        bid_indices = [i for i, m in enumerate(bid_mask) if m]
+        ask_indices = [i for i, m in enumerate(ask_mask) if m]
+
         if len(df_bid) > 0:
             fig.add_trace(
                 go.Scatter(
-                    x=list(range(len(df_buffer)))[df_buffer[col_lado] == 'BID'],
+                    x=bid_indices,
                     y=df_bid[col_precio],
                     mode='markers',
                     name='BID',
@@ -266,7 +274,7 @@ if df is not None and len(df) > 0:
         if len(df_ask) > 0:
             fig.add_trace(
                 go.Scatter(
-                    x=list(range(len(df_buffer)))[df_buffer[col_lado] == 'ASK'],
+                    x=ask_indices,
                     y=df_ask[col_precio],
                     mode='markers',
                     name='ASK',

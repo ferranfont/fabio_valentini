@@ -29,7 +29,7 @@ ATR_PERIOD = 14
 # SL_MULTIPLIER = 1.0  # SL = 1 * ATR (COMENTADO - AHORA USAMOS SL FIJO)
 
 # Targets y Stops FIJOS (en puntos)
-TP_POINTS = 2.0  # Take Profit fijo: ejemplo LONG 25000.25 -> 25002.25
+TP_POINTS = 2.5  # Take Profit fijo: ejemplo LONG 25000.25 -> 25002.25
 SL_POINTS = 2.0  # Stop Loss fijo: ejemplo LONG 25000.25 -> 24998.25
 
 # Configuración del instrumento

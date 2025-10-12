@@ -25,11 +25,19 @@ The project uses tick-by-tick futures data from the local `data/` folder:
 - **Rolling Window Statistics**: 5-minute windows for volume aggregation by price level
 - **Z-Score Calculation**: Identifies abnormal volume (threshold: 1.5 std deviations)
 
+### Trading Strategy (NEW)
+- **ATR-Based Strategy**: Automated trading based on absorption signals
+- **Backtesting Engine**: Test strategies on historical tick data
+- **Risk Management**: Fixed TP/SL levels with ATR calculation support
+- **Trade Visualization**: Plot entries, exits, and P&L on price charts
+- **Performance Summary**: Win rate, profit factor, Sharpe ratio, and detailed metrics
+
 ### Visualization
 - **Real-Time Streaming**: Streamlit app simulating tick-by-tick data replay
 - **Absorption Chart**: Interactive Plotly charts marking absorption events
 - **Footprint Charts**: Volume profile with BID/ASK intensity gradients
 - **Time & Sales**: Tick data table with price level visualization
+- **Trade Overlay**: Visualize trade entries/exits with P&L markers
 
 ## Usage
 
@@ -81,7 +89,44 @@ python plot_absortion_chart.py
 
 **Output:** `charts/absorption_chart.html` (auto-opens in browser)
 
-### 4. Other Visualizations
+### 4. Run Trading Strategy (Backtest)
+
+Execute the absorption-based trading strategy with ATR risk management:
+
+```bash
+python strat/strat_fabio_ATR.py
+```
+
+**Strategy Logic:**
+- **LONG Entry**: When `bid_abs = True` (absorption on BID side)
+- **SHORT Entry**: When `ask_abs = True` (absorption on ASK side)
+- **Take Profit**: 2.5 points (configurable)
+- **Stop Loss**: 2.0 points (configurable)
+- **EOD Close**: Automatic position close at 16:00
+
+**Output:** `outputs/tracking_record.csv` with all trade details
+
+### 5. Visualize Backtest Results
+
+After running the strategy, visualize trades on the price chart:
+
+```bash
+# View performance summary
+python strat/summary.py
+
+# Plot trades on chart (first 500 trades by default)
+python strat/plot_trades_chart.py
+```
+
+**Features:**
+- Entry/Exit markers on price chart
+- P&L annotations for each trade
+- Separate subplot showing cumulative P&L
+- Configurable trade range (edit `start_idx`, `end_idx` in script)
+
+**Output:** `charts/trades_visualization.html`
+
+### 6. Other Visualizations
 
 ```bash
 # Footprint chart with volume intensity
@@ -129,24 +174,36 @@ FUTURE_WINDOW_SEC = 60      # Time to measure price reaction
 ```
 fabio_valentini/
 ├── data/                                  # Data files
-│   ├── time_and_sales_nq.csv             # Raw NQ tick data
-│   ├── time_and_sales_absorption.csv     # With absorption detection
-│   ├── es_1min_data_2015_2025.csv        # ES 1-min bars
-│   └── es_1D_data.csv                    # ES daily data
+│   ├── time_and_sales_nq.csv             # Raw NQ tick data (448K records)
+│   ├── time_and_sales_absorption_NQ.csv  # NQ with absorption detection
+│   ├── time_and_sales_absorption_ES.csv  # ES with absorption detection
+│   ├── es_1min_data_2015_2025.csv        # ES 1-min bars (2015-2025)
+│   ├── es_1D_data.csv                    # ES daily data
+│   └── DATA_DOCUMENTATION.md             # Data files reference
 ├── charts/                                # Output charts
-│   └── absorption_chart.html
+│   ├── absorption_chart.html             # Static absorption view
+│   └── trades_visualization.html         # Backtest results chart
+├── outputs/                               # Trading results (NEW)
+│   └── tracking_record.csv               # Trade log from backtest
 ├── stat_quant/                            # Statistical analysis
-│   └── find_absortion_vol_efford.py      # Absorption detector
+│   ├── find_absortion_vol_efford.py      # Absorption detector
+│   └── plot_absorption_chart.py          # Legacy chart script
+├── strat/                                 # Trading strategies (NEW)
+│   ├── strat_fabio_ATR.py                # Main strategy backtest engine
+│   ├── plot_trades_chart.py              # Visualize trades on chart
+│   ├── summary.py                        # Performance metrics summary
+│   └── plot_backtest_results.py          # Alternative results plotter
 ├── utils/                                 # Utilities
-│   ├── read_tick_data.py
-│   └── clean_data_*.py
+│   ├── read_tick_data.py                 # Tick data loader
+│   ├── clean_data_*.py                   # Data processing scripts
+│   └── CLEAN_DATA.md                     # Utils documentation
 ├── plot_absortion_chart.py               # Static absorption chart
 ├── plot_real_time_streamlit.py           # Real-time Streamlit app
 ├── plot_footprint_chart.py               # Volume footprint
 ├── plot_time_and_sales.py                # Time & sales table
 ├── plot_tick_data.py                     # Candlestick charts
 ├── config.py                             # Global config
-├── CLAUDE.md                             # Development instructions
+├── CLAUDE.md                             # AI assistant instructions
 └── README.md                             # This file
 ```
 

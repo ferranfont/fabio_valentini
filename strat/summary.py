@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-import subprocess
 from pathlib import Path
 
 # Function to calculate Maximum Drawdown (MDD)
@@ -171,5 +170,46 @@ except webbrowser.Error:
 
 # === 6. Call the equity curve plot script ===
 print(f"\nSummary report generated and opened.")
-print(f"Calling 'plot_backtest_results.py' for equity curve plot...")
-subprocess.run(["python", "plot_backtest_results.py"], check=False)
+print(f"\n{'='*70}")
+print("GENERATING EQUITY CURVE AND DISTRIBUTION CHARTS")
+print('='*70)
+
+# Import plot_backtest_results functions
+import sys
+sys.path.append(str(Path(__file__).parent))
+from plot_backtest_results import load_trades, create_equity_curve, create_distribution_charts, print_summary as print_detailed_summary
+
+try:
+    # Load trades data
+    df_trades = load_trades(file_path)
+
+    # Print detailed summary
+    print_detailed_summary(df_trades)
+
+    # Create equity curve chart
+    print(f"\nCreating equity curve chart...")
+    fig_equity = create_equity_curve(df_trades)
+    equity_path = Path("charts/backtest_results_equity.html")
+    fig_equity.write_html(str(equity_path))
+    print(f"  Saved: {equity_path}")
+
+    # Create distribution charts
+    print(f"Creating distribution charts...")
+    fig_dist = create_distribution_charts(df_trades)
+    dist_path = Path("charts/backtest_results_distributions.html")
+    fig_dist.write_html(str(dist_path))
+    print(f"  Saved: {dist_path}")
+
+    # Open equity chart in browser
+    print("\nOpening equity curve in browser...")
+    webbrowser.open(str(equity_path.resolve()))
+
+    print("\nAll reports generated successfully!")
+    print(f"  - Summary: summary_report.html")
+    print(f"  - Equity Curve: {equity_path}")
+    print(f"  - Distributions: {dist_path}")
+
+except Exception as e:
+    print(f"\nError generating backtest charts: {e}")
+    print("Summary report was generated successfully, but backtest charts failed.")
+    print("You can run 'python strat/plot_backtest_results.py' manually.")

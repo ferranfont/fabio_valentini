@@ -450,3 +450,81 @@ def main():
 
 if __name__ == "__main__":
     trades_result = main()
+
+    # ========== VISUALIZACIÓN AUTOMÁTICA DE TRADES ==========
+    print("\n" + "="*70)
+    print("GENERANDO VISUALIZACIÓN DE TRADES")
+    print("="*70)
+
+    try:
+        from pathlib import Path
+        import sys
+        import webbrowser
+
+        # Import plot_trades_chart function
+        sys.path.append(str(Path(__file__).parent))
+        from plot_trades_chart import plot_trades_on_chart
+
+        print("\nLlamando a plot_trades_chart.py...")
+        print("Visualizando primeros 500 trades (configurable en el script)\n")
+
+        # Call the plotting function with default parameters
+        plot_trades_on_chart(start_idx=0, end_idx=500)
+
+        print("\n✓ Gráfico de trades generado exitosamente")
+
+    except ImportError as e:
+        print(f"\n✗ Error importando plot_trades_chart: {e}")
+        print("Puedes ejecutar manualmente: python strat/plot_trades_chart.py")
+    except Exception as e:
+        print(f"\n✗ Error generando visualización: {e}")
+        print("El backtest se completó correctamente, pero la visualización falló.")
+        print("Puedes ejecutar manualmente: python strat/plot_trades_chart.py")
+
+    # ========== EJECUTAR SUMMARY Y ANÁLISIS DE PERFORMANCE ==========
+    print("\n" + "="*70)
+    print("GENERANDO REPORTES DE PERFORMANCE")
+    print("="*70)
+
+    try:
+        import subprocess
+
+        print("\nEjecutando summary.py para análisis completo...")
+        print("(Esto generará: summary_report.html, equity curve, distributions)\n")
+
+        # Execute summary.py which will also call plot_backtest_results
+        result = subprocess.run(
+            ["python", "strat/summary.py"],
+            capture_output=False,
+            text=True,
+            check=True
+        )
+
+        print("\n✓ Reportes de performance generados exitosamente")
+
+    except subprocess.CalledProcessError as e:
+        print(f"\n✗ Error ejecutando summary.py: {e}")
+        print("Puedes ejecutar manualmente: python strat/summary.py")
+    except Exception as e:
+        print(f"\n✗ Error inesperado: {e}")
+        print("Puedes ejecutar manualmente: python strat/summary.py")
+
+    # ========== RESUMEN FINAL ==========
+    print("\n" + "="*70)
+    print("PROCESO COMPLETO FINALIZADO")
+    print("="*70)
+    print("\nArchivos generados:")
+    print(f"  1. {OUTPUT_FILE}")
+    print(f"     → Log completo de trades")
+    print(f"\n  2. charts/trades_visualization.html")
+    print(f"     → Gráfico de entradas/salidas sobre precio")
+    print(f"\n  3. summary_report.html")
+    print(f"     → Tabla de métricas de performance")
+    print(f"\n  4. charts/backtest_results_equity.html")
+    print(f"     → Curva de equity + P/L por trade + Drawdown")
+    print(f"\n  5. charts/backtest_results_distributions.html")
+    print(f"     → Distribuciones y análisis temporal")
+    print("\n" + "="*70)
+    print("Para cambiar rango de trades visualizados, edita DEFAULT_START_INDEX")
+    print("y DEFAULT_END_INDEX en strat/plot_trades_chart.py")
+    print("="*70)

@@ -1,13 +1,31 @@
-# Data Cleaning Scripts Documentation
+# Utils Scripts Documentation
 
 ## Overview
-This folder contains Python scripts to process, clean, and visualize E-mini S&P 500 (ES) futures data at different timeframes.
+This folder contains Python scripts for processing, cleaning, and visualizing futures data. The primary focus is on NQ (Nasdaq-100 E-mini) tick data, with legacy ES (E-mini S&P 500) utilities maintained for historical reference.
 
 ---
 
-## 📊 Data Granularity Overview
+## 📊 Current Project Focus
 
-### Most Detailed Data File
+### NQ Tick Data (Primary)
+The project currently focuses on **NQ (Nasdaq-100 E-mini)** tick-by-tick data for absorption analysis and trading strategy development.
+
+**Key Dataset:** `data/time_and_sales_nq.csv`
+- **Granularity:** Tick-by-tick (every trade)
+- **Records:** ~448,332 ticks
+- **Time Coverage:** October 9-10, 2025 (2 days)
+- **Resolution:** Highest - each tick represents an actual trade
+- **Format:** European CSV (`;` separator, `,` decimal)
+
+**Processed Dataset:** `data/time_and_sales_absorption_NQ.csv`
+- **Records:** ~103,527 (5-second resampling)
+- **Added Columns:** `bid_abs`, `ask_abs`, `vol_zscore`, `price_move_ticks`
+
+---
+
+## 📊 Legacy ES Data Overview
+
+### Most Detailed Data File (ES - Legacy)
 
 **`ES_near_tick_data_27_jul_2025.csv`**
 
@@ -16,7 +34,7 @@ This folder contains Python scripts to process, clean, and visualize E-mini S&P 
 - **Time Coverage:** Single day (July 25, 2025)
 - **Resolution:** Highest - each row represents an individual trade or price update
 
-### Most Extensive Time Coverage with High Granularity
+### Most Extensive Time Coverage with High Granularity (ES - Legacy)
 
 **`es_1min_data_2015_2025.csv`**
 
@@ -29,23 +47,42 @@ This folder contains Python scripts to process, clean, and visualize E-mini S&P 
 
 | Criterion | File | Details |
 |-----------|------|---------|
-| **Most granular** | `ES_near_tick_data_27_jul_2025.csv` | Tick data (but only 1 day) |
-| **Most extensive + granular** | `es_1min_data_2015_2025.csv` | 1-minute data (10 years) |
-| **Primary dataset** | `es_1min_data_2015_2025.csv` | Best for both detailed intraday analysis and long-term historical studies |
+| **Current primary** | `time_and_sales_nq.csv` | NQ tick data (2 days, 448K ticks) |
+| **Most granular (legacy)** | `ES_near_tick_data_27_jul_2025.csv` | ES tick data (1 day) |
+| **Most extensive (legacy)** | `es_1min_data_2015_2025.csv` | ES 1-minute data (10 years) |
 
 ---
 
 ## 📋 Processing Scripts
 
-### 1. **clean_data_and_format_tick_data.py**
+### Current NQ Scripts (Primary Focus)
 
-**Purpose:** Process tick data and resample to daily candles
+**Note:** For NQ data processing, see the main project scripts:
+- `stat_quant/find_absortion_vol_efford.py` - Absorption detection
+- `plot_real_time_streamlit.py` - Real-time visualization
+- `plot_absortion_chart.py` - Static absorption chart
+- `strat/strat_fabio_ATR.py` - Trading strategy backtest
+
+**Key Utility:** `utils/read_tick_data.py`
+- Purpose: Generic tick data loader
+- Format: Handles European CSV format (`;` separator, `,` decimal)
+- Usage: Imported by other scripts for consistent data loading
+
+---
+
+## Legacy ES Processing Scripts
+
+### 1. **clean_data_and_format_tick_data.py** (ES Legacy)
+
+**Purpose:** Process ES tick data and resample to daily candles
+
+**Status:** Legacy - Use for ES data only
 
 **Input File:** `data/ES_near_tick_data_27_jul_2025.csv` (~547K ticks)
 
 **What it does:**
 
-1. **Loads tick data** (lines 22-23):
+1. **Loads ES tick data** (lines 22-23):
    - Reads European CSV format (`;` separator, `,` decimal)
    - Assigns column names: `datetime`, `open`, `high`, `low`, `close`, `volume`
 
@@ -79,9 +116,11 @@ python utils/clean_data_and_format_tick_data.py
 
 ---
 
-### 2. **clean_data_minut_format_all_dataframe.py**
+### 2. **clean_data_minut_format_all_dataframe.py** (ES Legacy)
 
-**Purpose:** Resample 10 years of minute data to daily candles
+**Purpose:** Resample 10 years of ES minute data to daily candles
+
+**Status:** Legacy - Use for ES historical analysis only
 
 **Input File:** `data/es_1min_data_2015_2025.csv` (~3.5M minute bars, 2015-2025)
 
@@ -126,9 +165,11 @@ python utils/clean_data_minut_format_all_dataframe.py
 
 ---
 
-### 3. **clean_data_one_day_data.py**
+### 3. **clean_data_one_day_data.py** (ES Legacy)
 
-**Purpose:** Extract and visualize a specific single day from minute data
+**Purpose:** Extract and visualize a specific single day from ES minute data
+
+**Status:** Legacy - Use for ES single-day analysis only
 
 **Input File:** `data/es_1min_data_2015_2025.csv`
 
@@ -183,20 +224,38 @@ TARGET_DATE = '2024-05-15'  # Change to desired date
 
 ## 🔄 Data Flow Summary
 
+### NQ Data Flow (Current)
+| Script | Input | Processing | Output | Purpose |
+|--------|-------|------------|--------|---------|
+| `stat_quant/find_absortion_vol_efford.py` | NQ tick data (448K) | Tick → 5-sec + Absorption | CSV with signals | Detection |
+| `plot_real_time_streamlit.py` | Absorption CSV (103K) | Tick replay | Web app | Visualization |
+| `strat/strat_fabio_ATR.py` | Absorption CSV (103K) | Strategy execution | Trade log CSV | Backtesting |
+
+### ES Data Flow (Legacy)
 | Script | Input | Processing | Output Chart Type | Output File |
 |--------|-------|------------|-------------------|-------------|
-| `clean_data_and_format_tick_data.py` | Tick data (547K records) | Tick → Daily | Line + Volume | HTML chart |
-| `clean_data_minut_format_all_dataframe.py` | 10 years minute data (3.5M records) | Minutes → Daily | Line + Volume | HTML chart |
-| `clean_data_one_day_data.py` | 10 years minute data | Filter 1 day → Extract | Candlestick + Volume | CSV + HTML chart |
+| `clean_data_and_format_tick_data.py` | ES tick data (547K) | Tick → Daily | Line + Volume | HTML chart |
+| `clean_data_minut_format_all_dataframe.py` | ES 10 years minute (3.5M) | Minutes → Daily | Line + Volume | HTML chart |
+| `clean_data_one_day_data.py` | ES 10 years minute | Filter 1 day → Extract | Candlestick + Volume | CSV + HTML chart |
 
 ---
 
 ## 📈 Data Hierarchy
 
+### NQ Pipeline (Current)
 ```
-Tick Data (highest resolution)
+Raw NQ Tick Data (time_and_sales_nq.csv)
+    ↓ absorption detection (5-sec resample)
+Absorption Data (time_and_sales_absorption_NQ.csv)
+    ↓ visualization / backtesting
+Charts & Trade Results
+```
+
+### ES Pipeline (Legacy)
+```
+ES Tick Data (highest resolution)
     ↓ resample
-1-Minute Data
+ES 1-Minute Data
     ↓ resample / extract
 Daily Data / Single Day Data
 ```
@@ -219,25 +278,66 @@ Daily Data / Single Day Data
 
 ## 💡 Common Use Cases
 
-1. **Analyze tick-level data from a specific day:**
+### Current NQ Workflows
+
+1. **Detect absorption signals from raw NQ tick data:**
+   ```bash
+   python stat_quant/find_absortion_vol_efford.py
+   ```
+
+2. **Visualize NQ absorption in real-time:**
+   ```bash
+   streamlit run plot_real_time_streamlit.py
+   ```
+
+3. **Backtest NQ trading strategy:**
+   ```bash
+   python strat/strat_fabio_ATR.py
+   python strat/summary.py
+   python strat/plot_trades_chart.py
+   ```
+
+### Legacy ES Workflows
+
+4. **Analyze ES tick-level data from a specific day:**
    ```bash
    python utils/clean_data_and_format_tick_data.py
    ```
 
-2. **View 10-year historical daily trends:**
+5. **View ES 10-year historical daily trends:**
    ```bash
    python utils/clean_data_minut_format_all_dataframe.py
    ```
 
-3. **Study intraday price action for March 1, 2023:**
+6. **Study ES intraday price action for March 1, 2023:**
    ```bash
    python utils/clean_data_one_day_data.py
    ```
 
-4. **Extract data for a new date (e.g., Jan 5, 2024):**
+7. **Extract ES data for a new date (e.g., Jan 5, 2024):**
    - Edit `clean_data_one_day_data.py` line 15:
      ```python
      TARGET_DATE = '2024-01-05'
      ```
    - Run: `python utils/clean_data_one_day_data.py`
    - Output: `data/es_1min_data_2024_01_05.csv` + chart
+
+---
+
+## 🔍 Quick Reference
+
+### File Naming Conventions
+- **NQ Files:** `time_and_sales_nq.csv`, `time_and_sales_absorption_NQ.csv`
+- **ES Files:** `es_*.csv`, `ES_*.csv`
+
+### Data Formats
+- **NQ:** European CSV (`;` separator, `,` decimal) - Madrid time
+- **ES:** Standard CSV (`,` separator, `.` decimal) - UTC time
+
+### Key Directories
+- `data/` - All raw and processed data files
+- `utils/` - This folder (ES processing utilities)
+- `stat_quant/` - Absorption detection and analysis
+- `strat/` - Trading strategy backtesting
+- `charts/` - HTML visualization outputs
+- `outputs/` - Trade logs and backtest results

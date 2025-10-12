@@ -154,7 +154,7 @@ Central configuration for:
 python stat_quant/find_absortion_vol_efford.py
 ```
 - **Input:** `data/time_and_sales_nq.csv` (raw ticks)
-- **Output:** `data/time_and_sales_absorption.csv` (with bid_abs, ask_abs columns)
+- **Output:** `data/time_and_sales_absorption_NQ.csv` (with bid_abs, ask_abs columns)
 - **Duration:** ~2-3 minutes
 - **Run when:** New data available or parameter changes
 
@@ -167,10 +167,24 @@ streamlit run plot_real_time_streamlit.py
 python plot_absortion_chart.py
 ```
 
+### Step 3: Backtest Trading Strategy (Optional)
+```bash
+# Run strategy backtest
+python strat/strat_fabio_ATR.py
+
+# View performance summary
+python strat/summary.py
+
+# Visualize trades on chart
+python strat/plot_trades_chart.py
+```
+
 ### Scripts are NOT Automatic
 You must run them **sequentially**:
-1. Detection script generates CSV
-2. Visualization scripts read that CSV
+1. Detection script generates CSV with absorption signals
+2. Visualization scripts read that CSV to display data
+3. Strategy script reads absorption CSV to execute trades
+4. Summary and plotting scripts read trade results
 
 ## Important Notes
 - **Timestamps:** Madrid time (CET/CEST)
@@ -253,3 +267,153 @@ while streaming and index < len(df):
     index += 1
     st.rerun()  # Refresh UI
 ```
+
+---
+
+## Trading Strategy Module (`strat/` folder)
+
+### Overview
+The `strat/` folder contains scripts for backtesting absorption-based trading strategies and visualizing results.
+
+### 1. Strategy Engine (`strat_fabio_ATR.py`)
+**Purpose:** Execute backtests using absorption signals with ATR-based risk management
+
+**Strategy Logic:**
+- **LONG Entry:** `bid_abs = True` (heavy selling absorbed → bullish)
+- **SHORT Entry:** `ask_abs = True` (heavy buying absorbed → bearish)
+- **Take Profit:** Fixed 2.5 points (configurable via `TP_POINTS`)
+- **Stop Loss:** Fixed 2.0 points (configurable via `SL_POINTS`)
+- **EOD Management:** Close all positions at 16:00
+
+**Configuration (Lines 22-41):**
+```python
+SYMBOL = 'NQ'
+ATR_PERIOD = 14         # ATR calculation period (not used for TP/SL currently)
+TP_POINTS = 2.5         # Fixed Take Profit in points
+SL_POINTS = 2.0         # Fixed Stop Loss in points
+TICK_SIZE = 0.25        # NQ tick size
+POINT_VALUE = 20        # $20 per point
+CONTRACTS = 1           # Position size
+EOD_TIME = time(16, 00) # End-of-day close time
+```
+
+**Process:**
+1. Loads `data/time_and_sales_absorption_NQ.csv`
+2. Calculates ATR for reference (not currently used for TP/SL)
+3. Iterates through each tick:
+   - Opens LONG on `bid_abs = True`
+   - Opens SHORT on `ask_abs = True`
+   - Tracks TP/SL levels for open positions
+   - Closes positions at TP, SL, or EOD
+4. Saves all trades to `outputs/tracking_record.csv`
+
+**Output CSV Columns:**
+- `entry_time` / `exit_time`: Trade timestamps
+- `side`: LONG / SHORT
+- `entry_price` / `exit_price`: Execution prices
+- `tp_level` / `sl_level`: Target levels
+- `exit_reason`: TP / SL / EOD
+- `points`: P&L in points
+- `profit_usd`: P&L in dollars
+- `cumulative_pnl`: Running total
+
+**Execution:** `python strat/strat_fabio_ATR.py`
+
+---
+
+### 2. Performance Summary (`summary.py`)
+**Purpose:** Display comprehensive backtest statistics
+
+**Metrics Calculated:**
+- Total trades, Win/Loss counts
+- Win Rate (%)
+- Total P&L (points and USD)
+- Average Win / Average Loss
+- Largest Win / Largest Loss
+- Profit Factor (gross profit / gross loss)
+- Sharpe Ratio (requires daily returns)
+- Maximum Drawdown
+- Average trade duration
+
+**Execution:** `python strat/summary.py`
+
+**Output:** Console table with all performance metrics
+
+---
+
+### 3. Trade Visualization (`plot_trades_chart.py`)
+**Purpose:** Overlay trades on price chart with P&L visualization
+
+**Features:**
+- Price chart with BID/ASK points
+- Entry markers: Green circles (LONG), Red circles (SHORT)
+- Exit markers: Triangles (color-coded by P&L)
+  - Green triangle up: Profitable exit
+  - Red triangle down: Losing exit
+- Annotations: P&L in USD for each trade
+- Separate subplot: Cumulative P&L line chart
+- Configurable range: `DEFAULT_START_INDEX`, `DEFAULT_END_INDEX`
+
+**Configuration (Lines 18-20):**
+```python
+DEFAULT_START_INDEX = 0      # First trade to display
+DEFAULT_END_INDEX = 500      # Last trade to display
+```
+
+**Execution:** `python strat/plot_trades_chart.py`
+
+**Output:** `charts/trades_visualization.html` (auto-opens in browser)
+
+**Usage Tips:**
+- To view specific trade range, edit indices in script
+- Large ranges (>1000 trades) may slow rendering
+- Hover over markers to see details
+
+---
+
+### 4. Alternative Plotter (`plot_backtest_results.py`)
+**Purpose:** Legacy/alternative visualization script
+
+**Execution:** `python strat/plot_backtest_results.py`
+
+---
+
+## Trading Strategy Best Practices
+
+### Parameter Tuning
+To modify strategy behavior, edit `strat/strat_fabio_ATR.py`:
+
+**More Conservative (fewer trades, higher quality):**
+```python
+# In stat_quant/find_absortion_vol_efford.py
+ANOMALY_THRESHOLD = 2.0    # Increase from 1.5
+PRICE_MOVE_TICKS = 3       # Increase from 2
+```
+
+**More Aggressive (more trades, lower threshold):**
+```python
+ANOMALY_THRESHOLD = 1.0    # Decrease from 1.5
+PRICE_MOVE_TICKS = 1       # Decrease from 2
+```
+
+**Risk Management Adjustments:**
+```python
+# In strat/strat_fabio_ATR.py
+TP_POINTS = 3.0            # Wider target
+SL_POINTS = 1.5            # Tighter stop
+# Result: Higher risk/reward ratio (2:1)
+```
+
+### Workflow for Strategy Development
+1. **Detect absorptions** with different parameters
+2. **Run backtest** with strategy script
+3. **Analyze summary** for win rate, profit factor
+4. **Visualize trades** to identify patterns
+5. **Iterate:** Adjust parameters and repeat
+
+### Important Notes
+- **No Position Sizing:** Currently fixed at 1 contract
+- **No Slippage:** Assumes perfect execution at signal price
+- **EOD Risk:** Positions auto-close at 16:00 regardless of P&L
+- **Single Instrument:** Designed for NQ futures only
+- **Tick Precision:** Uses NQ tick size of 0.25 points

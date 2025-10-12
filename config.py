@@ -21,7 +21,7 @@ DEFAULT_ES_FILE = 'export_es_2015_formatted.csv'
 DEFAULT_DATA_FILE = ES_1MIN_FILE  # Current default
 
 # Trading symbol
-SYMBOL = 'ES'
+SYMBOL = 'NQ'
 
 # Chart settings
 CHART_WIDTH = 1500

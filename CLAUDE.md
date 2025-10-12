@@ -1,60 +1,255 @@
 # CLAUDE.md - Fabio Valentini Project
 
 ## Project Overview
-This is an advanced ES futures order flow analysis toolkit featuring:
-- Footprint charts with volume intensity gradients
-- Time & Sales tick-by-tick visualization
-- Multi-timeframe analysis
-- Interactive Plotly charts
+Advanced NQ (Nasdaq-100 E-mini) futures order flow analysis toolkit featuring:
+- **Absorption Detection**: Statistical analysis of volume vs price movement
+- **Real-Time Streaming**: Streamlit app with tick-by-tick replay
+- **Footprint Charts**: Volume intensity gradients by price level
+- **Time & Sales**: Tick-by-tick visualization
+- **Interactive Plotly Charts**: Web-based interactive visualizations
 
 ## Data Sources
 
 ### Available Data Files
 The project uses tick data and time series from the `data/` folder:
-- `time_and_sales.csv` - Tick-by-tick data with BID/ASK/Volume
+
+#### NQ Data (Primary)
+- `time_and_sales_nq.csv` - Raw NQ tick data (448,332 records)
+  - 2 days of data (Oct 9-10, 2025)
+  - Columns: Timestamp, Precio, Volumen, Lado, Bid, Ask
+- `time_and_sales_absorption.csv` - Processed with absorption detection (103,527 records after resampling)
+  - Additional columns: bid_abs, ask_abs, bid_vol, ask_vol, vol_zscore, price_move_ticks
+
+#### ES Data (Legacy)
+- `time_and_sales.csv` - ES tick data with BID/ASK/Volume
 - `es_1D_data.csv` - Daily ES data (207 KB)
 - `es_1min_data_2015_2025.csv` - 1-minute ES data (358 MB)
 
 ### Data Format
-Time & sales CSV format:
+Time & sales CSV format (European):
 ```
 Timestamp;Precio;Volumen;Lado;Bid;Ask
-2025-10-09 06:00:20.592;6797,5;1;ASK;6797,25;6797,5
+2025-10-09 06:00:20.592;25327,5;1;ASK;25327,25;25327,5
 ```
+
+**Important:** Semicolon separator, comma decimal (European format)
+
+## Key Analysis Scripts
+
+### 1. Absorption Detection (`stat_quant/find_absortion_vol_efford.py`)
+**Purpose:** Detect volume absorption events in NQ tick data
+
+**Algorithm:**
+1. Resample to 5-second bins (reduces 448K → 103K records)
+2. Rolling 5-minute window:
+   - Aggregate volume by price level
+   - Calculate mean and std deviation
+3. Detect anomalies: Z-score >= 1.5 standard deviations
+4. Verify absorption:
+   - BID: Heavy selling but price doesn't drop >= 2 ticks
+   - ASK: Heavy buying but price doesn't rise >= 2 ticks
+
+**Configuration:**
+```python
+WINDOW_MINUTES = 5          # Rolling window size
+ANOMALY_THRESHOLD = 1.5     # Z-score threshold
+PRICE_MOVE_TICKS = 2        # Expected movement (0.5 points)
+TICK_SIZE = 0.25            # NQ tick size
+FUTURE_WINDOW_SEC = 60      # Time to measure price reaction
+```
+
+**Output:** `data/time_and_sales_absorption.csv` with columns:
+- `bid_abs` / `ask_abs`: Absorption detected (True/False)
+- `bid_vol` / `ask_vol`: Abnormal volume (True/False)
+- `vol_zscore`: Statistical significance
+- `price_move_ticks`: Actual price movement
+
+**Execution:** `python stat_quant/find_absortion_vol_efford.py`
+
+**Performance:** ~2-3 minutes for 448K records
+
+**Results:**
+- BID absorption: 1,263 events (1.22%)
+- ASK absorption: 1,492 events (1.44%)
+
+---
 
 ## Key Visualization Scripts
 
-### 1. Footprint Chart (`plot_footprint_chart.py`)
+### 1. Real-Time Streaming (`plot_real_time_streamlit.py`)
+**Purpose:** Simulate tick-by-tick replay with absorption visualization
+
+**Features:**
+- Play/Pause/Reset controls
+- Speed: 1-500 records/second (configurable)
+- Buffer size: 50-5000 records
+- Dual charts: Price + Volume
+- Absorption markers: Triangles with yellow borders
+- Live statistics: Vol total, BID/ASK counts, absorption events
+- Three tabs: Table / Statistics / Absorption Details
+
+**How to run:**
+```bash
+streamlit run plot_real_time_streamlit.py
+```
+
+**IMPORTANT:** Must use `streamlit run`, NOT `python`. Opens at `localhost:8501`.
+
+**Common Error:**
+```
+missing ScriptRunContext! This warning can be ignored when running in bare mode.
+```
+**Solution:** Use `streamlit run` instead of `python`
+
+**Input:** `data/time_and_sales_absorption.csv` (auto-detected)
+
+**Visualization:**
+- Red points: BID trades
+- Green points: ASK trades
+- Large red triangles (down): BID absorption
+- Large green triangles (up): ASK absorption
+- Blue line: 20-period moving average
+
+### 2. Static Absorption Chart (`plot_absortion_chart.py`)
+**Purpose:** Generate HTML chart showing all absorption events
+
+**Features:**
+- Timeline view with all ticks
+- Small points: Normal BID/ASK (opacity 0.3)
+- Large points: Absorption events (size 15, alpha 0.5, dark borders)
+- Hover tooltips: Timestamp, Price, Volume, Z-score, Price movement
+- Statistics box in corner
+
+**Execution:** `python plot_absortion_chart.py`
+
+**Output:** `charts/absorption_chart.html` (auto-opens in browser)
+
+### 3. Footprint Chart (`plot_footprint_chart.py`)
 - Aggregates volume by price level
 - Shows BID (red) and ASK (green) with intensity gradients
 - Alpha transparency based on volume (0.45 to 0.85)
 - Configurable via `n_temp` variable (number of rows to analyze)
 
-### 2. Time & Sales (`plot_time_and_sales.py`)
+### 4. Time & Sales Table (`plot_time_and_sales.py`)
 - Table-style visualization of tick data
 - Color-coded: ASK (green), BID (red)
 - Displays: Time, Price, Volume, Side, Bid, Ask
 - Configurable via `limit_rows` variable
 
-### 3. Tick Data Charts (`plot_tick_data.py`)
+### 5. Tick Data Charts (`plot_tick_data.py`)
 - Resamples tick data to candlestick charts
 - Volume bars with color intensity
 - Multiple timeframe support
 
 ## Configuration (`config.py`)
 Central configuration for:
-- Chart dimensions (CHART_WIDTH, CHART_HEIGHT)
-- Data directories (DATA_DIR)
-- Symbol settings (SYMBOL = 'ES')
+- Chart dimensions: `CHART_WIDTH`, `CHART_HEIGHT`
+- Data directories: `DATA_DIR = 'data/'`
+- Symbol settings: `SYMBOL = 'ES'` (legacy, NQ used in absorption scripts)
+
+## Workflow: Detecting and Visualizing Absorption
+
+### Step 1: Generate Absorption Data (Run Once)
+```bash
+python stat_quant/find_absortion_vol_efford.py
+```
+- **Input:** `data/time_and_sales_nq.csv` (raw ticks)
+- **Output:** `data/time_and_sales_absorption.csv` (with bid_abs, ask_abs columns)
+- **Duration:** ~2-3 minutes
+- **Run when:** New data available or parameter changes
+
+### Step 2: Visualize (Run Multiple Times)
+```bash
+# Option A: Real-time streaming (interactive)
+streamlit run plot_real_time_streamlit.py
+
+# Option B: Static chart (quick overview)
+python plot_absortion_chart.py
+```
+
+### Scripts are NOT Automatic
+You must run them **sequentially**:
+1. Detection script generates CSV
+2. Visualization scripts read that CSV
 
 ## Important Notes
-- All timestamps are in Madrid time (CET/CEST)
-- CSV files use European format (semicolon separator, comma decimal)
-- Charts are saved to `charts/` directory and auto-open in browser
-- No emojis in console output (Windows compatibility)
+- **Timestamps:** Madrid time (CET/CEST)
+- **CSV Format:** European (`;` separator, `,` decimal)
+- **Charts:** Saved to `charts/` directory and auto-open in browser
+- **Console:** No emojis (Windows compatibility)
+- **NQ Tick Size:** 0.25 points
+- **Memory Usage:** ~500MB peak during absorption detection
 
 ## Development Guidelines
 - Always use the local `data/` folder for data sources
-- Maintain European CSV format (sep=';', decimal=',')
+- Maintain European CSV format (`sep=';', decimal=','`)
 - Keep chart width minimal for footprint (400px)
 - Use alpha gradients for volume intensity visualization
+- For Streamlit apps: Always run with `streamlit run`, never `python`
+- When modifying absorption parameters, re-run detection script
+
+## Troubleshooting
+
+### "missing ScriptRunContext" error
+**Cause:** Running Streamlit with `python` instead of `streamlit run`
+**Fix:** `streamlit run plot_real_time_streamlit.py`
+
+### No absorptions detected
+**Cause:** Threshold too high or data characteristics
+**Fix:** In `find_absortion_vol_efford.py`, adjust:
+- Lower `ANOMALY_THRESHOLD` (try 1.0 or 1.2)
+- Increase `PRICE_MOVE_TICKS` (try 3)
+- Change `WINDOW_MINUTES` (try 3 or 10)
+
+### Streamlit app slow/laggy
+**Cause:** Buffer too large or speed too fast
+**Fix:** In sidebar, reduce buffer size or lower speed
+
+### Charts not opening
+**Cause:** Browser not found or default handler issue
+**Fix:** Manually open `charts/absorption_chart.html`
+
+## Code Architecture
+
+### Absorption Detection Logic
+```python
+# Simplified pseudocode
+for each_tick in window:
+    vol_by_price = aggregate_volume_by_price(last_5_minutes)
+    z_score = (current_vol - mean_vol) / std_vol
+
+    if z_score >= 1.5:  # Abnormal volume
+        future_prices = get_prices(next_60_seconds)
+
+        if side == BID:
+            price_drop = (current_price - min(future_prices)) / 0.25
+            if price_drop < 2:  # Didn't fall enough
+                bid_abs = True  # ABSORPTION
+
+        elif side == ASK:
+            price_rise = (max(future_prices) - current_price) / 0.25
+            if price_rise < 2:  # Didn't rise enough
+                ask_abs = True  # ABSORPTION
+```
+
+### Streamlit Real-Time Logic
+```python
+# Simplified pseudocode
+while streaming and index < len(df):
+    row = df.iloc[index]
+    buffer.append(row)
+
+    # Draw chart with buffer data
+    plot_price_line(buffer)
+    plot_bid_ask_points(buffer)
+
+    # Highlight absorptions
+    if row['bid_abs']:
+        plot_large_triangle_down(red, alpha=0.5)
+    if row['ask_abs']:
+        plot_large_triangle_up(green, alpha=0.5)
+
+    time.sleep(delay)
+    index += 1
+    st.rerun()  # Refresh UI
+```

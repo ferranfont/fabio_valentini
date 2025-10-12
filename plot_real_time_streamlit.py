@@ -9,6 +9,7 @@ import time
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
+import os
 
 st.set_page_config(page_title="Time & Sales Real-Time", layout="wide")
 
@@ -28,13 +29,36 @@ st.title("📊 Time & Sales - Real Time con Detección de Absorción")
 # === SIDEBAR: CONFIGURACIÓN ===
 st.sidebar.header("⚙️ Configuración")
 
-# Archivo CSV
-csv_file = st.sidebar.text_input(
-    "📁 Ruta del CSV:",
-    "data/time_and_sales_absorption.csv"
+# Detectar ruta absoluta - usar getcwd() para Streamlit
+work_dir = os.getcwd()
+SYMBOL = 'NQ'  # Cambiar a 'ES' si usas E-mini S&P 500
+default_csv_path = os.path.join(work_dir, "data", f"time_and_sales_absorption_{SYMBOL}.csv")
+
+# Mostrar directorio actual para debug
+st.sidebar.caption(f"📂 Directorio: {work_dir}")
+st.sidebar.caption(f"📊 Símbolo: {SYMBOL}")
+
+# Opción de carga: archivo local o upload
+modo_carga = st.sidebar.radio(
+    "Modo de carga:",
+    ["📁 Archivo local", "⬆️ Subir CSV"]
 )
 
-# Cargar CSV
+if modo_carga == "📁 Archivo local":
+    csv_file = st.sidebar.text_input(
+        "📁 Ruta del CSV:",
+        default_csv_path
+    )
+    uploaded_file = None
+else:
+    uploaded_file = st.sidebar.file_uploader(
+        "⬆️ Subir CSV",
+        type=['csv'],
+        help="Sube el archivo time_and_sales_absorption.csv"
+    )
+    csv_file = None
+
+# Cargar CSV desde archivo local
 @st.cache_data
 def cargar_csv(file_path):
     try:
@@ -50,9 +74,38 @@ def cargar_csv(file_path):
         st.error(f"Error al cargar CSV: {e}")
         return None
 
+# Cargar CSV desde uploaded file
+@st.cache_data
+def cargar_csv_uploaded(uploaded_file):
+    try:
+        df = pd.read_csv(uploaded_file, sep=';', decimal=',')
+
+        # Detectar columnas de timestamp
+        timestamp_cols = [col for col in df.columns if 'time' in col.lower() or 'timestamp' in col.lower()]
+        if timestamp_cols:
+            df[timestamp_cols[0]] = pd.to_datetime(df[timestamp_cols[0]])
+
+        return df
+    except Exception as e:
+        st.error(f"Error al cargar CSV: {e}")
+        return None
+
+# Cargar automáticamente al inicio si no hay datos cargados
+if st.session_state.df_loaded is None:
+    if csv_file and os.path.exists(csv_file):
+        st.session_state.df_loaded = cargar_csv(csv_file)
+    elif uploaded_file is not None:
+        st.session_state.df_loaded = cargar_csv_uploaded(uploaded_file)
+
 # Botón de carga/recarga
 if st.sidebar.button("🔄 Cargar/Recargar CSV"):
-    st.session_state.df_loaded = cargar_csv(csv_file)
+    if csv_file:
+        st.session_state.df_loaded = cargar_csv(csv_file)
+    elif uploaded_file is not None:
+        st.session_state.df_loaded = cargar_csv_uploaded(uploaded_file)
+    else:
+        st.error("Por favor, proporciona un archivo CSV")
+
     st.session_state.current_index = 0
     st.session_state.buffer_data = []
     st.session_state.streaming = False
@@ -283,14 +336,16 @@ if df is not None and len(df) > 0:
                 row=1, col=1
             )
 
-        # Línea de precio promedio
+        # Línea conectando todos los precios (azul transparente)
         fig.add_trace(
             go.Scatter(
                 x=list(range(len(df_buffer))),
-                y=df_buffer[col_precio].rolling(20, min_periods=1).mean(),
+                y=df_buffer[col_precio],
                 mode='lines',
-                name='MA(20)',
-                line=dict(color='blue', width=2)
+                name='Precio',
+                line=dict(color='blue', width=1),
+                opacity=0.5,
+                showlegend=True
             ),
             row=1, col=1
         )
@@ -309,10 +364,11 @@ if df is not None and len(df) > 0:
                         mode='markers',
                         name='BID Abs',
                         marker=dict(
-                            color='darkred',
+                            color='red',
                             size=15,
-                            symbol='triangle-down',
-                            line=dict(width=2, color='yellow')
+                            symbol='circle',
+                            opacity=0.5,
+                            line=dict(width=2, color='darkred')
                         )
                     ),
                     row=1, col=1
@@ -327,10 +383,11 @@ if df is not None and len(df) > 0:
                         mode='markers',
                         name='ASK Abs',
                         marker=dict(
-                            color='darkgreen',
+                            color='green',
                             size=15,
-                            symbol='triangle-up',
-                            line=dict(width=2, color='yellow')
+                            symbol='circle',
+                            opacity=0.5,
+                            line=dict(width=2, color='darkgreen')
                         )
                     ),
                     row=1, col=1

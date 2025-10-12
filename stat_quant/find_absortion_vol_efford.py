@@ -11,13 +11,14 @@ import pandas as pd
 import numpy as np
 
 # Configuración
-DATA_FILE = 'data/time_and_sales_nq.csv'
-OUTPUT_FILE = 'data/time_and_sales_absorption.csv'
+SYMBOL = 'NQ'  # Cambiar a 'ES' para E-mini S&P 500
+DATA_FILE = f'data/time_and_sales_{SYMBOL.lower()}.csv'
+OUTPUT_FILE = f'data/time_and_sales_absorption_{SYMBOL}.csv'
 
 WINDOW_MINUTES = 5
 ANOMALY_THRESHOLD = 1.5  # Desviaciones estándar
 PRICE_MOVE_TICKS = 2  # Ticks mínimos esperados de movimiento
-TICK_SIZE = 0.25
+TICK_SIZE = 0.25  # NQ: 0.25, ES: 0.25
 FUTURE_WINDOW_SEC = 60
 
 

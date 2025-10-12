@@ -7,8 +7,9 @@ import plotly.graph_objects as go
 from config import CHART_WIDTH, CHART_HEIGHT
 
 # Configuración
-DATA_FILE = 'data/time_and_sales_absorption.csv'
-OUTPUT_FILE = 'charts/absorption_chart.html'
+SYMBOL = 'NQ'  # Cambiar a 'ES' si usas E-mini S&P 500
+DATA_FILE = f'data/time_and_sales_absorption_{SYMBOL}.csv'
+OUTPUT_FILE = f'charts/absorption_chart_{SYMBOL}.html'
 
 # Parámetros visuales
 MARKER_SIZE_NORMAL = 3

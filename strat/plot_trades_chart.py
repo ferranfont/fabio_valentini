@@ -174,15 +174,24 @@ def plot_trades_on_chart(start_idx=DEFAULT_START_INDEX, end_idx=DEFAULT_END_INDE
         ))
 
         # Salida: cuadrado hueco (negro)
+
+        # Color según resultado
+        if profit > 0:
+            exit_marker = 'green'
+        elif profit < 0:
+            exit_marker = 'red'
+        else:
+            exit_marker = 'grey'
+
         fig.add_trace(go.Scatter(
             x=[exit_time],
             y=[exit_price],
             mode='markers',
             marker=dict(
                 symbol='square-open',
-                size=10,
-                color='black',
-                line=dict(width=2, color='black')
+                size=8,
+                color=exit_marker,
+                line=dict(width=1, color=exit_marker)
             ),
             name='Exit',
             showlegend=False,

@@ -131,15 +131,8 @@ if df is not None and len(df) > 0:
     col_volumen = st.sidebar.selectbox("📦 Volumen:", columnas, index=col_volumen_default)
     col_lado = st.sidebar.selectbox("↔️ Lado (BID/ASK):", columnas, index=col_lado_default)
 
-    # Columnas de absorción (opcionales)
-    tiene_absortion = 'bid_abs' in columnas and 'ask_abs' in columnas
-
-    if tiene_absortion:
-        st.sidebar.success("🎯 Detección de absorción disponible")
-        mostrar_absortion = st.sidebar.checkbox("Mostrar absorción", value=True)
-    else:
-        mostrar_absortion = False
-        st.sidebar.info("ℹ️ Sin columnas de absorción detectadas")
+    # Ya no usamos absorción, solo volumen extremo
+    mostrar_absortion = False
 
     # === CONTROL DE VELOCIDAD ===
     st.sidebar.subheader("⚡ Velocidad")
@@ -227,7 +220,7 @@ if df is not None and len(df) > 0:
     chart_container = st.empty()
 
     # Tabs para diferentes vistas
-    tab1, tab2, tab3 = st.tabs(["📋 Tabla Reciente", "📊 Estadísticas", "🔍 Detalles Absorción"])
+    tab1, tab2, tab3 = st.tabs(["📋 Tabla Reciente", "📊 Estadísticas", "⚡ Detalles Volumen Extremo"])
 
     with tab1:
         table_container = st.empty()
@@ -276,16 +269,14 @@ if df is not None and len(df) > 0:
         lado_color = "🟢" if lado_actual == "ASK" else "🔴"
         metric_lado.metric("↔️ Lado", f"{lado_color} {lado_actual}")
 
-        # Absorción
-        if mostrar_absortion and tiene_absortion:
-            es_bid_abs = row.get('bid_abs', False)
-            es_ask_abs = row.get('ask_abs', False)
-
-            if es_bid_abs or es_ask_abs:
-                tipo_abs = "BID" if es_bid_abs else "ASK"
-                metric_absortion.metric("🎯 Absorción", f"⚠️ {tipo_abs}", delta="Detectada")
-            else:
-                metric_absortion.metric("🎯 Absorción", "---")
+        # Volumen extremo
+        es_bid_vol = row.get('bid_vol', False)
+        es_ask_vol = row.get('ask_vol', False)
+        if es_bid_vol or es_ask_vol:
+            tipo_vol = "BID" if es_bid_vol else "ASK"
+            metric_absortion.metric("⚡ Vol Extremo", f"⚠️ {tipo_vol}", delta="Z-score >= 2.0")
+        else:
+            metric_absortion.metric("⚡ Vol Extremo", "---")
 
         # Progreso
         progreso = (idx + 1) / len(df)
@@ -293,18 +284,62 @@ if df is not None and len(df) > 0:
 
         # === GRÁFICO ===
         fig = make_subplots(
-            rows=2, cols=1,
-            row_heights=[0.7, 0.3],
+            rows=3, cols=1,
+            row_heights=[0.5, 0.25, 0.25],
             shared_xaxes=True,
-            vertical_spacing=0.05,
-            subplot_titles=("Precio", "Volumen")
+            vertical_spacing=0.04,
+            subplot_titles=("Heatmap - Volumen por Nivel de Precio", "Volumen", "Densidad")
         )
 
-        # Precio con colores por lado
+        # === SUBPLOT 1: HEATMAP + BOLITAS ===
         df_bid = df_buffer[df_buffer[col_lado] == 'BID']
         df_ask = df_buffer[df_buffer[col_lado] == 'ASK']
 
-        # Crear índices correctamente
+        # Preparar heatmap si existe vol_current_price
+        if 'vol_current_price' in df_buffer.columns:
+            # Redondear precios para agrupar
+            TICK_SIZE = 0.25
+            df_buffer_copy = df_buffer.copy()
+            df_buffer_copy['Precio_rounded'] = (df_buffer_copy[col_precio] / TICK_SIZE).round() * TICK_SIZE
+
+            # Crear bins de tiempo (cada 5 registros para performance)
+            bin_size = max(5, len(df_buffer) // 50)  # Máximo 50 bins
+            df_buffer_copy['time_bin'] = df_buffer_copy.index // bin_size
+
+            # Pivot para heatmap
+            try:
+                pivot = df_buffer_copy.pivot_table(
+                    values='vol_current_price',
+                    index='Precio_rounded',
+                    columns='time_bin',
+                    aggfunc='max',
+                    fill_value=0
+                )
+
+                # Agregar heatmap
+                fig.add_trace(
+                    go.Heatmap(
+                        z=pivot.values,
+                        x=pivot.columns,
+                        y=pivot.index,
+                        colorscale=[
+                            [0.0, '#f0f0f0'],
+                            [0.3, '#fff4e6'],
+                            [0.5, '#ffe0b2'],
+                            [0.7, '#ffb74d'],
+                            [0.9, '#ff9800'],
+                            [1.0, '#e65100']
+                        ],
+                        showscale=False,
+                        hovertemplate='Precio: %{y}<br>Vol: %{z}<extra></extra>',
+                        name='Volumen'
+                    ),
+                    row=1, col=1
+                )
+            except:
+                pass  # Si falla pivot, continuar sin heatmap
+
+        # Crear índices para scatter plots
         indices = list(range(len(df_buffer)))
         bid_mask = df_buffer[col_lado] == 'BID'
         ask_mask = df_buffer[col_lado] == 'ASK'
@@ -312,14 +347,16 @@ if df is not None and len(df) > 0:
         bid_indices = [i for i, m in enumerate(bid_mask) if m]
         ask_indices = [i for i, m in enumerate(ask_mask) if m]
 
+        # Líneas de precio BID/ASK
         if len(df_bid) > 0:
             fig.add_trace(
                 go.Scatter(
                     x=bid_indices,
                     y=df_bid[col_precio],
-                    mode='markers',
-                    name='BID',
-                    marker=dict(color='red', size=6, opacity=0.6)
+                    mode='lines',
+                    name='BID Line',
+                    line=dict(color='red', width=1),
+                    opacity=0.7
                 ),
                 row=1, col=1
             )
@@ -329,71 +366,59 @@ if df is not None and len(df) > 0:
                 go.Scatter(
                     x=ask_indices,
                     y=df_ask[col_precio],
-                    mode='markers',
-                    name='ASK',
-                    marker=dict(color='green', size=6, opacity=0.6)
+                    mode='lines',
+                    name='ASK Line',
+                    line=dict(color='green', width=1),
+                    opacity=0.7
                 ),
                 row=1, col=1
             )
 
-        # Línea conectando todos los precios (azul transparente)
-        fig.add_trace(
-            go.Scatter(
-                x=list(range(len(df_buffer))),
-                y=df_buffer[col_precio],
-                mode='lines',
-                name='Precio',
-                line=dict(color='blue', width=1),
-                opacity=0.5,
-                showlegend=True
-            ),
-            row=1, col=1
-        )
+        # Bolitas de volumen extremo (círculos rojos/verdes)
+        if 'bid_vol' in df_buffer.columns and 'ask_vol' in df_buffer.columns:
+            df_bid_vol = df_buffer[df_buffer['bid_vol'] == True]
+            df_ask_vol = df_buffer[df_buffer['ask_vol'] == True]
 
-        # Marcar absorciones si existen
-        if mostrar_absortion and tiene_absortion:
-            df_bid_abs = df_buffer[(df_buffer['bid_abs'] == True)]
-            df_ask_abs = df_buffer[(df_buffer['ask_abs'] == True)]
-
-            if len(df_bid_abs) > 0:
-                indices_bid_abs = [i for i, val in enumerate(df_buffer['bid_abs']) if val]
+            if len(df_bid_vol) > 0:
+                indices_bid_vol = [i for i, val in enumerate(df_buffer['bid_vol']) if val]
                 fig.add_trace(
                     go.Scatter(
-                        x=indices_bid_abs,
-                        y=df_bid_abs[col_precio],
+                        x=indices_bid_vol,
+                        y=df_bid_vol[col_precio],
                         mode='markers',
-                        name='BID Abs',
+                        name='Vol Extremo BID',
                         marker=dict(
-                            color='red',
-                            size=15,
+                            color='rgb(255,0,0)',
+                            size=12,
                             symbol='circle',
-                            opacity=0.5,
-                            line=dict(width=2, color='darkred')
+                            line=dict(color='rgb(255,0,0)', width=2)
                         )
                     ),
                     row=1, col=1
                 )
 
-            if len(df_ask_abs) > 0:
-                indices_ask_abs = [i for i, val in enumerate(df_buffer['ask_abs']) if val]
+            if len(df_ask_vol) > 0:
+                indices_ask_vol = [i for i, val in enumerate(df_buffer['ask_vol']) if val]
                 fig.add_trace(
                     go.Scatter(
-                        x=indices_ask_abs,
-                        y=df_ask_abs[col_precio],
+                        x=indices_ask_vol,
+                        y=df_ask_vol[col_precio],
                         mode='markers',
-                        name='ASK Abs',
+                        name='Vol Extremo ASK',
                         marker=dict(
-                            color='green',
-                            size=15,
+                            color='rgb(0,255,0)',
+                            size=12,
                             symbol='circle',
-                            opacity=0.5,
-                            line=dict(width=2, color='darkgreen')
+                            line=dict(color='rgb(0,255,0)', width=2)
                         )
                     ),
                     row=1, col=1
                 )
 
-        # Volumen
+
+        # Absorción eliminada - se reevaluará el método
+
+        # === SUBPLOT 2: VOLUMEN ===
         colors_vol = ['red' if s == 'BID' else 'green' for s in df_buffer[col_lado]]
         fig.add_trace(
             go.Bar(
@@ -406,17 +431,46 @@ if df is not None and len(df) > 0:
             row=2, col=1
         )
 
+        # === SUBPLOT 3: DENSIDAD ===
+        if 'bid_density' in df_buffer.columns and 'ask_density' in df_buffer.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=list(range(len(df_buffer))),
+                    y=df_buffer['bid_density'],
+                    mode='lines',
+                    name='Densidad BID',
+                    line=dict(color='rgb(255,0,0)', width=1)
+                ),
+                row=3, col=1
+            )
+
+            fig.add_trace(
+                go.Scatter(
+                    x=list(range(len(df_buffer))),
+                    y=df_buffer['ask_density'],
+                    mode='lines',
+                    name='Densidad ASK',
+                    line=dict(color='rgb(0,255,0)', width=1)
+                ),
+                row=3, col=1
+            )
+
         # Layout
         fig.update_layout(
             title=f"📊 Registro {idx+1}/{len(df)} | {velocidad} reg/s | Buffer: {len(df_buffer)}",
-            height=700,
+            height=900,
             hovermode='x unified',
-            showlegend=True
+            showlegend=True,
+            plot_bgcolor='rgb(250,250,250)',
+            paper_bgcolor='rgb(250,250,250)'
         )
 
-        fig.update_xaxes(title_text="Índice", row=2, col=1)
-        fig.update_yaxes(title_text="Precio", row=1, col=1)
-        fig.update_yaxes(title_text="Volumen", row=2, col=1)
+        fig.update_xaxes(title_text="", row=1, col=1, showgrid=False)
+        fig.update_xaxes(title_text="", row=2, col=1, showgrid=False)
+        fig.update_xaxes(title_text="Índice", row=3, col=1, showgrid=False)
+        fig.update_yaxes(title_text="Precio", row=1, col=1, showgrid=False)
+        fig.update_yaxes(title_text="Volumen", row=2, col=1, showgrid=False)
+        fig.update_yaxes(title_text="Densidad", row=3, col=1, showgrid=False)
 
         chart_container.plotly_chart(fig, use_container_width=True, key=f"chart_{idx}")
 
@@ -426,8 +480,11 @@ if df is not None and len(df) > 0:
 
         # Formatear columnas para display
         cols_display = [col_timestamp, col_precio, col_volumen, col_lado]
-        if mostrar_absortion and tiene_absortion:
-            cols_display.extend(['bid_abs', 'ask_abs'])
+        # Agregar columnas de volumen extremo si existen
+        if 'bid_vol' in df_buffer.columns:
+            cols_display.extend(['bid_vol', 'ask_vol'])
+        if 'bid_density' in df_buffer.columns:
+            cols_display.extend(['bid_density', 'ask_density'])
 
         df_tabla_display = df_tabla[cols_display].copy()
         df_tabla_display[col_precio] = df_tabla_display[col_precio].apply(lambda x: f"{x:.2f}")
@@ -456,30 +513,31 @@ if df is not None and len(df) > 0:
         </ul>
         """
 
-        if mostrar_absortion and tiene_absortion:
-            bid_abs_count = df_buffer['bid_abs'].sum()
-            ask_abs_count = df_buffer['ask_abs'].sum()
+        # Volumen extremo si existe
+        if 'bid_vol' in df_buffer.columns and 'ask_vol' in df_buffer.columns:
+            bid_vol_count = df_buffer['bid_vol'].sum()
+            ask_vol_count = df_buffer['ask_vol'].sum()
             stats_html += f"""
-            <h3>Absorción Detectada</h3>
+            <h3>Volumen Extremo (Z-score >= 2.0)</h3>
             <ul>
-                <li><b>BID absorción:</b> {bid_abs_count} eventos</li>
-                <li><b>ASK absorción:</b> {ask_abs_count} eventos</li>
+                <li><b>BID volumen extremo:</b> {bid_vol_count} eventos</li>
+                <li><b>ASK volumen extremo:</b> {ask_vol_count} eventos</li>
             </ul>
             """
 
         stats_container.markdown(stats_html, unsafe_allow_html=True)
 
-        # === DETALLES ABSORCIÓN ===
-        if mostrar_absortion and tiene_absortion:
-            df_abs = df_buffer[(df_buffer['bid_abs'] == True) | (df_buffer['ask_abs'] == True)]
+        # === DETALLES VOLUMEN EXTREMO ===
+        if 'bid_vol' in df_buffer.columns and 'ask_vol' in df_buffer.columns:
+            df_vol_ext = df_buffer[(df_buffer['bid_vol'] == True) | (df_buffer['ask_vol'] == True)]
 
-            if len(df_abs) > 0:
+            if len(df_vol_ext) > 0:
                 absortion_container.dataframe(
-                    df_abs[[col_timestamp, col_precio, col_volumen, col_lado, 'bid_abs', 'ask_abs']].tail(10),
+                    df_vol_ext[[col_timestamp, col_precio, col_volumen, col_lado, 'bid_vol', 'ask_vol']].tail(10),
                     use_container_width=True
                 )
             else:
-                absortion_container.info("No hay eventos de absorción en el buffer actual")
+                absortion_container.info("No hay eventos de volumen extremo en el buffer actual")
 
         # Actualizar progreso
         progress_bar.progress(progreso)

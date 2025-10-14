@@ -70,7 +70,7 @@ POINT_VALUE = 20  # 1 punto NQ = $20
 CONTRACTS = 1  # Contratos por operación
 
 # Horario de trading
-EOD_TIME = time(16, 0)  # 4:00 PM
+EOD_TIME = time(22, 0)  # 22:00 PM
 
 
 def load_data(filepath):

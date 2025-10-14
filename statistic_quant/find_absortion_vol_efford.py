@@ -211,6 +211,14 @@ def compute_density(df, density_window_sec=120):
         print(f"    Media: {ask_density_nonzero.mean():.2f}")
         print(f"    Max: {ask_density_nonzero.max():.0f}")
 
+    # Calcular net_density (ASK - BID)
+    df['net_density'] = df['ask_density'] - df['bid_density']
+
+    print(f"\n  NET density stats (ASK - BID):")
+    print(f"    Media: {df['net_density'].mean():.2f}")
+    print(f"    Min: {df['net_density'].min():.2f}")
+    print(f"    Max: {df['net_density'].max():.2f}")
+
     return df
 
 

@@ -122,6 +122,11 @@ print("\nPreparando datos de densidad...")
 density_bid = df_bid.groupby('TimeBin')['bid_density'].mean().reset_index()
 density_ask = df_ask.groupby('TimeBin')['ask_density'].mean().reset_index()
 
+# Net density (ASK - BID)
+if 'net_density' in df.columns:
+    density_net = df.groupby('TimeBin')['net_density'].mean().reset_index()
+    print(f"  Puntos net_density: {len(density_net):,}")
+
 print(f"  Puntos densidad BID: {len(density_bid):,}")
 print(f"  Puntos densidad ASK: {len(density_ask):,}")
 
@@ -136,7 +141,7 @@ fig = make_subplots(
     vertical_spacing=0.05,  # Reducido para juntar subplots
     subplot_titles=(None, None),  # Sin títulos en subplots
     specs=[[{"secondary_y": False}],
-           [{"secondary_y": False}]]
+           [{"secondary_y": True}]]  # Eje Y secundario para net_density
 )
 
 # ==============================================================================
@@ -319,18 +324,64 @@ fig.add_trace(
     row=2, col=1
 )
 
-# Curva de densidad ASK (verde)
+# Curva de densidad ASK (verde oscuro - forest green)
 fig.add_trace(
     go.Scatter(
         x=density_ask['TimeBin'],
         y=density_ask['ask_density'],
         mode='lines',
-        line=dict(color='rgb(0,255,0)', width=1),
+        line=dict(color='rgb(34,139,34)', width=1),  # Forest green
         name='Densidad ASK',
         hovertemplate='Tiempo: %{x}<br>Densidad ASK: %{y:.2f}<extra></extra>'
     ),
     row=2, col=1
 )
+
+# Curva de net_density (negro) en eje Y derecho con áreas coloreadas
+if 'net_density' in df.columns:
+    # Área verde cuando net_density > 0 (más ASK que BID)
+    density_positive = density_net.copy()
+    density_positive['net_density_positive'] = density_net['net_density'].apply(lambda x: x if x > 0 else 0)
+
+    fig.add_trace(
+        go.Scatter(
+            x=density_positive['TimeBin'],
+            y=density_positive['net_density_positive'],
+            fill='tozeroy',
+            mode='none',
+            fillcolor='rgba(0,255,0,0.1)',
+            name='Net Density Positive',
+            showlegend=False,
+            yaxis='y3'
+        ),
+        row=2, col=1, secondary_y=True
+    )
+
+    # Área roja cuando net_density < 0 (más BID que ASK)
+    density_negative = density_net.copy()
+    density_negative['net_density_negative'] = density_net['net_density'].apply(lambda x: x if x < 0 else 0)
+
+    fig.add_trace(
+        go.Scatter(
+            x=density_negative['TimeBin'],
+            y=density_negative['net_density_negative'],
+            fill='tozeroy',
+            mode='none',
+            fillcolor='rgba(255,0,0,0.1)',
+            name='Net Density Negative',
+            showlegend=False,
+            yaxis='y3'
+        ),
+        row=2, col=1, secondary_y=True
+    )
+
+    # Línea horizontal en cero (referencia) - gris claro
+    fig.add_hline(
+        y=0,
+        line=dict(color='rgba(128,128,128,0.3)', width=1),
+        row=2, col=1,
+        secondary_y=True
+    )
 
 # ==============================================================================
 # LAYOUT
@@ -339,13 +390,15 @@ fig.add_trace(
 fig.update_xaxes(title_text="", row=1, col=1, showgrid=False)  # Sin título
 fig.update_yaxes(title_text="Precio", row=1, col=1, showgrid=False)
 fig.update_xaxes(title_text="", row=2, col=1, showgrid=False)  # Sin título en eje X
-fig.update_yaxes(title_text="Density 180s", row=2, col=1, showgrid=False)
+fig.update_yaxes(title_text="Density 180s", row=2, col=1, showgrid=False, secondary_y=False)
+fig.update_yaxes(title_text="Net Density", row=2, col=1, showgrid=False, secondary_y=True)
 
 # Aplicar mismo background a ambos subplots
 fig.update_xaxes(showline=True, linewidth=1, linecolor='lightgray', row=1, col=1)
 fig.update_xaxes(showline=True, linewidth=1, linecolor='lightgray', row=2, col=1)
 fig.update_yaxes(showline=True, linewidth=1, linecolor='lightgray', row=1, col=1)
-fig.update_yaxes(showline=True, linewidth=1, linecolor='lightgray', row=2, col=1)
+fig.update_yaxes(showline=True, linewidth=1, linecolor='lightgray', row=2, col=1, secondary_y=False)
+fig.update_yaxes(showline=True, linewidth=1, linecolor='lightgray', row=2, col=1, secondary_y=True)
 
 fig.update_layout(
     title=dict(

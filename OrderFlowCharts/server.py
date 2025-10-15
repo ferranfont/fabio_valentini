@@ -54,7 +54,17 @@ dash_app = Dash(__name__, server=flask_app, url_base_pathname='/chart/')
 # Define the Dash layout
 dash_app.layout = html.Div([
     html.H1("OrderFlow Chart - Real-Time"),
-    html.Div(id='stats', style={'padding': '10px', 'fontSize': '14px'}),
+    html.Div([
+        html.Div(id='stats', style={'padding': '10px', 'fontSize': '14px', 'display': 'inline-block'}),
+        html.Div([
+            dcc.Checklist(
+                id='volume-profile-toggle',
+                options=[{'label': ' Show Volume Profile', 'value': 'show'}],
+                value=[],  # Empty list means unchecked by default
+                style={'display': 'inline-block', 'marginLeft': '20px'}
+            )
+        ], style={'display': 'inline-block'})
+    ]),
     dcc.Graph(id='orderflow-chart', style={'height': '90vh'}),
     dcc.Interval(
         id='interval-component',
@@ -174,11 +184,15 @@ def get_stats():
 @dash_app.callback(
     [Output('orderflow-chart', 'figure'),
      Output('stats', 'children')],
-    [Input('interval-component', 'n_intervals')]
+    [Input('interval-component', 'n_intervals'),
+     Input('volume-profile-toggle', 'value')]
 )
-def update_chart(n):
+def update_chart(n, volume_profile_toggle):
     """Update the chart with latest data"""
     global ohlc_data, orderflow_data, y_axis_range
+
+    # Check if volume profile should be shown
+    show_volume_profile = 'show' in volume_profile_toggle if volume_profile_toggle else False
 
     try:
         # Process ticks into orderflow data
@@ -212,7 +226,8 @@ def update_chart(n):
         orderflowchart = OrderFlowChart(
             orderflow_data,
             ohlc_data,
-            identifier_col='identifier'
+            identifier_col='identifier',
+            show_volume_profile=show_volume_profile
         )
 
         # Get the figure

@@ -16,7 +16,7 @@ import random
 warnings.filterwarnings('ignore')
 
 class OrderFlowChart():
-    def __init__(self, orderflow_data, ohlc_data, identifier_col=None, imbalance_col=None, **kwargs):
+    def __init__(self, orderflow_data, ohlc_data, identifier_col=None, imbalance_col=None, show_volume_profile=False, **kwargs):
         """
         The constructor for OrderFlowChart class.
         It takes in the orderflow data and the ohlc data and creates a unique identifier for each candle if not provided.
@@ -26,6 +26,9 @@ class OrderFlowChart():
         ohlc_data: ['open', 'high', 'low', 'close', 'identifier']
 
         The identifier column is used to map the orderflow data to the ohlc data.
+
+        Args:
+            show_volume_profile: If True, displays volume profile bars for each candle (default: False)
         """
 
         if 'data' in kwargs:
@@ -38,6 +41,7 @@ class OrderFlowChart():
             self.ohlc_data = ohlc_data
             self.identifier_col = identifier_col
             self.imbalance_col = imbalance_col
+            self.show_volume_profile = show_volume_profile
             self.is_processed = False
             self.granularity = abs(self.orderflow_data.iloc[0]['price'] - self.orderflow_data.iloc[1]['price'])
 
@@ -313,30 +317,34 @@ class OrderFlowChart():
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                             vertical_spacing=0.0, row_heights=[9, 1])
 
-        fig.add_trace(go.Scatter(x=self.df2['identifier'], y=self.df2['price'], text=self.df2['text'],
-                                name='VolumeProfile', textposition='middle right',
-                                textfont=dict(size=8, color='rgb(0, 0, 255, 0.0)'), hoverinfo='none',
-                                mode='text', showlegend=True,
-                                marker=dict(
-                                sizemode='area',
-                                sizeref=0.1,  # Adjust the size scaling factor as needed
-                                )), row=1, col=1)
+        # Add volume profile trace only if enabled
+        if self.show_volume_profile:
+            fig.add_trace(go.Scatter(x=self.df2['identifier'], y=self.df2['price'], text=self.df2['text'],
+                                    name='VolumeProfile', textposition='middle right',
+                                    textfont=dict(size=8, color='rgb(0, 0, 255, 0.0)'), hoverinfo='none',
+                                    mode='text', showlegend=True,
+                                    marker=dict(
+                                    sizemode='area',
+                                    sizeref=0.1,  # Adjust the size scaling factor as needed
+                                    )), row=1, col=1)
 
         # Add trace for orderflow data
+        # Custom colorscale: purple (BID) to green (ASK)
         fig.add_trace(
             go.Heatmap(
                 x=self.df['identifier'],
                 y=self.df['price'],
                 z=self.df['size'],
                 text=self.df['text'],
-                colorscale='icefire_r',
+                colorscale=[[0, '#8B00FF'], [0.5, '#404040'], [1, '#00FF00']],
                 showscale=False,
                 showlegend=True,
                 name='BidAsk',
                 texttemplate="%{text}",
                 textfont={
                     "size": 11,
-                    "family": "Courier New"},
+                    "family": "Courier New",
+                    "color": "white"},
                 hovertemplate="Price: %{y}<br>Size: %{text}<br>Imbalance: %{z}<extra></extra>",
                 xgap=60),
             row=1,

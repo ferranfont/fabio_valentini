@@ -422,7 +422,7 @@ class OrderFlowChart():
 
         fig.update_layout(title='Order Book Chart',
                         yaxis=dict(title='Price', showgrid=False, range=[
-                                    ymax, ymin], tickformat='.2f'),
+                                    ymax, ymin], tickformat='.2f', fixedrange=True),
                         yaxis2=dict(fixedrange=True, showgrid=False),
                         xaxis2=dict(title='Time', showgrid=False),
                         xaxis=dict(showgrid=False, range=[xmin, xmax]),

@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 from dash import Dash, dcc, html, Input, Output
 import json
 import logging
+import os
 
 # Configuration
 PORT = 8765
@@ -20,11 +21,29 @@ CANDLE_INTERVAL = '1min'
 MAX_CANDLES = 500
 INITIAL_WINDOW_MINUTES = 30
 
+# Setup logging to file
+LOG_DIR = 'logs'
+os.makedirs(LOG_DIR, exist_ok=True)
+log_file = os.path.join(LOG_DIR, f'server_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()  # Also print to console
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
 # Thread-safe data storage
 data_lock = Lock()
 tick_buffer = []
 ohlc_data = None
 orderflow_data = None
+y_axis_range = None  # Store fixed y-axis range
 
 # Initialize Flask for receiving data
 flask_app = Flask(__name__)
@@ -54,7 +73,7 @@ def process_ticks_to_orderflow():
 
         # Create DataFrame from tick buffer
         df = pd.DataFrame(tick_buffer)
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='ISO8601')
         df.set_index('Timestamp', inplace=True)
 
         # Group by candle interval
@@ -128,16 +147,19 @@ def receive_tick():
 
         return jsonify({'status': 'ok', 'ticks_received': len(tick_buffer)}), 200
     except Exception as e:
+        logger.error(f"Error receiving tick: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 400
 
 @flask_app.route('/reset', methods=['POST'])
 def reset_data():
     """Reset all data"""
-    global tick_buffer, ohlc_data, orderflow_data
+    global tick_buffer, ohlc_data, orderflow_data, y_axis_range
     with data_lock:
         tick_buffer = []
         ohlc_data = None
         orderflow_data = None
+        y_axis_range = None
+    logger.info("Server data reset")
     return jsonify({'status': 'ok', 'message': 'Data reset'}), 200
 
 @flask_app.route('/stats', methods=['GET'])
@@ -156,60 +178,85 @@ def get_stats():
 )
 def update_chart(n):
     """Update the chart with latest data"""
-    global ohlc_data, orderflow_data
+    global ohlc_data, orderflow_data, y_axis_range
 
-    # Process ticks into orderflow data
-    ohlc_df, orderflow_df = process_ticks_to_orderflow()
+    try:
+        # Process ticks into orderflow data
+        ohlc_df, orderflow_df = process_ticks_to_orderflow()
 
-    if ohlc_df is None or len(ohlc_df) == 0:
-        # Return empty figure
+        if ohlc_df is None or len(ohlc_df) == 0:
+            # Return empty figure
+            fig = go.Figure()
+            fig.update_layout(
+                title="Waiting for data...",
+                template='plotly_dark',
+                height=800
+            )
+            stats_text = "No data received yet. Waiting for client to send ticks..."
+            return fig, stats_text
+
+        # Update global variables
+        ohlc_data = ohlc_df
+        orderflow_data = orderflow_df
+
+        # Calculate and store y-axis range on first data arrival
+        if y_axis_range is None:
+            tick_size = 0.25  # NQ tick size
+            ymin = orderflow_df['price'].min() - tick_size * 10
+            ymax = orderflow_df['price'].max() + tick_size * 10
+            y_axis_range = [ymax, ymin]  # Reversed for plotly (top to bottom)
+            logger.info(f"Y-axis range set: {y_axis_range}")
+
+        # Create OrderFlowChart
+        orderflowchart = OrderFlowChart(
+            orderflow_data,
+            ohlc_data,
+            identifier_col='identifier'
+        )
+
+        # Get the figure
+        fig = orderflowchart.plot(return_figure=True)
+
+        # Set initial x-axis range to show only last 30 minutes
+        if len(ohlc_data) > 0:
+            last_time = ohlc_data.index[-1]
+            first_time = last_time - pd.Timedelta(minutes=INITIAL_WINDOW_MINUTES)
+            fig.update_xaxes(range=[first_time, last_time])
+
+        # Disable range slider
+        fig.update_xaxes(rangeslider_visible=False)
+
+        # Update layout for dark theme and override y-axis range
+        fig.update_layout(
+            template='plotly_dark',
+            height=800,
+            yaxis=dict(range=y_axis_range, fixedrange=True)
+        )
+
+        # Statistics
+        with data_lock:
+            total_ticks = len(tick_buffer)
+
+        stats_text = f"Total Ticks: {total_ticks:,} | Candles: {len(ohlc_data)} | " \
+                     f"Orderflow Records: {len(orderflow_data)} | " \
+                     f"Price Range: {orderflow_data['price'].min():.2f} - {orderflow_data['price'].max():.2f}"
+
+        return fig, stats_text
+
+    except Exception as e:
+        logger.error(f"ERROR in update_chart: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+        # Return error figure
         fig = go.Figure()
         fig.update_layout(
-            title="Waiting for data...",
+            title="Error rendering chart",
             template='plotly_dark',
             height=800
         )
-        stats_text = "No data received yet. Waiting for client to send ticks..."
+        stats_text = f"Error: {str(e)}"
         return fig, stats_text
-
-    # Update global variables
-    ohlc_data = ohlc_df
-    orderflow_data = orderflow_df
-
-    # Create OrderFlowChart
-    orderflowchart = OrderFlowChart(
-        orderflow_data,
-        ohlc_data,
-        identifier_col='identifier'
-    )
-
-    # Get the figure
-    fig = orderflowchart.plot(return_figure=True)
-
-    # Set initial x-axis range to show only last 30 minutes
-    if len(ohlc_data) > 0:
-        last_time = ohlc_data.index[-1]
-        first_time = last_time - pd.Timedelta(minutes=INITIAL_WINDOW_MINUTES)
-        fig.update_xaxes(range=[first_time, last_time])
-
-    # Disable range slider
-    fig.update_xaxes(rangeslider_visible=False)
-
-    # Update layout for dark theme
-    fig.update_layout(
-        template='plotly_dark',
-        height=800
-    )
-
-    # Statistics
-    with data_lock:
-        total_ticks = len(tick_buffer)
-
-    stats_text = f"Total Ticks: {total_ticks:,} | Candles: {len(ohlc_data)} | " \
-                 f"Orderflow Records: {len(orderflow_data)} | " \
-                 f"Price Range: {orderflow_data['price'].min():.2f} - {orderflow_data['price'].max():.2f}"
-
-    return fig, stats_text
 
 @flask_app.route('/')
 def index():
@@ -243,10 +290,12 @@ def index():
 
 if __name__ == '__main__':
     # Disable Flask/Werkzeug request logging
-    log = logging.getLogger('werkzeug')
-    log.setLevel(logging.ERROR)
+    werkzeug_log = logging.getLogger('werkzeug')
+    werkzeug_log.setLevel(logging.ERROR)
 
-    print(f"OrderFlow Server starting on port {PORT}...")
-    print(f"Chart will be available at: http://localhost:{PORT}/chart/")
-    print(f"Send ticks to: http://localhost:{PORT}/tick")
+    logger.info(f"OrderFlow Server starting on port {PORT}...")
+    logger.info(f"Logging to file: {log_file}")
+    logger.info(f"Chart will be available at: http://localhost:{PORT}/chart/")
+    logger.info(f"Send ticks to: http://localhost:{PORT}/tick")
+
     flask_app.run(host='0.0.0.0', port=PORT, debug=False, threaded=True)

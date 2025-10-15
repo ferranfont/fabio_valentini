@@ -138,13 +138,15 @@ def stream_csv(csv_file, velocity=DEFAULT_VELOCITY, start_from=0, max_ticks=None
     # Final statistics
     elapsed = time.time() - start_time
     print(f"\n{'='*60}")
-    print(f"STREAMING COMPLETE")
+    print(f"STREAMING COMPLETE - All data sent")
     print(f"{'='*60}")
     print(f"Ticks sent: {ticks_sent:,}")
     print(f"Errors: {errors}")
     print(f"Elapsed time: {elapsed:.1f} seconds")
-    print(f"Average rate: {ticks_sent/elapsed:.1f} ticks/sec")
+    if elapsed > 0:
+        print(f"Average rate: {ticks_sent/elapsed:.1f} ticks/sec")
     print(f"{'='*60}")
+    print("Client exiting normally.")
 
 def main():
     global SERVER_URL

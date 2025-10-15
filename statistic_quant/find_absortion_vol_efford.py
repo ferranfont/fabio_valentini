@@ -25,11 +25,18 @@ OUTPUT_FILE = f'data/time_and_sales_absorption_{SYMBOL}.csv'
 #   Config 2: WINDOW=10, THRESHOLD=2.0, TICKS=3, FUTURE=90 → Pocas señales
 #
 # NUEVA (equilibrio - señales rápidas y selectivas):
-WINDOW_MINUTES = 10          # Ventana amplia para estadísticas robustas
-ANOMALY_THRESHOLD = 2.0      # Solo top 5% volúmenes
+WINDOW_MINUTES = 1         # Ventana amplia para estadísticas robustas
+ANOMALY_THRESHOLD = 3.0      # Solo top 5% volúmenes
 
 # Parámetros de densidad
 DENSITY_WINDOW_SEC = 180     # Ventana para calcular densidad (3 minutos)
+
+# Parámetro para detección de señales FAKE
+# Una señal es "fake" si aparece otra más fuerte en los próximos X segundos
+# Valores sugeridos: 30s (restrictivo), 45s (balance), 60s (conservador)
+# Test realizado: 30s = 81.1% fake, 45s = 84.0% fake, 60s = 86.1% fake
+# Elegimos 30s para maximizar señales reales (18.9%) asumiendo TP rápido
+FAKE_DETECTION_LOOKAHEAD_SEC = 30  # 30 segundos (configuración óptima)
 # ==============================================================================
 
 
@@ -151,6 +158,74 @@ def detect_anomalies(df, threshold=1.5):
     return df
 
 
+def detect_fake_signals(df, look_ahead_sec=300):
+    """
+    Detecta señales 'fake' que serían invalidadas por señales más fuertes posteriores.
+
+    Una señal es 'fake' si:
+    1. Es una señal válida (bid_vol=True o ask_vol=True)
+    2. Dentro de los próximos look_ahead_sec segundos hay otra señal del mismo lado
+    3. La señal posterior tiene un z-score MAYOR
+
+    Args:
+        df: DataFrame con columnas bid_vol, ask_vol, vol_zscore, time_sec, Lado
+        look_ahead_sec: Segundos hacia adelante para buscar señales más fuertes
+
+    Returns:
+        DataFrame con columnas adicionales: fake_bid_vol, fake_ask_vol, invalidated_by_zscore
+    """
+    print(f"\nDetectando señales FAKE (ventana look-ahead: {look_ahead_sec}s)...")
+
+    df = df.copy()
+    df['fake_bid_vol'] = False
+    df['fake_ask_vol'] = False
+    df['invalidated_by_zscore'] = np.nan  # Z-score de la señal que invalidó esta
+
+    # Procesar por lado
+    for lado in ['BID', 'ASK']:
+        col_name = 'bid_vol' if lado == 'BID' else 'ask_vol'
+        fake_col_name = 'fake_bid_vol' if lado == 'BID' else 'fake_ask_vol'
+
+        # Obtener todas las señales de este lado ordenadas por tiempo
+        signals_df = df[(df['Lado'] == lado) & (df[col_name] == True)].copy()
+        signals_df = signals_df.sort_values('time_sec')
+
+        if len(signals_df) == 0:
+            continue
+
+        print(f"  Analizando {len(signals_df):,} señales {lado}...")
+
+        fake_count = 0
+        signals_list = signals_df[['time_sec', 'vol_zscore']].values
+        indices_list = signals_df.index.tolist()
+
+        # Usar búsqueda vectorizada más eficiente
+        for i, idx in enumerate(indices_list):
+            current_time = signals_list[i][0]
+            current_zscore = signals_list[i][1]
+
+            # Buscar en las señales restantes (ya están ordenadas)
+            for j in range(i + 1, len(signals_list)):
+                future_time = signals_list[j][0]
+                future_zscore = signals_list[j][1]
+
+                # Si pasamos la ventana, salir del loop
+                if future_time > current_time + look_ahead_sec:
+                    break
+
+                # Si encontramos una señal más fuerte, marcar como fake
+                if future_zscore > current_zscore:
+                    df.loc[idx, fake_col_name] = True
+                    df.loc[idx, 'invalidated_by_zscore'] = future_zscore
+                    fake_count += 1
+                    break  # Ya encontramos una señal que la invalida
+
+        print(f"    Señales FAKE detectadas: {fake_count} ({fake_count/len(signals_df)*100:.1f}%)")
+        print(f"    Señales REALES: {len(signals_df) - fake_count} ({(len(signals_df)-fake_count)/len(signals_df)*100:.1f}%)")
+
+    return df
+
+
 # Función detect_absorption eliminada - se reevaluará el método
 
 
@@ -237,15 +312,52 @@ def print_summary(df):
     print(f"  BID: {bid_vol:,} ({bid_vol/total*100:.2f}%)")
     print(f"  ASK: {ask_vol:,} ({ask_vol/total*100:.2f}%)")
 
-    # Ejemplos de volumen extremo
-    print("\n--- EJEMPLOS BID VOLUMEN EXTREMO ---")
-    bid_ex = df[df['bid_vol']].nlargest(5, 'vol_zscore')
-    if len(bid_ex) > 0:
+    # Estadísticas de señales FAKE
+    if 'fake_bid_vol' in df.columns and 'fake_ask_vol' in df.columns:
+        fake_bid = df['fake_bid_vol'].sum()
+        fake_ask = df['fake_ask_vol'].sum()
+        real_bid = bid_vol - fake_bid
+        real_ask = ask_vol - fake_ask
+
+        print(f"\n{'='*80}")
+        print("ANÁLISIS DE SEÑALES FAKE (Look-ahead Bias)")
+        print(f"{'='*80}")
+        print("\nSeñales BID:")
+        print(f"  Total señales: {bid_vol:,}")
+        print(f"  Señales FAKE: {fake_bid:,} ({fake_bid/bid_vol*100:.1f}%) <- TRAMPAS!")
+        print(f"  Señales REALES: {real_bid:,} ({real_bid/bid_vol*100:.1f}%)")
+
+        print("\nSeñales ASK:")
+        print(f"  Total señales: {ask_vol:,}")
+        print(f"  Señales FAKE: {fake_ask:,} ({fake_ask/ask_vol*100:.1f}%) <- TRAMPAS!")
+        print(f"  Señales REALES: {real_ask:,} ({real_ask/ask_vol*100:.1f}%)")
+
+        print(f"\n{'='*80}")
+        print(f"TOTAL TRAMPAS: {fake_bid + fake_ask:,} de {bid_vol + ask_vol:,} señales ({(fake_bid+fake_ask)/(bid_vol+ask_vol)*100:.1f}%)")
+        print(f"{'='*80}")
+
+        # Ejemplos de señales FAKE
+        if fake_bid > 0:
+            print("\n--- EJEMPLOS SEÑALES FAKE BID (hubieramos entrado mal) ---")
+            fake_bid_ex = df[df['fake_bid_vol']].nlargest(5, 'vol_zscore')
+            print(fake_bid_ex[['TimeBin', 'Precio', 'Volumen', 'vol_zscore', 'invalidated_by_zscore']].to_string(index=False))
+
+        if fake_ask > 0:
+            print("\n--- EJEMPLOS SEÑALES FAKE ASK (hubieramos entrado mal) ---")
+            fake_ask_ex = df[df['fake_ask_vol']].nlargest(5, 'vol_zscore')
+            print(fake_ask_ex[['TimeBin', 'Precio', 'Volumen', 'vol_zscore', 'invalidated_by_zscore']].to_string(index=False))
+
+    # Ejemplos de volumen extremo REAL (no fake)
+    print("\n--- EJEMPLOS BID VOLUMEN EXTREMO (REAL) ---")
+    bid_real = df[df['bid_vol'] & ~df.get('fake_bid_vol', False)]
+    if len(bid_real) > 0:
+        bid_ex = bid_real.nlargest(5, 'vol_zscore')
         print(bid_ex[['TimeBin', 'Precio', 'Volumen', 'vol_zscore', 'vol_current_price']].to_string(index=False))
 
-    print("\n--- EJEMPLOS ASK VOLUMEN EXTREMO ---")
-    ask_ex = df[df['ask_vol']].nlargest(5, 'vol_zscore')
-    if len(ask_ex) > 0:
+    print("\n--- EJEMPLOS ASK VOLUMEN EXTREMO (REAL) ---")
+    ask_real = df[df['ask_vol'] & ~df.get('fake_ask_vol', False)]
+    if len(ask_real) > 0:
+        ask_ex = ask_real.nlargest(5, 'vol_zscore')
         print(ask_ex[['TimeBin', 'Precio', 'Volumen', 'vol_zscore', 'vol_current_price']].to_string(index=False))
 
     print("\n" + "="*80)
@@ -259,11 +371,13 @@ def main():
     print(f"  Ventana: {WINDOW_MINUTES}min")
     print(f"  Threshold: {ANOMALY_THRESHOLD} std")
     print(f"  Ventana densidad: {DENSITY_WINDOW_SEC}s")
+    print(f"  Look-ahead para detección fake: {FAKE_DETECTION_LOOKAHEAD_SEC}s")
     print("="*80)
 
     df = load_and_prepare_data(DATA_FILE)
     df = compute_volume_stats_simple(df, window_minutes=WINDOW_MINUTES)
     df = detect_anomalies(df, threshold=ANOMALY_THRESHOLD)
+    df = detect_fake_signals(df, look_ahead_sec=FAKE_DETECTION_LOOKAHEAD_SEC)
     df = compute_density(df, density_window_sec=DENSITY_WINDOW_SEC)
 
     print_summary(df)

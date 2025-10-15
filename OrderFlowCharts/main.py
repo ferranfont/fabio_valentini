@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 # Configuration
-INPUT_FILE = '../data/time_and_sales_nq_30min.csv'
+INPUT_FILE = '../data/time_and_sales_nq.csv'
 CANDLE_INTERVAL = '1min'
 MAX_CANDLES = 500
 
@@ -111,5 +111,32 @@ orderflowchart = OrderFlowChart(
     identifier_col='identifier'
 )
 
-# Plot the orderflow chart
-orderflowchart.plot()
+# Get the figure object instead of showing it immediately
+fig = orderflowchart.plot(return_figure=True)
+
+# Set initial x-axis range to show only 30 minutes
+# Get the last timestamp (most recent data)
+last_time = ohlc_data.index[-1]
+# Calculate 30 minutes before
+first_time = last_time - pd.Timedelta(minutes=30)
+
+# Update x-axis range to show only last 30 minutes initially
+fig.update_xaxes(range=[first_time, last_time])
+
+# Add range slider for easy navigation
+fig.update_xaxes(
+    rangeslider_visible=True,
+    rangeslider_thickness=0.05
+)
+
+# Show the figure with configuration
+config = {
+    'modeBarButtonsToAdd': ['drawline',
+                            'drawopenpath',
+                            'drawclosedpath',
+                            'drawcircle',
+                            'drawrect',
+                            'eraseshape'
+                            ]
+}
+fig.show(config=config)

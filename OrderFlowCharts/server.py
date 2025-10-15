@@ -200,6 +200,7 @@ def update_chart(n):
         orderflow_data = orderflow_df
 
         # Calculate and store y-axis range on first data arrival
+        # This range won't update with new data, but users can still pan/zoom manually
         if y_axis_range is None:
             tick_size = 0.25  # NQ tick size
             ymin = orderflow_df['price'].min() - tick_size * 10
@@ -226,11 +227,13 @@ def update_chart(n):
         # Disable range slider
         fig.update_xaxes(rangeslider_visible=False)
 
-        # Update layout for dark theme and override y-axis range
+        # Update layout for dark theme and set initial y-axis range
+        # uirevision preserves user's pan/zoom state across updates
         fig.update_layout(
             template='plotly_dark',
             height=800,
-            yaxis=dict(range=y_axis_range, fixedrange=True)
+            yaxis=dict(range=y_axis_range),
+            uirevision='constant'  # Preserve user interactions
         )
 
         # Statistics

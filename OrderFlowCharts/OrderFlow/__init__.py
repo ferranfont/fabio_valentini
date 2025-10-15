@@ -75,12 +75,10 @@ class OrderFlowChart():
         df.index = df['identifier']
         
         if self.imbalance_col is None:
-            print("Calculating imbalance, as no imbalance column was provided.")
             df['size'] = (df['bid_size'] - df['ask_size'].shift().bfill()) / \
                 (df['bid_size'] + df['ask_size'].shift().bfill())
             df['size'] = df['size'].ffill().bfill()
         else:
-            print("Using imbalance column: {}".format(self.imbalance_col))
             df['size'] = df[self.imbalance_col]
             df = df.drop([self.imbalance_col], axis=1)
         # df = df.drop(['bid_size', 'ask_size'], axis=1)
@@ -311,7 +309,6 @@ class OrderFlowChart():
                 raise Exception("Data processing failed. Please check the data types and the structure of the data. Refer to documentation for more information.")
         
         ymin, ymax, xmin, xmax, tickvals, ticktext = self.plot_ranges(self.ohlc_data)
-        print("Total candles: ", self.ohlc_data.shape[0])
         # Create figure
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                             vertical_spacing=0.0, row_heights=[9, 1])
@@ -422,8 +419,8 @@ class OrderFlowChart():
 
         fig.update_layout(title='Order Book Chart',
                         yaxis=dict(title='Price', showgrid=False, range=[
-                                    ymax, ymin], tickformat='.2f', fixedrange=True),
-                        yaxis2=dict(fixedrange=True, showgrid=False),
+                                    ymax, ymin], tickformat='.2f'),
+                        yaxis2=dict(showgrid=False),
                         xaxis2=dict(title='Time', showgrid=False),
                         xaxis=dict(showgrid=False, range=[xmin, xmax]),
                         height=780,

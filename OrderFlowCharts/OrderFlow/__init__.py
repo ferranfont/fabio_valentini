@@ -400,7 +400,7 @@ class OrderFlowChart():
         # fig.add_trace(go.Scatter(x=buy_vwap.index, y=buy_vwap, name='VWAP', legendgroup='group', showlegend=True, line=dict(color='green', width=1.5)), row=1, col=1)
 
         # fig.add_trace(go.Scatter(x=sell_vwap.index, y=sell_vwap, name='VWAP', legendgroup='group', showlegend=False, line=dict(color='red', width=1.5)), row=1, col=1)
-        
+
         fig.add_trace(
             go.Heatmap(
                 x=self.labels.index,

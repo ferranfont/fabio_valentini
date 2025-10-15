@@ -192,11 +192,8 @@ def update_chart(n):
         first_time = last_time - pd.Timedelta(minutes=INITIAL_WINDOW_MINUTES)
         fig.update_xaxes(range=[first_time, last_time])
 
-    # Add range slider
-    fig.update_xaxes(
-        rangeslider_visible=True,
-        rangeslider_thickness=0.05
-    )
+    # Disable range slider
+    fig.update_xaxes(rangeslider_visible=False)
 
     # Update layout for dark theme
     fig.update_layout(

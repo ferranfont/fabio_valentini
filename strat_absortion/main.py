@@ -186,7 +186,7 @@ def plot_detection(
 
 
 # Load data
-csv_path = "../data/time_and_sales_nq.csv"
+csv_path = "data/time_and_sales_nq.csv"
 print("Loading data...")
 df = pd.read_csv(csv_path, sep=";", decimal=",")
 df["Timestamp"] = pd.to_datetime(df["Timestamp"])

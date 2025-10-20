@@ -156,7 +156,7 @@ if __name__ == "__main__":
     # Configuración
     symbol = SYMBOL
     directorio = str(DATA_DIR)
-    nombre_fichero = 'ES_near_tick_data_27_jul_2025.csv'
+    nombre_fichero = 'time_and_sales_nq_30min.csv'
     ruta_completa = os.path.join(directorio, nombre_fichero)
 
     print("\n======================== 🔍 Cargando tick data ===========================")

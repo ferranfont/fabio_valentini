@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
 from config import CHART_WIDTH, CHART_HEIGHT, CHART_TEMPLATE, get_chart_path, DATA_DIR, SYMBOL
 
-MINUTE_DATA_FILE = 'es_1min_data_2015_2025.csv' 
+MINUTE_DATA_FILE = 'time_and_sales_nq_30min.csv' 
 
 
 

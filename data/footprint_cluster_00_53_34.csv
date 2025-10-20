@@ -1,0 +1,10 @@
+Precio;BID;BID_outlier;ASK;ASK_outlier
+6786,5;0;False;9;False
+6786,25;11;False;18;False
+6786,0;29;False;82;False
+6785,75;57;False;63;False
+6785,5;39;False;169;True
+6785,25;137;True;127;False
+6785,0;131;False;81;False
+6784,75;77;False;143;False
+6784,5;43;False;8;False

@@ -6,7 +6,7 @@ from rolling_profile import RollingMarketProfile
 
 
 # Load data
-csv_path = "../data/time_and_sales_nq_30min.csv"
+csv_path = "data/time_and_sales_nq_30min.csv"
 df = pd.read_csv(csv_path, sep=";", decimal=",")
 
 # Get unique timestamps at second precision

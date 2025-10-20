@@ -1,6 +1,3 @@
-import sys
-sys.path.insert(0, '/home/idroji/trading/workspace/fabio_valentini/strat_absortion')
-
 import pandas as pd
 import numpy as np
 from datetime import timedelta
@@ -12,8 +9,14 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
 
+# ============ CONFIGURATION ============
+STARTING_INDEX = 0  # Change this to start at a different frame (0 = first frame)
+# You can also set a specific time like: STARTING_TIME = "2025-10-09 18:15:00"
+STARTING_TIME =  "2025-10-09 18:02:25"    #None  # Set to None to use STARTING_INDEX instead
+# =======================================
+
 # Load data
-csv_path = "../data/time_and_sales_nq_30min.csv"
+csv_path = "data/time_and_sales_nq_30min.csv"
 print("Loading data...")
 df = pd.read_csv(csv_path, sep=";", decimal=",")
 df["Timestamp"] = pd.to_datetime(df["Timestamp"])
@@ -21,8 +24,7 @@ df["Timestamp"] = pd.to_datetime(df["Timestamp"])
 # Generate timestamps every 10 seconds
 start_time = df["Timestamp"].min()
 end_time = df["Timestamp"].max()
-timestamps = pd.date_range(start=start_time, end=end_time, freq="10s")
-print(f"Generated {len(timestamps)} timestamps (every 10 seconds)")
+timestamps = pd.date_range(start=start_time, end=end_time, freq="5s")  # Antes era 10s
 
 # Pre-compute market profiles for all timestamps
 print("Pre-computing market profiles...")
@@ -32,23 +34,43 @@ for i, ts in enumerate(timestamps):
     if i % 50 == 0:
         print(f"  Processing {i}/{len(timestamps)}...")
 
-    mp = RollingMarketProfile(window=timedelta(seconds=60))
+    mp = RollingMarketProfile(window=timedelta(seconds=5)) # Antes era 60 segundos
     ticks_until = df[df["Timestamp"] <= ts]
+
+    # Get closing price at this timestamp (last tick before or at ts)
+    if len(ticks_until) > 0:
+        closing_price = ticks_until.iloc[-1]["Precio"]
+    else:
+        closing_price = None
 
     for _, row in ticks_until.iterrows():
         mp.update(row["Timestamp"], row["Precio"], row["Volumen"], row["Lado"])
 
     profile = mp.profile()
-    profiles_data.append((ts, profile))
+    profiles_data.append((ts, profile, closing_price))
 
 print(f"Pre-computed {len(profiles_data)} profiles")
+
+# Determine starting index
+if STARTING_TIME is not None:
+    starting_ts = pd.to_datetime(STARTING_TIME)
+    # Find closest timestamp
+    start_idx = 0
+    for i, (ts, _, _) in enumerate(profiles_data):
+        if ts >= starting_ts:
+            start_idx = i
+            break
+    print(f"Starting at timestamp: {profiles_data[start_idx][0]} (index {start_idx})")
+else:
+    start_idx = max(0, min(STARTING_INDEX, len(profiles_data) - 1))
+    print(f"Starting at index: {start_idx} (timestamp: {profiles_data[start_idx][0]})")
 
 # Create the figure and axis
 fig, ax = plt.subplots(figsize=(14, 10))
 plt.subplots_adjust(left=0.1, bottom=0.25, right=0.95, top=0.95)
 
 # Global state
-current_index = [0]
+current_index = [start_idx]
 is_playing = [False]
 timer = [None]
 
@@ -66,7 +88,7 @@ def plot_profile(index):
     if index >= len(profiles_data):
         index = len(profiles_data) - 1
 
-    timestamp, profile = profiles_data[index]
+    timestamp, profile, closing_price = profiles_data[index]
 
     if not profile:
         ax.text(0.5, 0.5, "No data in rolling window",
@@ -103,6 +125,12 @@ def plot_profile(index):
     # Add vertical line at zero
     ax.axvline(x=0, color='black', linewidth=1.5, linestyle='-', alpha=0.7)
 
+    # Add blue dot at closing price on y-axis
+    if closing_price is not None and closing_price in prices:
+        price_idx = prices.index(closing_price)
+        ax.plot(0, price_idx, 'o', color='blue', markersize=10, zorder=5,
+                markeredgecolor='darkblue', markeredgewidth=2)
+
     # Calculate max x-axis limit
     max_x = max(max(bid_volumes), max(ask_volumes)) * 1.1
     ax.set_xlim(-max_x, max_x)
@@ -110,9 +138,54 @@ def plot_profile(index):
     # Labels and title
     ax.set_xlabel('Volume (BID ← | → ASK)', fontsize=11, fontweight='bold')
     ax.set_ylabel('Price Level', fontsize=11, fontweight='bold')
-    ax.set_title(f'Market Profile at {timestamp.strftime("%Y-%m-%d %H:%M:%S")}\n'
+
+    # Title with closing price
+    close_str = f' | Close: {closing_price:.2f}' if closing_price is not None else ''
+    ax.set_title(f'Market Profile at {timestamp.strftime("%Y-%m-%d %H:%M:%S")}{close_str}\n'
                  f'(60-second rolling window | Step {index+1}/{len(profiles_data)})',
-                 fontsize=13, fontweight='bold', pad=15)
+                 fontsize=10, fontweight='bold', pad=10)
+
+    # Add price line showing historical movement
+    # Get price history up to current timestamp
+    historical_prices = []
+    historical_times = []
+    for i in range(max(0, index - 60), index + 1):  # Last 60 frames (~10 min)
+        if i < len(profiles_data):
+            ts_hist, _, close_hist = profiles_data[i]
+            if close_hist is not None:
+                historical_prices.append(close_hist)
+                historical_times.append(i - max(0, index - 60))
+
+    # Plot price line on the right side of the chart
+    if len(historical_prices) > 1:
+        # Normalize historical times to x-axis position (right side)
+        x_offset = max_x * 0.7  # Start at 70% of max_x
+        x_range = max_x * 0.25   # Use 25% of max_x for price line width
+        x_positions = [x_offset + (t / max(historical_times)) * x_range for t in historical_times]
+
+        # Map prices to y-axis positions
+        y_line_positions = []
+        for price in historical_prices:
+            # Find closest price level in y_positions
+            if price in prices:
+                y_line_positions.append(prices.index(price))
+            else:
+                # Interpolate position
+                sorted_prices = sorted(prices)
+                for i, p in enumerate(sorted_prices):
+                    if price <= p:
+                        y_line_positions.append(i)
+                        break
+                else:
+                    y_line_positions.append(len(prices) - 1)
+
+        # Draw price line in grey with width 1
+        ax.plot(x_positions, y_line_positions, color='grey', linewidth=1, alpha=0.8, zorder=4)
+
+        # Add blue dot at the end of the price line (current closing price)
+        if len(y_line_positions) > 0:
+            ax.plot(x_positions[-1], y_line_positions[-1], 'o', color='blue', markersize=8, zorder=5,
+                    markeredgecolor='darkblue', markeredgewidth=1.5)
 
     # Add grid
     ax.grid(True, alpha=0.3, axis='x')
@@ -151,7 +224,7 @@ def pause(event):
     is_playing[0] = False
     btn_play.label.set_text("Play")
     if timer[0] is not None:
-        timer[0].remove()
+        timer[0].stop()
         timer[0] = None
 
 def next_frame(event):
@@ -197,7 +270,7 @@ def animate():
 # Create slider for navigation
 ax_slider = plt.axes([0.1, 0.12, 0.85, 0.03])
 slider = Slider(ax_slider, 'Time', 0, len(profiles_data) - 1,
-                valinit=0, valstep=1, color='skyblue')
+                valinit=start_idx, valstep=1, color='skyblue')
 slider.on_changed(update_slider)
 
 # Create buttons
@@ -217,7 +290,7 @@ btn_pause.on_clicked(pause)
 btn_next.on_clicked(next_frame)
 
 # Initial plot
-plot_profile(0)
+plot_profile(start_idx)
 
 print("\nControls:")
 print("  - Slider: Navigate to any time point")

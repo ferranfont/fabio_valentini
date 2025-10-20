@@ -56,15 +56,21 @@ if profile:
     # Top 5 BID prices
     bid_volumes = [(p, d["BID"]) for p, d in profile.items() if d["BID"] > 0]
     top_bids = sorted(bid_volumes, key=lambda x: x[1], reverse=True)[:5]
-    print(f"\nTop 5 prices by BID volume:")
-    for price, vol in top_bids:
-        print(f"  {price:>10.2f}: {vol:>6.0f} contracts")
+    print(f"\nTop 5 prices by BID volume (with diagonal ASK from price+1):")
+    for price, bid_vol in top_bids:
+        # For BID at price X, get ASK from price X + 0.25 (one tick up)
+        price_above = price + 0.25
+        ask_vol_above = profile.get(price_above, {}).get("ASK", 0)
+        print(f"  {price:>10.2f}: BID {bid_vol:>6.0f} | ASK@{price_above:.2f} {ask_vol_above:>6.0f} contracts")
 
     # Top 5 ASK prices
     ask_volumes = [(p, d["ASK"]) for p, d in profile.items() if d["ASK"] > 0]
     top_asks = sorted(ask_volumes, key=lambda x: x[1], reverse=True)[:5]
-    print(f"\nTop 5 prices by ASK volume:")
-    for price, vol in top_asks:
-        print(f"  {price:>10.2f}: {vol:>6.0f} contracts")
+    print(f"\nTop 5 prices by ASK volume (with diagonal BID from price-1):")
+    for price, ask_vol in top_asks:
+        # For ASK at price X, get BID from price X - 0.25 (one tick down)
+        price_below = price - 0.25
+        bid_vol_below = profile.get(price_below, {}).get("BID", 0)
+        print(f"  {price:>10.2f}: ASK {ask_vol:>6.0f} | BID@{price_below:.2f} {bid_vol_below:>6.0f} contracts")
 else:
     print("No data in the rolling window at this timestamp.")

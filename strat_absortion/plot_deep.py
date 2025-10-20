@@ -25,7 +25,7 @@ df["Timestamp"] = pd.to_datetime(df["Timestamp"])
 # Generate timestamps every 10 seconds
 start_time = df["Timestamp"].min()
 end_time = df["Timestamp"].max()
-timestamps = pd.date_range(start=start_time, end=end_time, freq="5s")  # Antes era 10s
+timestamps = pd.date_range(start=start_time, end=end_time, freq="2s")  # Antes era 10s
 
 # Pre-compute market profiles for all timestamps
 print("Pre-computing market profiles...")
@@ -66,9 +66,9 @@ else:
     start_idx = max(0, min(STARTING_INDEX, len(profiles_data) - 1))
     print(f"Starting at index: {start_idx} (timestamp: {profiles_data[start_idx][0]})")
 
-# Create the figure with three subplots (left, middle, right)
-fig, (ax_left, ax_middle, ax_right) = plt.subplots(1, 3, figsize=(28, 10))
-plt.subplots_adjust(left=0.04, bottom=0.25, right=0.99, top=0.95, wspace=0.05)  # Reduced wspace from 0.1 to 0.05
+# Create the figure with four subplots (left to right: oldest to newest)
+fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(36, 10))
+plt.subplots_adjust(left=0.03, bottom=0.25, right=0.99, top=0.95, wspace=0.04)
 
 # Global state
 current_index = [start_idx]
@@ -154,14 +154,14 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
     ax.set_xlim(-max_x, max_x)
 
     # Labels and title
-    ax.set_xlabel('Volume (BID ← | → ASK)', fontsize=11, fontweight='bold')
+    #ax.set_xlabel('Volume (BID ← | → ASK)', fontsize=11, fontweight='bold')
     # Only show Y-axis label if show_ylabel is True
     if show_ylabel:
         ax.set_ylabel('Price Level', fontsize=11, fontweight='bold')
 
     # Title with closing price
     close_str = f' | Close: {closing_price:.2f}' if closing_price is not None else ''
-    ax.set_title(f'{title_prefix}Market Profile at {timestamp.strftime("%Y-%m-%d %H:%M:%S")}{close_str}\n'
+    ax.set_title(f'{title_prefix}-{timestamp.strftime("%Y-%m-%d %H:%M:%S")}{close_str}\n'
                  f'({PROFILE_FREQUENCY}-second rolling window | Step {index+1}/{len(profiles_data)})',
                  fontsize=10, fontweight='bold', pad=10)
 
@@ -227,16 +227,17 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
     return prices, (bid_volumes, ask_volumes)
 
 def plot_profile(index):
-    """Plot three frames: -2 frames, -1 frame, and current with common Y axis."""
+    """Plot four frames: -3, -2, -1, and current with common Y axis."""
     # Calculate frame indices
-    frame1_index = max(0, index - 2)  # 2 frames ago
-    frame2_index = max(0, index - 1)  # 1 frame ago
-    current_index_val = index          # current frame
+    frame1_index = max(0, index - 3)  # 3 frames ago
+    frame2_index = max(0, index - 2)  # 2 frames ago
+    frame3_index = max(0, index - 1)  # 1 frame ago
+    frame4_index = index              # current frame
 
-    # Collect all unique prices from all three profiles to create common Y axis
+    # Collect all unique prices from all four profiles to create common Y axis
     all_prices = set()
 
-    for idx in [frame1_index, frame2_index, current_index_val]:
+    for idx in [frame1_index, frame2_index, frame3_index, frame4_index]:
         if idx < len(profiles_data):
             _, profile, _ = profiles_data[idx]
             if profile:
@@ -246,22 +247,28 @@ def plot_profile(index):
     common_prices = sorted(list(all_prices)) if all_prices else None
 
     # Calculate time differences in seconds (each frame is 5 seconds based on freq='5s')
+    time_3frames = 3 * 5  # 3 frames = 15 seconds
     time_2frames = 2 * 5  # 2 frames = 10 seconds
     time_1frame = 1 * 5   # 1 frame = 5 seconds
 
-    # Plot three panels with common Y axis
-    # Left panel: 2 frames ago (ONLY THIS ONE shows Y-axis labels)
-    plot_single_profile(ax_left, frame1_index,
-                       title_prefix=f"T-2 (-{time_2frames}s) - ",
+    # Plot four panels with common Y axis
+    # Panel 1 (leftmost): 3 frames ago (ONLY THIS ONE shows Y-axis labels)
+    plot_single_profile(ax1, frame1_index,
+                       title_prefix=f"T-3 (-{time_3frames}s) - ",
                        common_prices=common_prices, show_ylabel=True)
 
-    # Middle panel: 1 frame ago
-    plot_single_profile(ax_middle, frame2_index,
+    # Panel 2: 2 frames ago
+    plot_single_profile(ax2, frame2_index,
+                       title_prefix=f"T-2 (-{time_2frames}s) - ",
+                       common_prices=common_prices, show_ylabel=False)
+
+    # Panel 3: 1 frame ago
+    plot_single_profile(ax3, frame3_index,
                        title_prefix=f"T-1 (-{time_1frame}s) - ",
                        common_prices=common_prices, show_ylabel=False)
 
-    # Right panel: Current frame
-    plot_single_profile(ax_right, current_index_val,
+    # Panel 4 (rightmost): Current frame
+    plot_single_profile(ax4, frame4_index,
                        title_prefix=f"CURRENT (T-0) - ",
                        common_prices=common_prices, show_ylabel=False)
 

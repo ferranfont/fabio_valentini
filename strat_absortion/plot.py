@@ -156,16 +156,24 @@ def pause(event):
 
 def next_frame(event):
     """Go to next frame."""
-    pause(None)
+    if is_playing[0]:
+        pause(None)
+
     current_index[0] = min(current_index[0] + 1, len(profiles_data) - 1)
+    slider.eventson = False  # Disable slider events temporarily
     slider.set_val(current_index[0])
+    slider.eventson = True  # Re-enable slider events
     plot_profile(current_index[0])
 
 def prev_frame(event):
     """Go to previous frame."""
-    pause(None)
+    if is_playing[0]:
+        pause(None)
+
     current_index[0] = max(current_index[0] - 1, 0)
+    slider.eventson = False  # Disable slider events temporarily
     slider.set_val(current_index[0])
+    slider.eventson = True  # Re-enable slider events
     plot_profile(current_index[0])
 
 def animate():

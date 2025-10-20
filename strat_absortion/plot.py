@@ -52,18 +52,12 @@ current_index = [0]
 is_playing = [False]
 timer = [None]
 
-def get_color_with_intensity(base_color, volume, max_volume):
-    """Generate color with intensity based on volume."""
-    if max_volume == 0:
-        intensity = 0.3
-    else:
-        # Scale from 0.3 (low) to 1.0 (high)
-        intensity = 0.3 + 0.7 * (volume / max_volume)
-
+def get_fixed_color(base_color):
+    """Return fixed color."""
     if base_color == 'green':
-        return (0, intensity, 0, 0.8)  # Green with varying intensity
+        return (0, 0.7, 0, 0.8)  # Fixed green
     else:  # red
-        return (intensity, 0, 0, 0.8)  # Red with varying intensity
+        return (0.8, 0, 0, 0.8)  # Fixed red
 
 def plot_profile(index):
     """Plot the market profile for a given index."""
@@ -85,22 +79,22 @@ def plot_profile(index):
     bid_volumes = [profile[p]["BID"] for p in prices]
     ask_volumes = [profile[p]["ASK"] for p in prices]
 
-    # Get max volume for color scaling
-    max_bid = max(bid_volumes) if bid_volumes else 1
-    max_ask = max(ask_volumes) if ask_volumes else 1
-
     # Create horizontal bars
     y_positions = range(len(prices))
 
     # Plot BID volumes (left side, negative values, red)
-    bid_colors = [get_color_with_intensity('red', v, max_bid) for v in bid_volumes]
+    bid_color = get_fixed_color('red')
     ax.barh(y_positions, [-v for v in bid_volumes], height=0.8,
-            color=bid_colors, label='BID', edgecolor='darkred', linewidth=0.5)
+            color=bid_color, label='BID', edgecolor='darkred', linewidth=0.5)
 
     # Plot ASK volumes (right side, positive values, green)
-    ask_colors = [get_color_with_intensity('green', v, max_ask) for v in ask_volumes]
+    ask_color = get_fixed_color('green')
     ax.barh(y_positions, ask_volumes, height=0.8,
-            color=ask_colors, label='ASK', edgecolor='darkgreen', linewidth=0.5)
+            color=ask_color, label='ASK', edgecolor='darkgreen', linewidth=0.5)
+
+    # Get max volume for x-axis scaling
+    max_bid = max(bid_volumes) if bid_volumes else 1
+    max_ask = max(ask_volumes) if ask_volumes else 1
 
     # Set y-axis labels to prices
     ax.set_yticks(y_positions)

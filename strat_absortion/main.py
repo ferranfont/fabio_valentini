@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
+
+matplotlib.use("Agg")  # Use non-interactive backend
 import matplotlib.pyplot as plt
 from datetime import timedelta
 from rolling_profile import RollingMarketProfile
@@ -9,8 +10,19 @@ import os
 # Create output directory for plots
 os.makedirs("charts/detections", exist_ok=True)
 
-def plot_detection(detection_num, detection_time, pattern_type, df_all, profile_now, profile_after,
-                   highest_price, lowest_price, max_ask_price, max_bid_price):
+
+def plot_detection(
+    detection_num,
+    detection_time,
+    pattern_type,
+    df_all,
+    profile_now,
+    profile_after,
+    highest_price,
+    lowest_price,
+    max_ask_price,
+    max_bid_price,
+):
     """Create a 3-panel plot for a detection."""
 
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 8))
@@ -18,7 +30,7 @@ def plot_detection(detection_num, detection_time, pattern_type, df_all, profile_
     # Helper function to plot market profile
     def plot_market_profile(ax, profile, title):
         if not profile:
-            ax.text(0.5, 0.5, "No data", ha='center', va='center')
+            ax.text(0.5, 0.5, "No data", ha="center", va="center")
             ax.set_title(title)
             return
 
@@ -28,95 +40,177 @@ def plot_detection(detection_num, detection_time, pattern_type, df_all, profile_
         y_positions = range(len(prices))
 
         # Plot bars
-        ax.barh(y_positions, [-v for v in bid_volumes], height=0.8,
-                color=(0.8, 0, 0, 0.8), label='BID', edgecolor='darkred', linewidth=0.5)
-        ax.barh(y_positions, ask_volumes, height=0.8,
-                color=(0, 0.7, 0, 0.8), label='ASK', edgecolor='darkgreen', linewidth=0.5)
+        ax.barh(
+            y_positions,
+            [-v for v in bid_volumes],
+            height=0.8,
+            color=(0.8, 0, 0, 0.8),
+            label="BID",
+            edgecolor="darkred",
+            linewidth=0.5,
+        )
+        ax.barh(
+            y_positions,
+            ask_volumes,
+            height=0.8,
+            color=(0, 0.7, 0, 0.8),
+            label="ASK",
+            edgecolor="darkgreen",
+            linewidth=0.5,
+        )
 
         ax.set_yticks(y_positions)
         ax.set_yticklabels([f"{p:.2f}" for p in prices], fontsize=7)
-        ax.axvline(x=0, color='black', linewidth=1.5, linestyle='-', alpha=0.7)
+        ax.axvline(x=0, color="black", linewidth=1.5, linestyle="-", alpha=0.7)
 
-        max_x = max(max(bid_volumes) if bid_volumes else 1, max(ask_volumes) if ask_volumes else 1) * 1.1
+        max_x = (
+            max(
+                max(bid_volumes) if bid_volumes else 1,
+                max(ask_volumes) if ask_volumes else 1,
+            )
+            * 1.1
+        )
         ax.set_xlim(-max_x, max_x)
-        ax.set_xlabel('Volume (BID ← | → ASK)', fontsize=9)
-        ax.set_ylabel('Price Level', fontsize=9)
-        ax.set_title(title, fontsize=10, fontweight='bold')
-        ax.grid(True, alpha=0.3, axis='x')
-        ax.legend(loc='upper right', fontsize=8)
+        ax.set_xlabel("Volume (BID ← | → ASK)", fontsize=9)
+        ax.set_ylabel("Price Level", fontsize=9)
+        ax.set_title(title, fontsize=10, fontweight="bold")
+        ax.grid(True, alpha=0.3, axis="x")
+        ax.legend(loc="upper right", fontsize=8)
 
     # Panel 1: Market profile at detection
-    plot_market_profile(ax1, profile_now, f"At Detection\n{detection_time.strftime('%H:%M:%S')}")
+    plot_market_profile(
+        ax1, profile_now, f"At Detection\n{detection_time.strftime('%H:%M:%S')}"
+    )
 
     # Panel 2: Market profile after 1 minute
-    plot_market_profile(ax2, profile_after, f"After 1 Minute\n{(detection_time + timedelta(seconds=60)).strftime('%H:%M:%S')}")
+    plot_market_profile(
+        ax2,
+        profile_after,
+        f"After 1 Minute\n{(detection_time + timedelta(seconds=60)).strftime('%H:%M:%S')}",
+    )
 
     # Panel 3: Price movement
     start_time = detection_time - timedelta(seconds=10)
     end_time = detection_time + timedelta(seconds=60)
-    price_data = df_all[(df_all["Timestamp"] >= start_time) & (df_all["Timestamp"] <= end_time)]
+    price_data = df_all[
+        (df_all["Timestamp"] >= start_time) & (df_all["Timestamp"] <= end_time)
+    ]
 
     if len(price_data) > 0:
         # Get price for each tick
-        times_rel = [(t - detection_time).total_seconds() for t in price_data["Timestamp"]]
+        times_rel = [
+            (t - detection_time).total_seconds() for t in price_data["Timestamp"]
+        ]
         prices_plot = price_data["Precio"].values
 
         # Color by side
         bid_mask = price_data["Lado"].str.upper() == "BID"
         ask_mask = price_data["Lado"].str.upper() == "ASK"
 
-        ax3.scatter([t for i, t in enumerate(times_rel) if bid_mask.iloc[i]],
-                   [p for i, p in enumerate(prices_plot) if bid_mask.iloc[i]],
-                   c='red', s=10, alpha=0.6, label='BID')
-        ax3.scatter([t for i, t in enumerate(times_rel) if ask_mask.iloc[i]],
-                   [p for i, p in enumerate(prices_plot) if ask_mask.iloc[i]],
-                   c='green', s=10, alpha=0.6, label='ASK')
+        ax3.scatter(
+            [t for i, t in enumerate(times_rel) if bid_mask.iloc[i]],
+            [p for i, p in enumerate(prices_plot) if bid_mask.iloc[i]],
+            c="red",
+            s=10,
+            alpha=0.6,
+            label="BID",
+        )
+        ax3.scatter(
+            [t for i, t in enumerate(times_rel) if ask_mask.iloc[i]],
+            [p for i, p in enumerate(prices_plot) if ask_mask.iloc[i]],
+            c="green",
+            s=10,
+            alpha=0.6,
+            label="ASK",
+        )
 
         # Mark detection time
-        ax3.axvline(x=0, color='blue', linewidth=2, linestyle='--', alpha=0.7, label='Detection')
+        ax3.axvline(
+            x=0, color="blue", linewidth=2, linestyle="--", alpha=0.7, label="Detection"
+        )
 
         # Mark 1 minute after
-        ax3.axvline(x=60, color='orange', linewidth=2, linestyle='--', alpha=0.7, label='+1 min')
+        ax3.axvline(
+            x=60, color="orange", linewidth=2, linestyle="--", alpha=0.7, label="+1 min"
+        )
 
-        ax3.set_xlabel('Time (seconds relative to detection)', fontsize=9)
-        ax3.set_ylabel('Price', fontsize=9)
-        ax3.set_title('Price Movement\n(-10s to +60s)', fontsize=10, fontweight='bold')
+        ax3.set_xlabel("Time (seconds relative to detection)", fontsize=9)
+        ax3.set_ylabel("Price", fontsize=9)
+        ax3.set_title("Price Movement\n(-10s to +60s)", fontsize=10, fontweight="bold")
         ax3.grid(True, alpha=0.3)
-        ax3.legend(loc='best', fontsize=8)
+        ax3.legend(loc="best", fontsize=8)
 
         # Add price range info
-        price_at_detect = price_data[price_data["Timestamp"] <= detection_time]["Precio"].iloc[-1] if len(price_data[price_data["Timestamp"] <= detection_time]) > 0 else None
-        price_after_1min = price_data[price_data["Timestamp"] >= end_time]["Precio"].iloc[0] if len(price_data[price_data["Timestamp"] >= end_time]) > 0 else price_data["Precio"].iloc[-1]
+        price_at_detect = (
+            price_data[price_data["Timestamp"] <= detection_time]["Precio"].iloc[-1]
+            if len(price_data[price_data["Timestamp"] <= detection_time]) > 0
+            else None
+        )
+        price_after_1min = (
+            price_data[price_data["Timestamp"] >= end_time]["Precio"].iloc[0]
+            if len(price_data[price_data["Timestamp"] >= end_time]) > 0
+            else price_data["Precio"].iloc[-1]
+        )
 
         if price_at_detect is not None:
             price_change = price_after_1min - price_at_detect
-            ax3.text(0.02, 0.98, f'Start: {price_at_detect:.2f}\nEnd: {price_after_1min:.2f}\nChange: {price_change:+.2f}',
-                    transform=ax3.transAxes, fontsize=8, verticalalignment='top',
-                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            ax3.text(
+                0.02,
+                0.98,
+                f"Start: {price_at_detect:.2f}\nEnd: {price_after_1min:.2f}\nChange: {price_change:+.2f}",
+                transform=ax3.transAxes,
+                fontsize=8,
+                verticalalignment="top",
+                bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+            )
     else:
-        ax3.text(0.5, 0.5, "No price data available", ha='center', va='center')
-        ax3.set_title('Price Movement', fontsize=10, fontweight='bold')
+        ax3.text(0.5, 0.5, "No price data available", ha="center", va="center")
+        ax3.set_title("Price Movement", fontsize=10, fontweight="bold")
 
     # Main title
-    fig.suptitle(f'Detection #{detection_num} - Pattern: {pattern_type}',
-                 fontsize=14, fontweight='bold', y=0.98)
+    fig.suptitle(
+        f"Detection #{detection_num} - Pattern: {pattern_type}",
+        fontsize=14,
+        fontweight="bold",
+        y=0.98,
+    )
 
     plt.tight_layout()
 
     # Save plot
     filename = f"charts/detections/detection_{detection_num:03d}_{detection_time.strftime('%H%M%S')}.png"
-    plt.savefig(filename, dpi=100, bbox_inches='tight')
+    plt.savefig(filename, dpi=100, bbox_inches="tight")
     plt.close()
 
     return filename
 
+
 # Load data
-csv_path = "../data/time_and_sales_nq_30min.csv"
+csv_path = "../data/time_and_sales_nq.csv"
 print("Loading data...")
 df = pd.read_csv(csv_path, sep=";", decimal=",")
 df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+
+# Filter for NY trading hours (9:30 AM - 4:00 PM ET)
+# Timestamps are in Madrid time (CEST: UTC+2, October)
+# NY is EDT (UTC-4) in October
+# Madrid is 6 hours ahead of NY
+# 9:30 AM ET = 3:30 PM (15:30) Madrid time
+# 4:00 PM ET = 10:00 PM (22:00) Madrid time
+df["hour"] = df["Timestamp"].dt.hour
+df["minute"] = df["Timestamp"].dt.minute
+df["time_minutes"] = df["hour"] * 60 + df["minute"]
+
+# NY trading hours in Madrid time: 15:30 (930 minutes) to 22:00 (1320 minutes)
+NY_OPEN_MADRID = 15 * 60 + 30  # 15:30 = 930 minutes
+NY_CLOSE_MADRID = 22 * 60  # 22:00 = 1320 minutes
+
+df = df[(df["time_minutes"] >= NY_OPEN_MADRID) & (df["time_minutes"] < NY_CLOSE_MADRID)]
+
 print(f"Loaded {len(df)} ticks")
 print(f"Period: {df['Timestamp'].min()} to {df['Timestamp'].max()}")
+print(f"Filtered for NY trading hours (9:30 AM - 4:00 PM ET)")
+print(f"  Madrid time equivalent: 15:30 - 22:00 (CEST, 6 hours ahead)")
 print("=" * 80)
 
 # Create rolling market profile with 60-second window
@@ -181,7 +275,12 @@ for idx, row in df.iterrows():
     # Get BID volumes and find max
     bid_volumes = {p: profile[p]["BID"] for p in prices if profile[p]["BID"] > 0}
     if bid_volumes:
-        max_bid_price = min(bid_volumes, key=lambda p: p if bid_volumes[p] == max(bid_volumes.values()) else float('inf'))
+        max_bid_price = min(
+            bid_volumes,
+            key=lambda p: (
+                p if bid_volumes[p] == max(bid_volumes.values()) else float("inf")
+            ),
+        )
         # Find the price with maximum BID volume
         max_bid_volume = max(bid_volumes.values())
         prices_with_max_bid = [p for p, v in bid_volumes.items() if v == max_bid_volume]
@@ -200,13 +299,21 @@ for idx, row in df.iterrows():
     PRICE_TOLERANCE = 0.25
 
     # ASK_AT_HIGH: Heavy buying at highest price AND current price is at/near the high
-    if max_ask_price is not None and max_ask_price == highest_price and max_ask_volume > 0:
+    if (
+        max_ask_price is not None
+        and max_ask_price == highest_price
+        and max_ask_volume > 0
+    ):
         if abs(current_price - highest_price) <= PRICE_TOLERANCE:
             condition_met = True
             condition_type = "ASK_AT_HIGH"
 
     # BID_AT_LOW: Heavy selling at lowest price AND current price is at/near the low
-    if max_bid_price is not None and max_bid_price == lowest_price and max_bid_volume > 0:
+    if (
+        max_bid_price is not None
+        and max_bid_price == lowest_price
+        and max_bid_volume > 0
+    ):
         if abs(current_price - lowest_price) <= PRICE_TOLERANCE:
             condition_met = True
             if condition_type:
@@ -230,7 +337,9 @@ for idx, row in df.iterrows():
         print(f"\n{'=' * 80}")
         print(f"DETECTION #{detection_count} at {row['Timestamp']}{time_since_str}")
         print(f"Pattern: {condition_type}")
-        print(f"Current Price: {current_price:.2f} | Profile Range: {lowest_price:.2f} - {highest_price:.2f}")
+        print(
+            f"Current Price: {current_price:.2f} | Profile Range: {lowest_price:.2f} - {highest_price:.2f}"
+        )
         print(f"Cooldown active until: {current_time + COOLDOWN_PERIOD}")
         print(f"{'=' * 80}")
 
@@ -256,7 +365,7 @@ for idx, row in df.iterrows():
             highest_price,
             lowest_price,
             max_ask_price,
-            max_bid_price
+            max_bid_price,
         )
         print(f"Plot saved: {filename}")
 
@@ -277,8 +386,10 @@ for idx, row in df.iterrows():
             if price == lowest_price and max_bid_price == lowest_price:
                 marker = " <- MAX BID AT LOW"
 
-            print(f"Price {price:>10.2f} | BID: {bid_vol:>6.0f} | "
-                  f"ASK: {ask_vol:>6.0f} | Total: {total_vol:>6.0f}{marker}")
+            print(
+                f"Price {price:>10.2f} | BID: {bid_vol:>6.0f} | "
+                f"ASK: {ask_vol:>6.0f} | Total: {total_vol:>6.0f}{marker}"
+            )
 
         print(f"{'-' * 80}")
         print(f"Total price levels: {len(prices)}")
@@ -287,11 +398,15 @@ for idx, row in df.iterrows():
         # Show top volumes
         if bid_volumes:
             top_bid_price = max(bid_volumes, key=bid_volumes.get)
-            print(f"Highest BID volume: {bid_volumes[top_bid_price]:.0f} at {top_bid_price:.2f}")
+            print(
+                f"Highest BID volume: {bid_volumes[top_bid_price]:.0f} at {top_bid_price:.2f}"
+            )
 
         if ask_volumes:
             top_ask_price = max(ask_volumes, key=ask_volumes.get)
-            print(f"Highest ASK volume: {ask_volumes[top_ask_price]:.0f} at {top_ask_price:.2f}")
+            print(
+                f"Highest ASK volume: {ask_volumes[top_ask_price]:.0f} at {top_ask_price:.2f}"
+            )
 
         print(f"{'=' * 80}\n")
 

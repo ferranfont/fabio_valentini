@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from datetime import timedelta
 from rolling_profile import RollingMarketProfile
+import csv
+from pathlib import Path
 
 # Use TkAgg backend for better compatibility
 import matplotlib
@@ -9,7 +11,7 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
 
-# Force window to front
+# Force window to frontferr
 import os
 os.environ['QT_QPA_PLATFORM'] = 'windows'
 
@@ -20,7 +22,10 @@ STARTING_TIME =  "2025-10-09 18:02:25"    #None  # Set to None to use STARTING_I
 PROFILE_FREQUENCY = 5  # Frequency for Market Profile in seconds
 
 # Profile shape detection configuration
-DENSITY_SHAPE = 0.60  # 60% of volume must be concentrated in the zone to classify as d_shape or p_shape
+DENSITY_SHAPE = 0.70  # 70% of volume must be concentrated in the zone (more strict)
+MIN_PRICE_LEVELS = 10  # Minimum number of active price levels (increased from 8)
+MIN_BID_ASK_SIZE = 20  # Minimum absolute size of largest BID/ASK bar (increased from 10)
+PRICE_POSITION_THRESHOLD = 0.25  # Price must be in lower/upper 33% of the profile range
 # =======================================
 
 # Load data
@@ -102,19 +107,28 @@ def get_fixed_color(base_color):
     else:  # red
         return (0.8, 0, 0, 0.8)  # Fixed red
 
-def evaluate_profile_shape(profile):
+def evaluate_profile_shape(profile, current_close=None, previous_close=None):
     """
-    Evaluate the distribution shape of a market profile.
+    Evaluate the distribution shape of a market profile with STRICT criteria.
 
     Returns:
         str: 'd_shape', 'p_shape', or 'balanced'
 
-    Logic:
-    - d_shape: Most volume (>= DENSITY_SHAPE) is BID volume concentrated in lower price levels
-    - p_shape: Most volume (>= DENSITY_SHAPE) is ASK volume concentrated in upper price levels
-    - balanced: No clear pattern
+    STRICT Criteria for d_shape (ALL must be met):
+    1. Minimum MIN_PRICE_LEVELS active price levels
+    2. At least one BID bar >= MIN_BID_ASK_SIZE in lower half
+    3. >= DENSITY_SHAPE (70%) of total BID volume in lower half
+    4. Current price must be in LOWER 33% of the profile range
+    5. Price FALLING: current_close < previous_close (absorbing selling pressure)
+
+    STRICT Criteria for p_shape (ALL must be met):
+    1. Minimum MIN_PRICE_LEVELS active price levels
+    2. At least one ASK bar >= MIN_BID_ASK_SIZE in upper half
+    3. >= DENSITY_SHAPE (70%) of total ASK volume in upper half
+    4. Current price must be in UPPER 33% of the profile range
+    5. Price RISING: current_close > previous_close (absorbing buying pressure)
     """
-    if not profile:
+    if not profile or current_close is None or previous_close is None:
         return 'balanced'
 
     # Filter out price levels with no volume (empty levels)
@@ -125,7 +139,8 @@ def evaluate_profile_shape(profile):
         if bid_vol > 0 or ask_vol > 0:  # Only consider levels with volume
             active_prices.append(price)
 
-    if len(active_prices) == 0:
+    # Criterion 1: Minimum number of price levels
+    if len(active_prices) < MIN_PRICE_LEVELS:
         return 'balanced'
 
     # Calculate total volumes
@@ -136,24 +151,51 @@ def evaluate_profile_shape(profile):
     if total_volume == 0:
         return 'balanced'
 
+    # Calculate price range
+    min_price = min(active_prices)
+    max_price = max(active_prices)
+    price_range = max_price - min_price
+
+    if price_range == 0:
+        return 'balanced'
+
+    # Calculate where current price is in the range (0 = bottom, 1 = top)
+    price_position = (current_close - min_price) / price_range
+
     # Split active prices into lower half and upper half
     mid_point = len(active_prices) // 2
     lower_prices = active_prices[:mid_point + (1 if len(active_prices) % 2 == 1 else 0)]
     upper_prices = active_prices[mid_point:]
 
-    # Calculate BID volume in lower half
+    # Calculate BID and ASK volume in each half
     lower_bid = sum(profile[p].get('BID', 0) for p in lower_prices)
-
-    # Calculate ASK volume in upper half
     upper_ask = sum(profile[p].get('ASK', 0) for p in upper_prices)
 
-    # Check for d_shape: BID volume concentrated in lower prices
-    if lower_bid / total_volume >= DENSITY_SHAPE:
-        return 'd_shape'
+    # Find max BID and ASK volumes in each half
+    max_lower_bid = max([profile[p].get('BID', 0) for p in lower_prices]) if lower_prices else 0
+    max_upper_ask = max([profile[p].get('ASK', 0) for p in upper_prices]) if upper_prices else 0
 
-    # Check for p_shape: ASK volume concentrated in upper prices
-    if upper_ask / total_volume >= DENSITY_SHAPE:
-        return 'p_shape'
+    # Check for d_shape - ALL criteria must be met
+    if total_bid > 0:
+        is_d_shape = (
+            max_lower_bid >= MIN_BID_ASK_SIZE and  # Large BID bar in lower half
+            lower_bid / total_bid >= DENSITY_SHAPE and  # 70% BID concentration in lower half
+            price_position <= PRICE_POSITION_THRESHOLD and  # Price in lower 33% of range
+            current_close < previous_close  # Price FALLING (absorbing selling pressure)
+        )
+        if is_d_shape:
+            return 'd_shape'
+
+    # Check for p_shape - ALL criteria must be met
+    if total_ask > 0:
+        is_p_shape = (
+            max_upper_ask >= MIN_BID_ASK_SIZE and  # Large ASK bar in upper half
+            upper_ask / total_ask >= DENSITY_SHAPE and  # 70% ASK concentration in upper half
+            price_position >= (1 - PRICE_POSITION_THRESHOLD) and  # Price in upper 33% of range
+            current_close > previous_close  # Price RISING (absorbing buying pressure)
+        )
+        if is_p_shape:
+            return 'p_shape'
 
     return 'balanced'
 
@@ -232,8 +274,13 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
     #ax.set_xlabel('Volume (BID ← | → ASK)', fontsize=11, fontweight='bold')
     # No Y-axis label (removed "Price Level")
 
-    # Evaluate profile shape
-    profile_tag = evaluate_profile_shape(profile)
+    # Get previous close price for shape evaluation
+    previous_close = None
+    if index > 0 and index - 1 < len(profiles_data):
+        _, _, previous_close = profiles_data[index - 1]
+
+    # Evaluate profile shape with current and previous close prices
+    profile_tag = evaluate_profile_shape(profile, closing_price, previous_close)
 
     # Title with closing price (only time, no date) - simplified, single line
     close_str = f' | Close: {closing_price:.2f}' if closing_price is not None else ''
@@ -250,7 +297,6 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
     total_bid = sum(bid_volumes)
     total_ask = sum(ask_volumes)
     stats_text = f'Total BID: {total_bid:.0f}\nTotal ASK: {total_ask:.0f}\n'
-    stats_text += f'Price levels: {len(prices)}\n'
     stats_text += f'BID/ASK ratio: {total_bid/total_ask if total_ask > 0 else 0:.2f}\n'
     # Format profile tag: d-Shape, p-Shape, or Balanced
     profile_display = profile_tag.replace('_', '-').title() if '_' in profile_tag else profile_tag.capitalize()
@@ -315,14 +361,25 @@ def plot_price_line(index):
         ax_price.tick_params(axis='x', rotation=0, labelsize=6)  # Increased for time labels
         ax_price.tick_params(axis='y', labelsize=6)  # Same as upper subplot Y labels
 
-        # Add current price info
+        # Add current price info - calculate change from previous close
         if len(prices) > 0:
-            price_change = prices[-1] - prices[0] if len(prices) > 1 else 0
-            price_change_pct = (price_change / prices[0] * 100) if prices[0] != 0 else 0
+            current_price = prices[-1]
 
-            info_text = f'Current: {prices[-1]:.2f}\n'
-            info_text += f'Change: {price_change:+.2f} ({price_change_pct:+.2f}%)\n'
-            info_text += f'High: {max(prices):.2f}\nLow: {min(prices):.2f}'
+            # Get previous close price (from index - 1)
+            previous_price = None
+            if index > 0 and index - 1 < len(profiles_data):
+                _, _, prev_close = profiles_data[index - 1]
+                previous_price = prev_close
+
+            # Calculate change from previous close
+            if previous_price is not None:
+                price_change = current_price - previous_price
+                price_change_pct = (price_change / previous_price * 100) if previous_price != 0 else 0
+                info_text = f'Close: {current_price:.2f}\n'
+                info_text += f'Change: {price_change:+.2f} ({price_change_pct:+.2f}%)'
+            else:
+                info_text = f'Close: {current_price:.2f}\n'
+                info_text += f'Change: N/A'
 
             ax_price.text(0.98, 0.98, info_text, transform=ax_price.transAxes,
                          fontsize=9, verticalalignment='top', horizontalalignment='right',
@@ -472,6 +529,82 @@ print("  - Previous/Next: Step through frames")
 print("  - Play: Start animation (500ms per frame)")
 print("  - Pause: Stop animation")
 print("\nClose the window to exit.")
+
+# Detect and save d-Shape and p-Shape signals to CSV
+print("\nDetecting d-Shape and p-Shape patterns...")
+output_dir = Path("outputs")
+output_dir.mkdir(exist_ok=True)
+csv_path_output = output_dir / "dP_Shapes.csv"
+
+signals = []
+for i, (timestamp, profile, closing_price) in enumerate(profiles_data):
+    if not profile or closing_price is None:
+        continue
+
+    # Get previous close for pattern detection
+    previous_close = None
+    if i > 0:
+        _, _, previous_close = profiles_data[i - 1]
+
+    # Evaluate profile shape
+    shape = evaluate_profile_shape(profile, closing_price, previous_close)
+
+    # Only save d-Shape and p-Shape signals (not balanced)
+    if shape in ['d_shape', 'p_shape']:
+        # Calculate profile statistics
+        active_prices = []
+        for price in sorted(profile.keys()):
+            bid_vol = profile[price].get('BID', 0)
+            ask_vol = profile[price].get('ASK', 0)
+            if bid_vol > 0 or ask_vol > 0:
+                active_prices.append(price)
+
+        total_bid = sum(profile[p].get('BID', 0) for p in active_prices)
+        total_ask = sum(profile[p].get('ASK', 0) for p in active_prices)
+
+        # Split into halves
+        mid_point = len(active_prices) // 2
+        lower_prices = active_prices[:mid_point + (1 if len(active_prices) % 2 == 1 else 0)]
+        upper_prices = active_prices[mid_point:]
+
+        lower_bid = sum(profile[p].get('BID', 0) for p in lower_prices)
+        upper_ask = sum(profile[p].get('ASK', 0) for p in upper_prices)
+
+        max_lower_bid = max([profile[p].get('BID', 0) for p in lower_prices]) if lower_prices else 0
+        max_upper_ask = max([profile[p].get('ASK', 0) for p in upper_prices]) if upper_prices else 0
+
+        # Price change
+        price_change = closing_price - previous_close if previous_close is not None else 0
+        price_change_pct = (price_change / previous_close * 100) if previous_close is not None and previous_close != 0 else 0
+
+        signals.append({
+            'timestamp': timestamp,
+            'shape': shape,
+            'close_price': closing_price,
+            'previous_close': previous_close,
+            'price_change': price_change,
+            'price_change_pct': price_change_pct,
+            'total_bid': total_bid,
+            'total_ask': total_ask,
+            'bid_ask_ratio': total_bid / total_ask if total_ask > 0 else 0,
+            'num_price_levels': len(active_prices),
+            'lower_bid_volume': lower_bid,
+            'upper_ask_volume': upper_ask,
+            'max_lower_bid': max_lower_bid,
+            'max_upper_ask': max_upper_ask,
+            'bid_concentration': lower_bid / total_bid if total_bid > 0 else 0,
+            'ask_concentration': upper_ask / total_ask if total_ask > 0 else 0,
+        })
+
+# Save to CSV
+if signals:
+    df_signals = pd.DataFrame(signals)
+    df_signals.to_csv(csv_path_output, index=False, sep=';', decimal=',')
+    print(f"Saved {len(signals)} signals to {csv_path_output}")
+    print(f"  - d-Shape signals: {len([s for s in signals if s['shape'] == 'd_shape'])}")
+    print(f"  - p-Shape signals: {len([s for s in signals if s['shape'] == 'p_shape'])}")
+else:
+    print("No d-Shape or p-Shape signals detected")
 
 # Force window to be visible and bring to front
 try:

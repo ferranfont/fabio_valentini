@@ -9,11 +9,15 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
 
+# Force window to front
+import os
+os.environ['QT_QPA_PLATFORM'] = 'windows'
+
 # ============ CONFIGURATION ============
 STARTING_INDEX = 0  # Change this to start at a different frame (0 = first frame)
 # You can also set a specific time like: STARTING_TIME = "2025-10-09 18:15:00"
 STARTING_TIME =  "2025-10-09 18:02:25"    #None  # Set to None to use STARTING_INDEX instead
-PROFILE_FREQUENCY = 5  # Frequency for Market Profile
+PROFILE_FREQUENCY = 5  # Frequency for Market Profile in seconds
 # =======================================
 
 # Load data
@@ -25,7 +29,7 @@ df["Timestamp"] = pd.to_datetime(df["Timestamp"])
 # Generate timestamps every 10 seconds
 start_time = df["Timestamp"].min()
 end_time = df["Timestamp"].max()
-timestamps = pd.date_range(start=start_time, end=end_time, freq="2s")  # Antes era 10s
+timestamps = pd.date_range(start=start_time, end=end_time, freq="1s")  # Antes era 10s
 
 # Pre-compute market profiles for all timestamps
 print("Pre-computing market profiles...")
@@ -254,22 +258,22 @@ def plot_profile(index):
     # Plot four panels with common Y axis
     # Panel 1 (leftmost): 3 frames ago (ONLY THIS ONE shows Y-axis labels)
     plot_single_profile(ax1, frame1_index,
-                       title_prefix=f"T-3 (-{time_3frames}s) - ",
+                       title_prefix=f"T-3 - ",
                        common_prices=common_prices, show_ylabel=True)
 
     # Panel 2: 2 frames ago
     plot_single_profile(ax2, frame2_index,
-                       title_prefix=f"T-2 (-{time_2frames}s) - ",
+                       title_prefix=f"T-2 - ",
                        common_prices=common_prices, show_ylabel=False)
 
     # Panel 3: 1 frame ago
     plot_single_profile(ax3, frame3_index,
-                       title_prefix=f"T-1 (-{time_1frame}s) - ",
+                       title_prefix=f"T-1 - ",
                        common_prices=common_prices, show_ylabel=False)
 
     # Panel 4 (rightmost): Current frame
     plot_single_profile(ax4, frame4_index,
-                       title_prefix=f"CURRENT (T-0) - ",
+                       title_prefix=f"CURRENT - ",
                        common_prices=common_prices, show_ylabel=False)
 
     fig.canvas.draw_idle()
@@ -367,4 +371,11 @@ print("  - Play: Start animation (500ms per frame)")
 print("  - Pause: Stop animation")
 print("\nClose the window to exit.")
 
-plt.show()
+# Force window to be visible and bring to front
+try:
+    fig.canvas.manager.window.wm_attributes('-topmost', 1)
+    fig.canvas.manager.window.after_idle(fig.canvas.manager.window.attributes, '-topmost', False)
+except:
+    pass
+
+plt.show(block=True)

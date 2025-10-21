@@ -29,7 +29,7 @@ df["Timestamp"] = pd.to_datetime(df["Timestamp"])
 # Generate timestamps every 10 seconds
 start_time = df["Timestamp"].min()
 end_time = df["Timestamp"].max()
-timestamps = pd.date_range(start=start_time, end=end_time, freq="1s")  # Antes era 10s
+timestamps = pd.date_range(start=start_time, end=end_time, freq="90s")  # Antes era 10s
 
 # Pre-compute market profiles for all timestamps
 print("Pre-computing market profiles...")
@@ -70,9 +70,22 @@ else:
     start_idx = max(0, min(STARTING_INDEX, len(profiles_data) - 1))
     print(f"Starting at index: {start_idx} (timestamp: {profiles_data[start_idx][0]})")
 
-# Create the figure with four subplots (left to right: oldest to newest)
-fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(36, 10))
-plt.subplots_adjust(left=0.03, bottom=0.25, right=0.99, top=0.95, wspace=0.04)
+# Create the figure with 2 rows and 5 columns
+# Top row: 5 market profiles
+# Bottom row: Price line chart (spanning all 5 columns)
+fig = plt.figure(figsize=(45, 12))
+gs = fig.add_gridspec(2, 5, left=0.04, bottom=0.12, right=0.99, top=0.96,
+                      wspace=0.04, hspace=0.10, height_ratios=[3, 1])
+
+# Top row: Market profile subplots
+ax1 = fig.add_subplot(gs[0, 0])
+ax2 = fig.add_subplot(gs[0, 1])
+ax3 = fig.add_subplot(gs[0, 2])
+ax4 = fig.add_subplot(gs[0, 3])
+ax5 = fig.add_subplot(gs[0, 4])
+
+# Bottom row: Price line chart spanning all columns
+ax_price = fig.add_subplot(gs[1, :])
 
 # Global state
 current_index = [start_idx]
@@ -140,7 +153,7 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
     # Set y-axis labels to prices (only show if requested)
     ax.set_yticks(y_positions)
     if show_ylabel:
-        ax.set_yticklabels([f"{p:.2f}" for p in prices], fontsize=6)  # Reduced from 8 to 6
+        ax.set_yticklabels([f"{p:.2f}" for p in prices], fontsize=5)  # Reduced to 5
     else:
         ax.set_yticklabels([])
 
@@ -159,57 +172,13 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
 
     # Labels and title
     #ax.set_xlabel('Volume (BID ← | → ASK)', fontsize=11, fontweight='bold')
-    # Only show Y-axis label if show_ylabel is True
-    if show_ylabel:
-        ax.set_ylabel('Price Level', fontsize=11, fontweight='bold')
+    # No Y-axis label (removed "Price Level")
 
-    # Title with closing price
+    # Title with closing price (only time, no date)
     close_str = f' | Close: {closing_price:.2f}' if closing_price is not None else ''
-    ax.set_title(f'{title_prefix}-{timestamp.strftime("%Y-%m-%d %H:%M:%S")}{close_str}\n'
+    ax.set_title(f'{title_prefix}{timestamp.strftime("%H:%M:%S")}{close_str}\n'
                  f'({PROFILE_FREQUENCY}-second rolling window | Step {index+1}/{len(profiles_data)})',
-                 fontsize=10, fontweight='bold', pad=10)
-
-    # Add price line showing historical movement
-    # Get price history up to current timestamp
-    historical_prices = []
-    historical_times = []
-    for i in range(max(0, index - 60), index + 1):  # Last 60 frames (~10 min)
-        if i < len(profiles_data):
-            ts_hist, _, close_hist = profiles_data[i]
-            if close_hist is not None:
-                historical_prices.append(close_hist)
-                historical_times.append(i - max(0, index - 60))
-
-    # Plot price line on the right side of the chart
-    if len(historical_prices) > 1:
-        # Normalize historical times to x-axis position (right side)
-        x_offset = max_x * 0.7  # Start at 70% of max_x
-        x_range = max_x * 0.25   # Use 25% of max_x for price line width
-        x_positions = [x_offset + (t / max(historical_times)) * x_range for t in historical_times]
-
-        # Map prices to y-axis positions
-        y_line_positions = []
-        for price in historical_prices:
-            # Find closest price level in y_positions
-            if price in prices:
-                y_line_positions.append(prices.index(price))
-            else:
-                # Interpolate position
-                sorted_prices = sorted(prices)
-                for i, p in enumerate(sorted_prices):
-                    if price <= p:
-                        y_line_positions.append(i)
-                        break
-                else:
-                    y_line_positions.append(len(prices) - 1)
-
-        # Draw price line in grey with width 1
-        ax.plot(x_positions, y_line_positions, color='grey', linewidth=1, alpha=0.8, zorder=4)
-
-        # Add blue dot at the end of the price line (current closing price)
-        if len(y_line_positions) > 0:
-            ax.plot(x_positions[-1], y_line_positions[-1], 'o', color='blue', markersize=8, zorder=5,
-                    markeredgecolor='darkblue', markeredgewidth=1.5)
+                 fontsize=8, fontweight='bold', pad=10)
 
     # Add grid
     ax.grid(True, alpha=0.3, axis='x')
@@ -230,18 +199,84 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
 
     return prices, (bid_volumes, ask_volumes)
 
-def plot_profile(index):
-    """Plot four frames: -3, -2, -1, and current with common Y axis."""
-    # Calculate frame indices
-    frame1_index = max(0, index - 3)  # 3 frames ago
-    frame2_index = max(0, index - 2)  # 2 frames ago
-    frame3_index = max(0, index - 1)  # 1 frame ago
-    frame4_index = index              # current frame
+def plot_price_line(index):
+    """Plot price line chart showing historical close prices."""
+    ax_price.clear()
 
-    # Collect all unique prices from all four profiles to create common Y axis
+    # Get historical data up to current index
+    # Show last 200 frames or all available data
+    start_idx = max(0, index - 200)
+    historical_data = profiles_data[start_idx:index + 1]
+
+    # Extract timestamps and closing prices
+    times = []
+    prices = []
+    for ts, _, close_price in historical_data:
+        if close_price is not None:
+            times.append(ts)
+            prices.append(close_price)
+
+    if len(prices) > 0:
+        # Plot price line in grey with transparency 0.8 and width 1
+        ax_price.plot(times, prices, color='grey', linewidth=1, alpha=0.8)
+
+        # Mark T-4, T-3, T-2, T-1 positions with small grey circles
+        # Get the timestamps for these frames
+        frame_indices = [
+            max(0, index - 4),  # T-4
+            max(0, index - 3),  # T-3
+            max(0, index - 2),  # T-2
+            max(0, index - 1),  # T-1
+        ]
+
+        for frame_idx in frame_indices:
+            if frame_idx < len(profiles_data):
+                ts_marker, _, close_marker = profiles_data[frame_idx]
+                if close_marker is not None:
+                    # Plot small grey circle
+                    ax_price.plot(ts_marker, close_marker, 'o', color='grey',
+                                 markersize=5, alpha=0.6, zorder=4)
+
+        # Mark current price with a blue dot (on top)
+        if len(times) > 0:
+            ax_price.plot(times[-1], prices[-1], 'o', color='blue',
+                         markersize=8, zorder=5)
+
+        # Formatting (no title, no legend, no axis labels)
+        # Only horizontal grid
+        ax_price.grid(True, alpha=0.3, axis='y')
+
+        # Format x-axis to show only time (no rotation)
+        import matplotlib.dates as mdates
+        ax_price.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+        ax_price.tick_params(axis='x', rotation=0, labelsize=6)
+
+        # Add current price info
+        if len(prices) > 0:
+            price_change = prices[-1] - prices[0] if len(prices) > 1 else 0
+            price_change_pct = (price_change / prices[0] * 100) if prices[0] != 0 else 0
+
+            info_text = f'Current: {prices[-1]:.2f}\n'
+            info_text += f'Change: {price_change:+.2f} ({price_change_pct:+.2f}%)\n'
+            info_text += f'High: {max(prices):.2f}\nLow: {min(prices):.2f}'
+
+            ax_price.text(0.98, 0.98, info_text, transform=ax_price.transAxes,
+                         fontsize=9, verticalalignment='top', horizontalalignment='right',
+                         bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7))
+
+def plot_profile(index):
+    """Plot five frames: -4, -3, -2, -1, and current with common Y axis."""
+    # Calculate frame indices
+    frame1_index = max(0, index - 4)  # 4 frames ago
+    frame2_index = max(0, index - 3)  # 3 frames ago
+    frame3_index = max(0, index - 2)  # 2 frames ago
+    frame4_index = max(0, index - 1)  # 1 frame ago
+    frame5_index = index              # current frame
+
+    # Collect all unique prices from all five profiles to create common Y axis
     all_prices = set()
 
-    for idx in [frame1_index, frame2_index, frame3_index, frame4_index]:
+    for idx in [frame1_index, frame2_index, frame3_index, frame4_index, frame5_index]:
         if idx < len(profiles_data):
             _, profile, _ = profiles_data[idx]
             if profile:
@@ -250,31 +285,40 @@ def plot_profile(index):
     # Create common sorted price list
     common_prices = sorted(list(all_prices)) if all_prices else None
 
-    # Calculate time differences in seconds (each frame is 5 seconds based on freq='5s')
-    time_3frames = 3 * 5  # 3 frames = 15 seconds
-    time_2frames = 2 * 5  # 2 frames = 10 seconds
-    time_1frame = 1 * 5   # 1 frame = 5 seconds
+    # Calculate time differences in seconds (each frame is 2 seconds based on freq='2s')
+    time_4frames = 4 * 2  # 4 frames = 8 seconds
+    time_3frames = 3 * 2  # 3 frames = 6 seconds
+    time_2frames = 2 * 2  # 2 frames = 4 seconds
+    time_1frame = 1 * 2   # 1 frame = 2 seconds
 
-    # Plot four panels with common Y axis
-    # Panel 1 (leftmost): 3 frames ago (ONLY THIS ONE shows Y-axis labels)
+    # Plot five panels with common Y axis
+    # Panel 1 (leftmost): 4 frames ago (ONLY THIS ONE shows Y-axis labels)
     plot_single_profile(ax1, frame1_index,
-                       title_prefix=f"T-3 - ",
+                       title_prefix=f"T-4 (-{time_4frames}s) - ",
                        common_prices=common_prices, show_ylabel=True)
 
-    # Panel 2: 2 frames ago
+    # Panel 2: 3 frames ago
     plot_single_profile(ax2, frame2_index,
-                       title_prefix=f"T-2 - ",
+                       title_prefix=f"T-3 (-{time_3frames}s) - ",
                        common_prices=common_prices, show_ylabel=False)
 
-    # Panel 3: 1 frame ago
+    # Panel 3: 2 frames ago
     plot_single_profile(ax3, frame3_index,
-                       title_prefix=f"T-1 - ",
+                       title_prefix=f"T-2 (-{time_2frames}s) - ",
                        common_prices=common_prices, show_ylabel=False)
 
-    # Panel 4 (rightmost): Current frame
+    # Panel 4: 1 frame ago
     plot_single_profile(ax4, frame4_index,
-                       title_prefix=f"CURRENT - ",
+                       title_prefix=f"T-1 (-{time_1frame}s) - ",
                        common_prices=common_prices, show_ylabel=False)
+
+    # Panel 5 (rightmost): Current frame
+    plot_single_profile(ax5, frame5_index,
+                       title_prefix=f"CURRENT (T-0) - ",
+                       common_prices=common_prices, show_ylabel=False)
+
+    # Plot price line chart in bottom row
+    plot_price_line(index)
 
     fig.canvas.draw_idle()
 
@@ -339,17 +383,17 @@ def animate():
     timer[0].add_callback(animate)
     timer[0].start()
 
-# Create slider for navigation
-ax_slider = plt.axes([0.1, 0.12, 0.85, 0.03])
+# Create buttons first (on top, smaller size)
+ax_prev = plt.axes([0.1, 0.07, 0.05, 0.018])
+ax_play = plt.axes([0.18, 0.07, 0.05, 0.018])
+ax_pause = plt.axes([0.26, 0.07, 0.05, 0.018])
+ax_next = plt.axes([0.34, 0.07, 0.05, 0.018])
+
+# Create slider below buttons (smaller height)
+ax_slider = plt.axes([0.1, 0.03, 0.85, 0.012])
 slider = Slider(ax_slider, 'Time', 0, len(profiles_data) - 1,
                 valinit=start_idx, valstep=1, color='skyblue')
 slider.on_changed(update_slider)
-
-# Create buttons
-ax_prev = plt.axes([0.1, 0.05, 0.1, 0.04])
-ax_play = plt.axes([0.25, 0.05, 0.1, 0.04])
-ax_pause = plt.axes([0.4, 0.05, 0.1, 0.04])
-ax_next = plt.axes([0.55, 0.05, 0.1, 0.04])
 
 btn_prev = Button(ax_prev, 'Previous', color='lightgray', hovercolor='gray')
 btn_play = Button(ax_play, 'Play', color='lightgreen', hovercolor='green')

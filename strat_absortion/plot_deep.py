@@ -18,6 +18,9 @@ STARTING_INDEX = 0  # Change this to start at a different frame (0 = first frame
 # You can also set a specific time like: STARTING_TIME = "2025-10-09 18:15:00"
 STARTING_TIME =  "2025-10-09 18:02:25"    #None  # Set to None to use STARTING_INDEX instead
 PROFILE_FREQUENCY = 5  # Frequency for Market Profile in seconds
+
+# Profile shape detection configuration
+DENSITY_SHAPE = 0.60  # 60% of volume must be concentrated in the zone to classify as d_shape or p_shape
 # =======================================
 
 # Load data
@@ -29,7 +32,7 @@ df["Timestamp"] = pd.to_datetime(df["Timestamp"])
 # Generate timestamps every 10 seconds
 start_time = df["Timestamp"].min()
 end_time = df["Timestamp"].max()
-timestamps = pd.date_range(start=start_time, end=end_time, freq="90s")  # Antes era 10s
+timestamps = pd.date_range(start=start_time, end=end_time, freq="1s")  # Antes era 10s
 
 # Pre-compute market profiles for all timestamps
 print("Pre-computing market profiles...")
@@ -99,6 +102,61 @@ def get_fixed_color(base_color):
     else:  # red
         return (0.8, 0, 0, 0.8)  # Fixed red
 
+def evaluate_profile_shape(profile):
+    """
+    Evaluate the distribution shape of a market profile.
+
+    Returns:
+        str: 'd_shape', 'p_shape', or 'balanced'
+
+    Logic:
+    - d_shape: Most volume (>= DENSITY_SHAPE) is BID volume concentrated in lower price levels
+    - p_shape: Most volume (>= DENSITY_SHAPE) is ASK volume concentrated in upper price levels
+    - balanced: No clear pattern
+    """
+    if not profile:
+        return 'balanced'
+
+    # Filter out price levels with no volume (empty levels)
+    active_prices = []
+    for price in sorted(profile.keys()):
+        bid_vol = profile[price].get('BID', 0)
+        ask_vol = profile[price].get('ASK', 0)
+        if bid_vol > 0 or ask_vol > 0:  # Only consider levels with volume
+            active_prices.append(price)
+
+    if len(active_prices) == 0:
+        return 'balanced'
+
+    # Calculate total volumes
+    total_bid = sum(profile[p].get('BID', 0) for p in active_prices)
+    total_ask = sum(profile[p].get('ASK', 0) for p in active_prices)
+    total_volume = total_bid + total_ask
+
+    if total_volume == 0:
+        return 'balanced'
+
+    # Split active prices into lower half and upper half
+    mid_point = len(active_prices) // 2
+    lower_prices = active_prices[:mid_point + (1 if len(active_prices) % 2 == 1 else 0)]
+    upper_prices = active_prices[mid_point:]
+
+    # Calculate BID volume in lower half
+    lower_bid = sum(profile[p].get('BID', 0) for p in lower_prices)
+
+    # Calculate ASK volume in upper half
+    upper_ask = sum(profile[p].get('ASK', 0) for p in upper_prices)
+
+    # Check for d_shape: BID volume concentrated in lower prices
+    if lower_bid / total_volume >= DENSITY_SHAPE:
+        return 'd_shape'
+
+    # Check for p_shape: ASK volume concentrated in upper prices
+    if upper_ask / total_volume >= DENSITY_SHAPE:
+        return 'p_shape'
+
+    return 'balanced'
+
 def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices=None, show_ylabel=True):
     """Plot a single market profile on the given axis.
 
@@ -153,7 +211,7 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
     # Set y-axis labels to prices (only show if requested)
     ax.set_yticks(y_positions)
     if show_ylabel:
-        ax.set_yticklabels([f"{p:.2f}" for p in prices], fontsize=5)  # Reduced to 5
+        ax.set_yticklabels([f"{p:.2f}" for p in prices], fontsize=6)  # Increased to 6
     else:
         ax.set_yticklabels([])
 
@@ -174,11 +232,13 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
     #ax.set_xlabel('Volume (BID ← | → ASK)', fontsize=11, fontweight='bold')
     # No Y-axis label (removed "Price Level")
 
-    # Title with closing price (only time, no date)
+    # Evaluate profile shape
+    profile_tag = evaluate_profile_shape(profile)
+
+    # Title with closing price (only time, no date) - simplified, single line
     close_str = f' | Close: {closing_price:.2f}' if closing_price is not None else ''
-    ax.set_title(f'{title_prefix}{timestamp.strftime("%H:%M:%S")}{close_str}\n'
-                 f'({PROFILE_FREQUENCY}-second rolling window | Step {index+1}/{len(profiles_data)})',
-                 fontsize=8, fontweight='bold', pad=10)
+    ax.set_title(f'{title_prefix}{timestamp.strftime("%H:%M:%S")}{close_str}',
+                 fontsize=10, fontweight='bold', pad=10)
 
     # Add grid
     ax.grid(True, alpha=0.3, axis='x')
@@ -186,12 +246,15 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
     # Add legend
     ax.legend(loc='upper right', fontsize=10)
 
-    # Add statistics text box
+    # Add statistics text box with profile tag
     total_bid = sum(bid_volumes)
     total_ask = sum(ask_volumes)
     stats_text = f'Total BID: {total_bid:.0f}\nTotal ASK: {total_ask:.0f}\n'
     stats_text += f'Price levels: {len(prices)}\n'
-    stats_text += f'BID/ASK ratio: {total_bid/total_ask if total_ask > 0 else 0:.2f}'
+    stats_text += f'BID/ASK ratio: {total_bid/total_ask if total_ask > 0 else 0:.2f}\n'
+    # Format profile tag: d-Shape, p-Shape, or Balanced
+    profile_display = profile_tag.replace('_', '-').title() if '_' in profile_tag else profile_tag.capitalize()
+    stats_text += f'PROFILE: {profile_display}'
 
     ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
             fontsize=9, verticalalignment='top',
@@ -249,7 +312,8 @@ def plot_price_line(index):
         # Format x-axis to show only time (no rotation)
         import matplotlib.dates as mdates
         ax_price.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-        ax_price.tick_params(axis='x', rotation=0, labelsize=6)
+        ax_price.tick_params(axis='x', rotation=0, labelsize=6)  # Increased for time labels
+        ax_price.tick_params(axis='y', labelsize=6)  # Same as upper subplot Y labels
 
         # Add current price info
         if len(prices) > 0:
@@ -285,36 +349,30 @@ def plot_profile(index):
     # Create common sorted price list
     common_prices = sorted(list(all_prices)) if all_prices else None
 
-    # Calculate time differences in seconds (each frame is 2 seconds based on freq='2s')
-    time_4frames = 4 * 2  # 4 frames = 8 seconds
-    time_3frames = 3 * 2  # 3 frames = 6 seconds
-    time_2frames = 2 * 2  # 2 frames = 4 seconds
-    time_1frame = 1 * 2   # 1 frame = 2 seconds
-
-    # Plot five panels with common Y axis
+    # Plot five panels with common Y axis (simplified titles)
     # Panel 1 (leftmost): 4 frames ago (ONLY THIS ONE shows Y-axis labels)
     plot_single_profile(ax1, frame1_index,
-                       title_prefix=f"T-4 (-{time_4frames}s) - ",
+                       title_prefix="T-4 | ",
                        common_prices=common_prices, show_ylabel=True)
 
     # Panel 2: 3 frames ago
     plot_single_profile(ax2, frame2_index,
-                       title_prefix=f"T-3 (-{time_3frames}s) - ",
+                       title_prefix="T-3 | ",
                        common_prices=common_prices, show_ylabel=False)
 
     # Panel 3: 2 frames ago
     plot_single_profile(ax3, frame3_index,
-                       title_prefix=f"T-2 (-{time_2frames}s) - ",
+                       title_prefix="T-2 | ",
                        common_prices=common_prices, show_ylabel=False)
 
     # Panel 4: 1 frame ago
     plot_single_profile(ax4, frame4_index,
-                       title_prefix=f"T-1 (-{time_1frame}s) - ",
+                       title_prefix="T-1 | ",
                        common_prices=common_prices, show_ylabel=False)
 
     # Panel 5 (rightmost): Current frame
     plot_single_profile(ax5, frame5_index,
-                       title_prefix=f"CURRENT (T-0) - ",
+                       title_prefix="CURRENT | ",
                        common_prices=common_prices, show_ylabel=False)
 
     # Plot price line chart in bottom row

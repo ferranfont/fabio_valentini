@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from datetime import timedelta
+from datetime import timedelta, datetime
 from rolling_profile import RollingMarketProfile
 import csv
 from pathlib import Path
@@ -8,6 +8,7 @@ from pathlib import Path
 # Use TkAgg backend for better compatibility
 import matplotlib
 matplotlib.use('TkAgg')
+import mplcursors
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
 
@@ -18,7 +19,7 @@ os.environ['QT_QPA_PLATFORM'] = 'windows'
 # ============ CONFIGURATION ============
 STARTING_INDEX = 0  # Change this to start at a different frame (0 = first frame)
 # You can also set a specific time like: STARTING_TIME = "2025-10-09 18:15:00"
-STARTING_TIME =  "2025-10-09 18:02:25"    #None  # Set to None to use STARTING_INDEX instead
+STARTING_TIME =  None   #"2025-10-09 18:02:25"    #None  # Set to None to use STARTING_INDEX instead
 PROFILE_FREQUENCY = 5  # Frequency for Market Profile in seconds
 
 # Profile shape detection configuration
@@ -29,7 +30,9 @@ PRICE_POSITION_THRESHOLD = 0.25  # Price must be in lower/upper 33% of the profi
 # =======================================
 
 # Load data
+#csv_path = "data/time_and_sales_nq.csv"
 csv_path = "data/time_and_sales_nq_30min.csv"
+
 print("Loading data...")
 df = pd.read_csv(csv_path, sep=";", decimal=",")
 df["Timestamp"] = pd.to_datetime(df["Timestamp"])
@@ -99,6 +102,11 @@ ax_price = fig.add_subplot(gs[1, :])
 current_index = [start_idx]
 is_playing = [False]
 timer = [None]
+
+# Store signal metadata for hover tooltips
+signal_metadata = []  # List of dicts with signal info and positions
+signal_scatter_dshape = None  # Scatter plot for d-shape signals
+signal_scatter_pshape = None  # Scatter plot for p-shape signals
 
 def get_fixed_color(base_color):
     """Return fixed color."""
@@ -310,7 +318,13 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
 
 def plot_price_line(index):
     """Plot price line chart showing historical close prices."""
+    global signal_metadata, signal_scatter_dshape, signal_scatter_pshape
     ax_price.clear()
+    signal_metadata = []  # Reset signal metadata for this frame
+
+    # Lists to collect signal coordinates for scatter plot
+    d_shape_times, d_shape_prices, d_shape_metadata = [], [], []
+    p_shape_times, p_shape_prices, p_shape_metadata = [], [], []
 
     # Get historical data up to current index
     # Show last 200 frames or all available data
@@ -346,10 +360,116 @@ def plot_price_line(index):
                     ax_price.plot(ts_marker, close_marker, 'o', color='grey',
                                  markersize=5, alpha=0.6, zorder=4)
 
-        # Mark current price with a blue dot (on top)
+        # Plot d-shape and p-shape signals for ALL historical data in view
+        for hist_idx in range(start_idx, index + 1):
+            if hist_idx < len(profiles_data):
+                ts_sig, profile_sig, close_sig = profiles_data[hist_idx]
+
+                if close_sig is not None and profile_sig:
+                    # Get previous close for shape evaluation
+                    previous_close_sig = None
+                    if hist_idx > 0 and hist_idx - 1 < len(profiles_data):
+                        _, _, previous_close_sig = profiles_data[hist_idx - 1]
+
+                    # Evaluate shape
+                    shape = evaluate_profile_shape(profile_sig, close_sig, previous_close_sig)
+
+                    # Calculate profile statistics for tooltip
+                    if shape in ['d_shape', 'p_shape']:
+                        active_prices = sorted([p for p in profile_sig.keys()])
+                        total_bid = sum(profile_sig[p].get('BID', 0) for p in active_prices)
+                        total_ask = sum(profile_sig[p].get('ASK', 0) for p in active_prices)
+
+                        # Calculate ALL statistics needed for tooltip
+                        num_price_levels = len(active_prices)
+                        bid_ask_ratio = total_bid / total_ask if total_ask > 0 else 0
+
+                        # Split into halves
+                        mid_point = len(active_prices) // 2
+                        lower_prices = active_prices[:mid_point + (1 if len(active_prices) % 2 == 1 else 0)]
+                        upper_prices = active_prices[mid_point:]
+
+                        lower_bid_volume = sum(profile_sig[p].get('BID', 0) for p in lower_prices)
+                        upper_ask_volume = sum(profile_sig[p].get('ASK', 0) for p in upper_prices)
+
+                        max_lower_bid = max([profile_sig[p].get('BID', 0) for p in lower_prices]) if lower_prices else 0
+                        max_upper_ask = max([profile_sig[p].get('ASK', 0) for p in upper_prices]) if upper_prices else 0
+
+                        bid_concentration = lower_bid_volume / total_bid if total_bid > 0 else 0
+                        ask_concentration = upper_ask_volume / total_ask if total_ask > 0 else 0
+
+                        # Calculate price change
+                        price_change = close_sig - previous_close_sig if previous_close_sig else 0
+                        price_change_pct = (price_change / previous_close_sig * 100) if previous_close_sig and previous_close_sig != 0 else 0
+
+                    # Collect RED dots for d-shape
+                    if shape == 'd_shape':
+                        d_shape_times.append(ts_sig)
+                        d_shape_prices.append(close_sig)
+
+                        # Store metadata for hover
+                        metadata = {
+                            'timestamp': ts_sig,
+                            'price': close_sig,
+                            'shape': 'd-Shape',
+                            'previous_close': previous_close_sig,
+                            'price_change': price_change,
+                            'price_change_pct': price_change_pct,
+                            'bid_ask_ratio': bid_ask_ratio,
+                            'num_price_levels': num_price_levels,
+                            'lower_bid_volume': lower_bid_volume,
+                            'upper_ask_volume': upper_ask_volume,
+                            'max_lower_bid': max_lower_bid,
+                            'max_upper_ask': max_upper_ask,
+                            'bid_concentration': bid_concentration,
+                            'ask_concentration': ask_concentration
+                        }
+                        d_shape_metadata.append(metadata)
+                        signal_metadata.append(metadata)
+
+                    # Collect LIME GREEN dots for p-shape
+                    elif shape == 'p_shape':
+                        p_shape_times.append(ts_sig)
+                        p_shape_prices.append(close_sig)
+
+                        # Store metadata for hover
+                        metadata = {
+                            'timestamp': ts_sig,
+                            'price': close_sig,
+                            'shape': 'p-Shape',
+                            'previous_close': previous_close_sig,
+                            'price_change': price_change,
+                            'price_change_pct': price_change_pct,
+                            'bid_ask_ratio': bid_ask_ratio,
+                            'num_price_levels': num_price_levels,
+                            'lower_bid_volume': lower_bid_volume,
+                            'upper_ask_volume': upper_ask_volume,
+                            'max_lower_bid': max_lower_bid,
+                            'max_upper_ask': max_upper_ask,
+                            'bid_concentration': bid_concentration,
+                            'ask_concentration': ask_concentration
+                        }
+                        p_shape_metadata.append(metadata)
+                        signal_metadata.append(metadata)
+
+        # Now draw all d-shape and p-shape signals as scatter plots
+        signal_scatter_dshape = None
+        signal_scatter_pshape = None
+
+        if len(d_shape_times) > 0:
+            signal_scatter_dshape = ax_price.scatter(d_shape_times, d_shape_prices,
+                                                     s=80, c='red', alpha=0.9, zorder=6,
+                                                     edgecolors='darkred', linewidths=1.5)
+
+        if len(p_shape_times) > 0:
+            signal_scatter_pshape = ax_price.scatter(p_shape_times, p_shape_prices,
+                                                     s=80, c='lime', alpha=0.9, zorder=6,
+                                                     edgecolors='darkgreen', linewidths=1.5)
+
+        # Mark current price with a blue dot (on top of everything)
         if len(times) > 0:
             ax_price.plot(times[-1], prices[-1], 'o', color='blue',
-                         markersize=8, zorder=5)
+                         markersize=8, zorder=7)
 
         # Formatting (no title, no legend, no axis labels)
         # Only horizontal grid
@@ -357,9 +477,14 @@ def plot_price_line(index):
 
         # Format x-axis to show only time (no rotation)
         import matplotlib.dates as mdates
+        from matplotlib.ticker import ScalarFormatter
         ax_price.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-        ax_price.tick_params(axis='x', rotation=0, labelsize=6)  # Increased for time labels
-        ax_price.tick_params(axis='y', labelsize=6)  # Same as upper subplot Y labels
+        ax_price.tick_params(axis='x', rotation=0, labelsize=6)  # Time labels
+        ax_price.tick_params(axis='y', labelsize=7)  # Y-axis labels (increased by 1)
+
+        # Disable scientific notation on Y axis - use normal price format
+        ax_price.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
+        ax_price.ticklabel_format(style='plain', axis='y')
 
         # Add current price info - calculate change from previous close
         if len(prices) > 0:
@@ -384,6 +509,83 @@ def plot_price_line(index):
             ax_price.text(0.98, 0.98, info_text, transform=ax_price.transAxes,
                          fontsize=9, verticalalignment='top', horizontalalignment='right',
                          bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7))
+
+# Setup mplcursors for interactive tooltips on signal dots
+cursors_dshape = None
+cursors_pshape = None
+
+def setup_cursors():
+    """Setup mplcursors after scatter plots are created."""
+    global cursors_dshape, cursors_pshape, signal_scatter_dshape, signal_scatter_pshape
+
+    # Remove old cursors if they exist
+    if cursors_dshape is not None:
+        try:
+            cursors_dshape.remove()
+        except:
+            pass
+    if cursors_pshape is not None:
+        try:
+            cursors_pshape.remove()
+        except:
+            pass
+
+    # Add cursors to d-shape scatter if it exists
+    if signal_scatter_dshape is not None:
+        cursors_dshape = mplcursors.cursor(signal_scatter_dshape, hover=True)
+        @cursors_dshape.connect("add")
+        def on_add_dshape(sel):
+            # Find the metadata for this point
+            idx = sel.index
+            if idx < len(signal_metadata):
+                meta = signal_metadata[idx]
+                text = f"{meta['shape']}\n"
+                text += f"Time: {meta['timestamp'].strftime('%H:%M:%S')}\n"
+                text += f"Price: {meta['price']:.2f}\n"
+                text += f"Prev: {meta['previous_close']:.2f}\n"
+                text += f"Change: {meta['price_change']:+.2f}\n"
+                text += f"BID/ASK: {meta['bid_ask_ratio']:.2f}\n"
+                text += f"Levels: {meta['num_price_levels']}\n"
+                text += f"L.BID: {meta['lower_bid_volume']:.0f}\n"
+                text += f"U.ASK: {meta['upper_ask_volume']:.0f}\n"
+                text += f"Max L.BID: {meta['max_lower_bid']:.0f}\n"
+                text += f"Max U.ASK: {meta['max_upper_ask']:.0f}\n"
+                text += f"BID Conc: {meta['bid_concentration']:.2%}\n"
+                text += f"ASK Conc: {meta['ask_concentration']:.2%}"
+                sel.annotation.set_text(text)
+                sel.annotation.get_bbox_patch().set(fc='lightgrey', alpha=0.3, edgecolor='black', linewidth=2)
+                sel.annotation.set_fontsize(9)
+                sel.annotation.set_fontweight('bold')
+
+    # Add cursors to p-shape scatter if it exists
+    if signal_scatter_pshape is not None:
+        cursors_pshape = mplcursors.cursor(signal_scatter_pshape, hover=True)
+        @cursors_pshape.connect("add")
+        def on_add_pshape(sel):
+            # Find the metadata for this point
+            idx = sel.index
+            # p-shape indices start after d-shape indices
+            num_dshapes = len([m for m in signal_metadata if m['shape'] == 'd-Shape'])
+            metadata_idx = num_dshapes + idx
+            if metadata_idx < len(signal_metadata):
+                meta = signal_metadata[metadata_idx]
+                text = f"{meta['shape']}\n"
+                text += f"Time: {meta['timestamp'].strftime('%H:%M:%S')}\n"
+                text += f"Price: {meta['price']:.2f}\n"
+                text += f"Prev: {meta['previous_close']:.2f}\n"
+                text += f"Change: {meta['price_change']:+.2f}\n"
+                text += f"BID/ASK: {meta['bid_ask_ratio']:.2f}\n"
+                text += f"Levels: {meta['num_price_levels']}\n"
+                text += f"L.BID: {meta['lower_bid_volume']:.0f}\n"
+                text += f"U.ASK: {meta['upper_ask_volume']:.0f}\n"
+                text += f"Max L.BID: {meta['max_lower_bid']:.0f}\n"
+                text += f"Max U.ASK: {meta['max_upper_ask']:.0f}\n"
+                text += f"BID Conc: {meta['bid_concentration']:.2%}\n"
+                text += f"ASK Conc: {meta['ask_concentration']:.2%}"
+                sel.annotation.set_text(text)
+                sel.annotation.get_bbox_patch().set(fc='lightgrey', alpha=0.3, edgecolor='black', linewidth=2)
+                sel.annotation.set_fontsize(9)
+                sel.annotation.set_fontweight('bold')
 
 def plot_profile(index):
     """Plot five frames: -4, -3, -2, -1, and current with common Y axis."""
@@ -434,6 +636,9 @@ def plot_profile(index):
 
     # Plot price line chart in bottom row
     plot_price_line(index)
+
+    # Setup cursors for tooltips on signal dots
+    setup_cursors()
 
     fig.canvas.draw_idle()
 
@@ -534,7 +739,10 @@ print("\nClose the window to exit.")
 print("\nDetecting d-Shape and p-Shape patterns...")
 output_dir = Path("outputs")
 output_dir.mkdir(exist_ok=True)
-csv_path_output = output_dir / "dP_Shapes.csv"
+
+# Generate filename with timestamp
+timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+csv_path_output = output_dir / f"db_shapes_{timestamp_str}.csv"
 
 signals = []
 for i, (timestamp, profile, closing_price) in enumerate(profiles_data):

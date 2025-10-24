@@ -34,7 +34,11 @@ Created a **path helper system** that dynamically finds the project root and con
 4. ✅ `plot_backtest_results.py` - Results visualization
 
 ### Updated Scripts in strat_OM_4_absortion:
-- ✅ No Python files found (empty folder or no scripts yet)
+1. ✅ `main_start.py` - Orchestrator with centralized configuration
+2. ✅ `strat_absortion_shape.py` - Tick-driven backtest engine
+3. ✅ `plot_trades_chart.py` - Trade visualization
+4. ✅ `summary.py` - Performance summary
+5. ✅ `plot_backtest_results.py` - Equity charts
 
 ---
 
@@ -292,17 +296,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 1. ✅ Update remaining scripts in `strat_OM_1/` - COMPLETED
 2. ✅ Apply same fix to `strat_OM_2/` - COMPLETED
 3. ✅ Apply same fix to `strat_OM_3/` - COMPLETED
-4. ✅ Apply same fix to `strat_OM_4_absortion/` - COMPLETED (no files found)
+4. ✅ Apply same fix to `strat_OM_4_absortion/` - COMPLETED (5 files updated)
 5. ⚠️ Update any other scripts outside strategies/ folder if needed
 
 ---
 
 ## Version History
 
-- **2025-10-21**: Complete path fix implementation
+- **2025-10-24**: Complete path fix implementation
   - Created `path_helper.py` central module
   - Updated ALL scripts in `strat_OM_1/` (6 files)
   - Updated ALL scripts in `strat_OM_2/` (4 files)
   - Updated ALL scripts in `strat_OM_3/` (4 files)
-  - Verified `strat_OM_4_absortion/` (no files to update)
-  - **Total: 14 Python files updated successfully**
+  - Updated ALL scripts in `strat_OM_4_absortion/` (5 files)
+  - **Total: 19 Python files updated successfully**

@@ -37,36 +37,31 @@ print("Loading data...")
 df = pd.read_csv(csv_path, sep=";", decimal=",")
 df["Timestamp"] = pd.to_datetime(df["Timestamp"])
 
-# Pre-compute market profiles with 10-second aggregation
+# Pre-compute market profiles for EACH UNIQUE TICK TIMESTAMP
 # FIXED: Create ONE RollingMarketProfile and process ticks sequentially
 print("Pre-computing market profiles...")
 profiles_data = []
 
-# Generate timestamps every 0.5 seconds for aggregation
-start_time = df["Timestamp"].min()
-end_time = df["Timestamp"].max()
-timestamps = pd.date_range(start=start_time, end=end_time, freq="500ms")
-
 # Create a SINGLE RollingMarketProfile instance
 mp = RollingMarketProfile(window=timedelta(seconds=PROFILE_FREQUENCY))
 
+# Get unique timestamps from actual ticks (keeps original tick precision)
+timestamps = df["Timestamp"].unique()
+timestamps_sorted = sorted(timestamps)
+
 total_ticks = len(df)
 tick_idx = 0
-last_known_price = None
 
-for i, ts in enumerate(timestamps):
+for i, ts in enumerate(timestamps_sorted):
     if i % 50 == 0:
-        print(f"  Processing {i}/{len(timestamps)}... (tick {tick_idx}/{total_ticks})")
+        print(f"  Processing {i}/{len(timestamps_sorted)}... (tick {tick_idx}/{total_ticks})")
 
-    # Process all ticks up to this timestamp
-    while tick_idx < total_ticks and df.iloc[tick_idx]["Timestamp"] <= ts:
+    # Add all ticks that have this exact timestamp
+    while tick_idx < total_ticks and df.iloc[tick_idx]["Timestamp"] == ts:
         row = df.iloc[tick_idx]
         mp.update(row["Timestamp"], row["Precio"], row["Volumen"], row["Lado"])
-        last_known_price = row["Precio"]  # Track last known price
+        closing_price = row["Precio"]  # Last price at this exact timestamp
         tick_idx += 1
-
-    # Get closing price (last known price up to this timestamp)
-    closing_price = last_known_price
 
     # Get the current profile (rolling window automatically maintained)
     profile = mp.profile()

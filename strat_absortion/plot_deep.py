@@ -30,8 +30,8 @@ PRICE_POSITION_THRESHOLD = 0.25  # Price must be in lower/upper 33% of the profi
 # =======================================
 
 # Load data
-#csv_path = "data/time_and_sales_nq_30min.csv"
-csv_path = "data/time_and_sales_nq.csv"
+csv_path = "data/time_and_sales_nq_30min.csv"
+#csv_path = "data/time_and_sales_nq.csv"
 
 print("Loading data...")
 df = pd.read_csv(csv_path, sep=";", decimal=",")
@@ -45,7 +45,7 @@ profiles_data = []
 # Generate timestamps every 0.5 seconds for aggregation
 start_time = df["Timestamp"].min()
 end_time = df["Timestamp"].max()
-timestamps = pd.date_range(start=start_time, end=end_time, freq="500ms")
+timestamps = pd.date_range(start=start_time, end=end_time, freq="1s")
 
 # Create a SINGLE RollingMarketProfile instance
 mp = RollingMarketProfile(window=timedelta(seconds=PROFILE_FREQUENCY))
@@ -278,6 +278,9 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
     # Add blue dot at closing price on y-axis
     if closing_price is not None and closing_price in prices:
         price_idx = prices.index(closing_price)
+        # Add horizontal dashed blue line at closing price level
+        ax.axhline(y=price_idx, color='blue', linewidth=1, linestyle='--', alpha=0.6, zorder=4)
+        # Add blue dot on top of the line
         ax.plot(0, price_idx, 'o', color='blue', markersize=10, zorder=5,
                 markeredgecolor='darkblue', markeredgewidth=2)
 
@@ -513,8 +516,8 @@ def plot_price_line(index):
                 info_text = f'Close: {current_price:.2f}\n'
                 info_text += f'Change: N/A'
 
-            ax_price.text(0.98, 0.98, info_text, transform=ax_price.transAxes,
-                         fontsize=9, verticalalignment='top', horizontalalignment='right',
+            ax_price.text(0.02, 0.02, info_text, transform=ax_price.transAxes,
+                         fontsize=9, verticalalignment='bottom', horizontalalignment='left',
                          bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7))
 
 # Setup mplcursors for interactive tooltips on signal dots

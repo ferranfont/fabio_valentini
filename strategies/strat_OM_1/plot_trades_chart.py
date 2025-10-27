@@ -5,15 +5,34 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
-from config import CHART_WIDTH, CHART_HEIGHT, DATA_DIR, SYMBOL
+
+# Add paths for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import CHART_WIDTH, CHART_HEIGHT, SYMBOL
+from path_helper import get_data_path, get_output_path, get_charts_path
 
 # ==============================================================================
 # CONFIGURACIÓN
 # ==============================================================================
-TRADES_FILE = 'outputs/trading_record_strat_fabio_only_volume.csv'
-DATA_FILE = f'data/time_and_sales_absorption_{SYMBOL}.csv'
-OUTPUT_HTML = 'charts/trades_visualization_volume.html'
+# Selecciona qué archivo de trades visualizar:
+# - 'tracking_record.csv': Estrategia ORIGINAL (CON look-ahead bias)
+# - 'tracking_record_window.csv': Estrategia CORREGIDA (SIN look-ahead bias)
+STRATEGY_VERSION = 'window'  # Opciones: 'original' o 'window'
+
+# Mapeo de archivos
+TRADES_FILES = {
+    'original': get_output_path('tracking_record.csv'),
+    'window': get_output_path('tracking_record_window.csv')
+}
+OUTPUT_HTMLS = {
+    'original': get_charts_path('trades_visualization.html'),
+    'window': get_charts_path('trades_visualization_window.html')
+}
+
+TRADES_FILE = TRADES_FILES[STRATEGY_VERSION]
+DATA_FILE = get_data_path(f'time_and_sales_absorption_{SYMBOL}.csv')
+OUTPUT_HTML = OUTPUT_HTMLS[STRATEGY_VERSION]
 
 # Rango de trades a visualizar (por defecto)
 DEFAULT_START_INDEX = 0
@@ -88,15 +107,15 @@ def plot_trades_on_chart(start_idx=DEFAULT_START_INDEX, end_idx=DEFAULT_END_INDE
         hovertemplate='<b>%{x}</b><br>Precio: %{y:.2f}<extra></extra>'
     ))
 
-    # Agregar círculos de volumen extremo (bid_vol=rojo, ask_vol=verde)
-    df_bid_vol = df_price[(df_price['bid_vol'] == True)]
-    df_ask_vol = df_price[(df_price['ask_vol'] == True)]
+    # Agregar círculos de absorción (BID=rojo, ASK=verde)
+    df_bid_abs = df_price[(df_price['bid_abs'] == True)]
+    df_ask_abs = df_price[(df_price['ask_abs'] == True)]
 
-    # BID volume extreme (círculos rojos alpha 0.4)
-    if len(df_bid_vol) > 0:
+    # BID absorption (círculos rojos alpha 0.4)
+    if len(df_bid_abs) > 0:
         fig.add_trace(go.Scatter(
-            x=df_bid_vol['Timestamp'],
-            y=df_bid_vol['Precio']-0.25,
+            x=df_bid_abs['Timestamp'],
+            y=df_bid_abs['Precio']-0.25,
             mode='markers',
             marker=dict(
                 symbol='circle',
@@ -105,16 +124,16 @@ def plot_trades_on_chart(start_idx=DEFAULT_START_INDEX, end_idx=DEFAULT_END_INDE
                 line=dict(width=1, color='darkred')
             ),
             opacity=0.4,
-            name='BID Vol Extreme',
+            name='BID Absorption',
             showlegend=False,
-            hovertemplate='<b>BID VOL</b><br>%{x}<br>Precio: %{y:.2f}<extra></extra>'
+            hovertemplate='<b>BID ABS</b><br>%{x}<br>Precio: %{y:.2f}<extra></extra>'
         ))
 
-    # ASK volume extreme (círculos verdes alpha 0.4)
-    if len(df_ask_vol) > 0:
+    # ASK absorption (círculos verdes alpha 0.4)
+    if len(df_ask_abs) > 0:
         fig.add_trace(go.Scatter(
-            x=df_ask_vol['Timestamp'],
-            y=df_ask_vol['Precio']+0.25,
+            x=df_ask_abs['Timestamp'],
+            y=df_ask_abs['Precio']+0.25,
             mode='markers',
             marker=dict(
                 symbol='circle',
@@ -123,9 +142,9 @@ def plot_trades_on_chart(start_idx=DEFAULT_START_INDEX, end_idx=DEFAULT_END_INDE
                 line=dict(width=1, color='darkgreen')
             ),
             opacity=0.4,
-            name='ASK Vol Extreme',
+            name='ASK Absorption',
             showlegend=False,
-            hovertemplate='<b>ASK VOL</b><br>%{x}<br>Precio: %{y:.2f}<extra></extra>'
+            hovertemplate='<b>ASK ABS</b><br>%{x}<br>Precio: %{y:.2f}<extra></extra>'
         ))
 
     # Agregar entradas y salidas de cada trade
@@ -173,7 +192,9 @@ def plot_trades_on_chart(start_idx=DEFAULT_START_INDEX, end_idx=DEFAULT_END_INDE
                           f'<extra></extra>')
         ))
 
-        # Salida: cuadrado hueco (color según resultado)
+        # Salida: cuadrado hueco (negro)
+
+        # Color según resultado
         if profit > 0:
             exit_marker = 'green'
         elif profit < 0:
@@ -202,7 +223,7 @@ def plot_trades_on_chart(start_idx=DEFAULT_START_INDEX, end_idx=DEFAULT_END_INDE
                           f'<extra></extra>')
         ))
 
-        # Línea conectando entrada y salida (color según resultado, alpha 0.4)
+        # Línea conectando entrada y salida (gris, alpha 0.4)
         fig.add_trace(go.Scatter(
             x=[entry_time, exit_time],
             y=[entry_price, exit_price],
@@ -214,8 +235,9 @@ def plot_trades_on_chart(start_idx=DEFAULT_START_INDEX, end_idx=DEFAULT_END_INDE
         ))
 
     # Layout
+    version_label = "ORIGINAL (con bias)" if STRATEGY_VERSION == 'original' else "CORREGIDA (sin bias)"
     fig.update_layout(
-        title=f'{SYMBOL} - Trades Visualization - Fabio Only Volume (Índices {start_idx} a {end_idx})',
+        title=f'{SYMBOL} - Trades Visualization [{version_label}] (Índices {start_idx} a {end_idx})',
         width=CHART_WIDTH,
         height=CHART_HEIGHT,
         margin=dict(l=20, r=20, t=60, b=20),

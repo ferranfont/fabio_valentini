@@ -3,12 +3,32 @@ import numpy as np
 import webbrowser
 import plotly.graph_objects as go
 from pathlib import Path
+import sys
+
+# Add strategies folder to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from path_helper import get_output_path, get_project_root
 
 # ==============================================================================
 # CONFIGURACIÓN
 # ==============================================================================
-TRADES_FILE = 'outputs/trading_record_strat_fabio_only_volume.csv'
-OUTPUT_HTML = 'charts/summary_report_volume.html'
+# Selecciona qué archivo de trades analizar:
+# - 'original': Estrategia ORIGINAL (CON look-ahead bias)
+# - 'window': Estrategia CORREGIDA (SIN look-ahead bias)
+STRATEGY_VERSION = 'window'  # Opciones: 'original' o 'window'
+
+# Mapeo de archivos
+TRADES_FILES = {
+    'original': get_output_path('tracking_record.csv'),
+    'window': get_output_path('tracking_record_window.csv')
+}
+OUTPUT_HTMLS = {
+    'original': Path(get_project_root()) / 'summary_report.html',
+    'window': Path(get_project_root()) / 'summary_report_window.html'
+}
+
+file_path = TRADES_FILES[STRATEGY_VERSION]
+html_path = OUTPUT_HTMLS[STRATEGY_VERSION]
 
 # ==============================================================================
 
@@ -28,14 +48,14 @@ def calculate_mdd(equity_curve):
 
 # === 1. Load data ===
 
-# Load the trades CSV
-df = pd.read_csv(TRADES_FILE, sep=';', decimal=',')
+# FIX: Add 'sep' and 'decimal' arguments to correctly read the CSV
+df = pd.read_csv(file_path, sep=';', decimal=',')
 
 # Specify the profit column
-profit_col = 'profit_dollars'
+profit_col = 'profit_dollars' 
 
 if profit_col not in df.columns:
-    raise ValueError(f"Required profit column '{profit_col}' not found. Available columns: {list(df.columns)}")
+    raise ValueError(f"Required profit column '{profit_col}' not found in tracking_record.csv. Available columns: {list(df.columns)}")
 
 profits = df[profit_col].astype(float)
 
@@ -56,7 +76,7 @@ if losses.sum() == 0:
     profit_factor = np.inf
 else:
     profit_factor = abs(wins.sum() / losses.sum())
-
+    
 expectancy = (win_rate/100 * avg_win) + ((1 - win_rate/100) * avg_loss)
 equity_curve = profits.cumsum()
 total_profit = equity_curve.iloc[-1] if not equity_curve.empty else 0
@@ -92,9 +112,9 @@ calmar_ratio = (
 # === 3. Build summary table (Transposed) ===
 summary_data = {
     "Metric": [
-        "💰 Total Profit", "📈 Total Trades", "✅ Wins", "❌ Losses",
+        "💰 Total Profit", "📈 Total Trades", "✅ Wins", "❌ Losses", 
         "🏆 Win %", "💵 Avg Profit", "⬆️ Avg Win", "⬇️ Avg Loss",
-        "⚖️ Profit Factor", "🔮 Expectancy",
+        "⚖️ Profit Factor", "🔮 Expectancy", 
         "⛰️ Max Drawdown", "🎯 Sharpe Ratio", "🛡️ Sortino Ratio", "🔥 Calmar Ratio"
     ],
     "Value": [
@@ -118,16 +138,17 @@ summary_data = {
 summary_df = pd.DataFrame(summary_data)
 
 # === 4. Create HTML table and Title ===
-# Detectar el modo usado (MODO_1, MODO_2, MODO_3)
-filter_mode = df['filter_mode'].iloc[0] if 'filter_mode' in df.columns else 'MODO_1'
-table_title = f"Performance Summary - {filter_mode}"
+version_label = "ORIGINAL (con look-ahead bias)" if STRATEGY_VERSION == 'original' else "CORREGIDA (sin look-ahead bias)"
+table_title = f"Strategy Performance Summary Report - {version_label}"
 
 fig = go.Figure(
     data=[
         go.Table(
+            # FIX: Define column widths to control the table's width
             columnorder=[1, 2],
-            columnwidth=[60, 40],
-
+            # Maintain the ratio between Metric and Value columns
+            columnwidth=[60, 40], 
+            
             header=dict(
                 values=list(summary_df.columns),
                 fill_color='#2c3e50', # Dark blue/gray header
@@ -145,7 +166,8 @@ fig = go.Figure(
     ]
 )
 
-new_width = 380
+# FIX APPLIED HERE: Reduce the overall figure width from 400 to 300 pixels
+new_width = 400 
 
 fig.update_layout(
     title={
@@ -154,22 +176,24 @@ fig.update_layout(
         'x':0.5,
         'xanchor': 'center',
         'yanchor': 'top',
-        'font': dict(size=14, color='#2980b9') # Blue title
+        'font': dict(size=18, color='#2980b9') # Blue title
     },
+    # Set the new width and ensure it's centered
     width=new_width,
-    margin=dict(l=20, r=20, t=60, b=50),
+    # Adjust margins to accommodate title and keep it clean
+    margin=dict(l=20, r=20, t=80, b=50), 
     paper_bgcolor='white'
 )
 
 
-fig.write_html(str(OUTPUT_HTML), auto_open=False)
+fig.write_html(str(html_path), auto_open=False)
 
 # === 5. Open summary in Chrome ===
 try:
     # Attempt to open with the system's preferred browser
-    webbrowser.open_new_tab(str(Path(OUTPUT_HTML).resolve()))
+    webbrowser.open_new_tab(str(html_path.resolve()))
 except webbrowser.Error:
-    print("Could not open the report automatically. Please check summary report file.")
+    print("Could not open the report automatically. Please check 'summary_report.html'.")
 
 # === 6. Call the equity curve plot script ===
 print(f"\nSummary report generated and opened.")
@@ -184,7 +208,7 @@ from plot_backtest_results import load_trades, create_equity_curve, create_distr
 
 try:
     # Load trades data
-    df_trades = load_trades(TRADES_FILE)
+    df_trades = load_trades(file_path)
 
     # Print detailed summary
     print_detailed_summary(df_trades)
@@ -192,14 +216,14 @@ try:
     # Create equity curve chart
     print(f"\nCreating equity curve chart...")
     fig_equity = create_equity_curve(df_trades)
-    equity_path = Path("charts/backtest_results_volume_equity.html")
+    equity_path = Path("charts/backtest_results_equity.html")
     fig_equity.write_html(str(equity_path))
     print(f"  Saved: {equity_path}")
 
     # Create distribution charts
     print(f"Creating distribution charts...")
     fig_dist = create_distribution_charts(df_trades)
-    dist_path = Path("charts/backtest_results_volume_distributions.html")
+    dist_path = Path("charts/backtest_results_distributions.html")
     fig_dist.write_html(str(dist_path))
     print(f"  Saved: {dist_path}")
 
@@ -208,11 +232,11 @@ try:
     webbrowser.open(str(equity_path.resolve()))
 
     print("\nAll reports generated successfully!")
-    print(f"  - Summary: {OUTPUT_HTML}")
+    print(f"  - Summary: summary_report.html")
     print(f"  - Equity Curve: {equity_path}")
     print(f"  - Distributions: {dist_path}")
 
 except Exception as e:
     print(f"\nError generating backtest charts: {e}")
     print("Summary report was generated successfully, but backtest charts failed.")
-    print("You can run 'python strat_OM_2/plot_backtest_results.py' manually.")
+    print("You can run 'python strat/plot_backtest_results.py' manually.")

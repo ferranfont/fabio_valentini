@@ -5,15 +5,21 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
+
+# Add strategies folder to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from path_helper import get_data_path, get_output_path, get_charts_path
+
+# Add project root to path for config.py
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from config import CHART_WIDTH, CHART_HEIGHT, DATA_DIR, SYMBOL
 
 # ==============================================================================
 # CONFIGURACIÓN
 # ==============================================================================
-TRADES_FILE = 'outputs/trading_record_strat_fabio_vol_not_fake.csv'
-DATA_FILE = f'data/time_and_sales_absorption_{SYMBOL}.csv'
-OUTPUT_HTML = 'charts/trades_visualization_vol_not_fake.html'
+TRADES_FILE = get_output_path('trading_record_strat_fabio_only_volume.csv')
+DATA_FILE = get_data_path(f'time_and_sales_absorption_{SYMBOL}.csv')
+OUTPUT_HTML = get_charts_path('trades_visualization_volume.html')
 
 # Rango de trades a visualizar (por defecto)
 DEFAULT_START_INDEX = 0
@@ -215,7 +221,7 @@ def plot_trades_on_chart(start_idx=DEFAULT_START_INDEX, end_idx=DEFAULT_END_INDE
 
     # Layout
     fig.update_layout(
-        title=f'{SYMBOL} - Trades Visualization - Vol NOT FAKE (Índices {start_idx} a {end_idx})',
+        title=f'{SYMBOL} - Trades Visualization - Fabio Only Volume (Índices {start_idx} a {end_idx})',
         width=CHART_WIDTH,
         height=CHART_HEIGHT,
         margin=dict(l=20, r=20, t=60, b=20),
@@ -242,14 +248,13 @@ def plot_trades_on_chart(start_idx=DEFAULT_START_INDEX, end_idx=DEFAULT_END_INDE
     )
 
     # Guardar HTML
-    output_path = os.path.join(os.getcwd(), OUTPUT_HTML)
-    fig.write_html(output_path, config={
+    fig.write_html(OUTPUT_HTML, config={
         "scrollZoom": True,
         "displayModeBar": True,
         "staticPlot": False
     })
 
-    print(f"\nGráfico guardado: {output_path}")
+    print(f"\nGráfico guardado: {OUTPUT_HTML}")
     print(f"\nEstadísticas del rango visualizado:")
     print(f"  Trades: {len(df_trades)}")
     print(f"  LONG: {len(df_trades[df_trades['side']=='LONG'])}")
@@ -259,7 +264,7 @@ def plot_trades_on_chart(start_idx=DEFAULT_START_INDEX, end_idx=DEFAULT_END_INDE
     print(f"\n{'='*70}\n")
 
     # Abrir en navegador
-    webbrowser.open('file://' + os.path.realpath(output_path))
+    webbrowser.open('file://' + os.path.realpath(OUTPUT_HTML))
 
 
 if __name__ == "__main__":

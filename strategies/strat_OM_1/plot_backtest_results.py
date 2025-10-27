@@ -1,16 +1,33 @@
 """
-Visualización de resultados del backtest - Estrategia Fabio Only Volume.
+Visualización de resultados del backtest.
 """
 
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import sys
+from pathlib import Path
+
+# Add strategies folder to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from path_helper import get_output_path, get_charts_path
 
 # ==============================================================================
 # CONFIGURACIÓN
 # ==============================================================================
-TRADES_FILE = 'outputs/trading_record_strat_fabio_vol_not_fake.csv'
-OUTPUT_FILE = 'charts/backtest_results_vol_not_fake.html'
+# Selecciona qué archivo de trades visualizar:
+# - 'original': Estrategia ORIGINAL (CON look-ahead bias)
+# - 'window': Estrategia CORREGIDA (SIN look-ahead bias)
+STRATEGY_VERSION = 'window'  # Opciones: 'original' o 'window'
+
+# Mapeo de archivos
+TRADES_FILES = {
+    'original': get_output_path('tracking_record.csv'),
+    'window': get_output_path('tracking_record_window.csv')
+}
+
+TRADES_FILE = TRADES_FILES[STRATEGY_VERSION]
+OUTPUT_FILE = get_charts_path('backtest_results.html')  # Será sobrescrito por summary.py
 
 
 def load_trades(filepath):
@@ -29,11 +46,11 @@ def load_trades(filepath):
 def create_equity_curve(df):
     """Crea curva de equity."""
     fig = make_subplots(
-        rows=2, cols=1,
-        row_heights=[0.6, 0.4],
+        rows=3, cols=1,
+        row_heights=[0.5, 0.25, 0.25],
         shared_xaxes=True,
-        subplot_titles=("Curva de Equity", "Drawdown"),
-        vertical_spacing=0.1
+        subplot_titles=("Curva de Equity", "Profit por Trade", "Drawdown"),
+        vertical_spacing=0.08
     )
 
     # Curva de equity con colores verde/rojo según profit
@@ -53,6 +70,19 @@ def create_equity_curve(df):
         row=1, col=1
     )
 
+    # Profit por trade con colores
+    colors = ['green' if p > 0 else 'red' for p in df['profit_dollars']]
+    fig.add_trace(
+        go.Bar(
+            x=list(range(len(df))),
+            y=df['profit_dollars'],
+            name='Profit/Loss',
+            marker_color=colors,
+            opacity=0.6
+        ),
+        row=2, col=1
+    )
+
     # Drawdown
     max_equity = df['cumulative_profit'].cummax()
     drawdown = df['cumulative_profit'] - max_equity
@@ -67,19 +97,20 @@ def create_equity_curve(df):
             fill='tozeroy',
             fillcolor='rgba(200,0,0,0.2)'
         ),
-        row=2, col=1
+        row=3, col=1
     )
 
     # Layout
-    fig.update_xaxes(title_text="Trade #", row=2, col=1)
+    fig.update_xaxes(title_text="Trade #", row=3, col=1)
     fig.update_yaxes(title_text="Equity ($)", row=1, col=1)
-    fig.update_yaxes(title_text="DD ($)", row=2, col=1)
+    fig.update_yaxes(title_text="P/L ($)", row=2, col=1)
+    fig.update_yaxes(title_text="DD ($)", row=3, col=1)
 
     fig.update_layout(
-        height=700,
+        height=900,
         showlegend=True,
         hovermode='x unified',
-        title_text=f"Backtest - Vol NOT FAKE - {len(df):,} trades"
+        title_text=f"Backtest Results - {len(df):,} trades"
     )
 
     return fig
@@ -161,7 +192,7 @@ def create_distribution_charts(df):
     fig.update_layout(
         height=800,
         showlegend=False,
-        title_text="Análisis de Distribuciones - Vol NOT FAKE"
+        title_text="Análisis de Distribuciones"
     )
 
     return fig

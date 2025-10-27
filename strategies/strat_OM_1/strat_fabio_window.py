@@ -1,11 +1,20 @@
 """
-Estrategia de Trading basada en Absorción con gestión de riesgo ATR.
+Estrategia de Trading con CORRECCIÓN DE LOOK-AHEAD BIAS.
+
+PROBLEMA CORREGIDO:
+- La estrategia original entraba en T cuando la señal bid_abs/ask_abs se calculaba
+  mirando 60s al FUTURO (T+60s).
+- En tiempo real, la señal solo está disponible DESPUÉS de esos 60s.
+
+SOLUCIÓN (Shift de Señales):
+- Las señales se desplazan SIGNAL_DELAY_SEC segundos hacia adelante.
+- Entrada al precio disponible en T+60s, no en T.
+- SIN look-ahead bias: solo usa información disponible en el momento de entrada.
 
 Lógica:
-- LONG: Cuando bid_abs = True (absorción en BID, círculo rojo)
-- SHORT: Cuando ask_abs = True (absorción en ASK, círculo verde)
-- TP: 2 * ATR
-- SL: 1 * ATR
+- LONG: Cuando bid_abs = True (absorción BID confirmada después de 60s)
+- SHORT: Cuando ask_abs = True (absorción ASK confirmada después de 60s)
+- TP/SL: Fijos en puntos
 
 Gestión:
 - 1 contrato por operación
@@ -17,20 +26,43 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, time
 import os
+import sys
+from pathlib import Path
+
+# Add paths for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from path_helper import get_data_path, get_output_path, get_charts_path, get_project_root
+
+
 
 # ========== CONFIGURACIÓN ==========
 SYMBOL = 'NQ'
-DATA_FILE = f'data/time_and_sales_absorption_{SYMBOL}.csv'
-OUTPUT_FILE = 'outputs/tracking_record.csv'
+DATA_FILE = get_data_path(f'time_and_sales_absorption_{SYMBOL}.csv')
+OUTPUT_FILE = get_output_path('tracking_record_window.csv')
+
+# ========== PARÁMETRO CRÍTICO: DELAY DE SEÑALES ==========
+# Este es el tiempo de la ventana futura usada en find_absortion_vol_efford.py
+# FUTURE_WINDOW_SEC = 30 en el script de detección (ACTUALIZADO - ventana rápida)
+SIGNAL_DELAY_SEC = 15 # Segundos de retraso para corregir look-ahead bias
 
 # Parámetros de la estrategia
-ATR_PERIOD = 14
-# TP_MULTIPLIER = 2.0  # TP = 2 * ATR (COMENTADO - AHORA USAMOS TP FIJO)
-# SL_MULTIPLIER = 1.0  # SL = 1 * ATR (COMENTADO - AHORA USAMOS SL FIJO)
+ATR_PERIOD = 14  # Solo para referencia
 
-# Targets y Stops FIJOS (en puntos)
-TP_POINTS = 2.5  # Take Profit fijo: ejemplo LONG 25000.25 -> 25002.25
-SL_POINTS = 2.0  # Stop Loss fijo: ejemplo LONG 25000.25 -> 24998.25
+# ==============================================================================
+# Targets y Stops FIJOS - CONFIGURACIÓN RÁPIDA Y EQUILIBRADA
+# ==============================================================================
+# OBJETIVO: TP/SL equilibrado (1:1) para señales rápidas
+#
+# CONFIGURACIONES ANTERIORES:
+#   Config 1: TP=2.5, SL=2.0 → R:R = 1.25:1
+#   Config 2: TP=4.0, SL=3.0 → R:R = 1.33:1 (demasiado amplio, pocos hits)
+#
+# NUEVA (equilibrio - TP/SL simétrico):
+TP_POINTS = 2.0  # Take Profit: 2 puntos = $40 por trade
+SL_POINTS = 2.0  # Stop Loss: 2 puntos = -$40 por trade
+# Ratio R:R = 1.0:1 (equilibrado, mayor probabilidad de hit)
+# ==============================================================================
 
 # Configuración del instrumento
 TICK_SIZE = 0.25  # NQ tick size
@@ -88,12 +120,80 @@ def calculate_atr(df, period=14):
     return df_with_atr
 
 
+def shift_signals(df, delay_seconds=60):
+    """
+    CORRECCIÓN DE LOOK-AHEAD BIAS:
+    Desplaza las señales bid_abs y ask_abs hacia adelante en el tiempo.
+
+    Ejemplo:
+    - ANTES: T=100s tiene bid_abs=True (calculado mirando hasta T=160s)
+    - DESPUÉS: T=160s tiene bid_abs=True (disponible cuando realmente se conoce)
+
+    Args:
+        df: DataFrame con columnas TimeBin, bid_abs, ask_abs
+        delay_seconds: Segundos de desplazamiento (debe coincidir con FUTURE_WINDOW_SEC)
+
+    Returns:
+        DataFrame con señales desplazadas
+    """
+    print(f"\nAplicando corrección de look-ahead bias...")
+    print(f"  Desplazando señales {delay_seconds}s hacia adelante")
+
+    df = df.copy()
+    df['time_sec'] = (df['TimeBin'] - df['TimeBin'].min()).dt.total_seconds()
+
+    # Contar señales originales
+    original_bid_abs = df['bid_abs'].sum()
+    original_ask_abs = df['ask_abs'].sum()
+    print(f"  Señales originales: BID={original_bid_abs}, ASK={original_ask_abs}")
+
+    # Crear nuevas columnas desplazadas
+    df['bid_abs_shifted'] = False
+    df['ask_abs_shifted'] = False
+
+    # Para cada señal original, marcarla delay_seconds después
+    for idx in df[df['bid_abs']].index:
+        t_original = df.loc[idx, 'time_sec']
+        t_target = t_original + delay_seconds
+
+        # Buscar la fila más cercana a t_target
+        future_mask = df['time_sec'] >= t_target
+        if future_mask.any():
+            target_idx = df[future_mask].index[0]
+            df.loc[target_idx, 'bid_abs_shifted'] = True
+
+    for idx in df[df['ask_abs']].index:
+        t_original = df.loc[idx, 'time_sec']
+        t_target = t_original + delay_seconds
+
+        # Buscar la fila más cercana a t_target
+        future_mask = df['time_sec'] >= t_target
+        if future_mask.any():
+            target_idx = df[future_mask].index[0]
+            df.loc[target_idx, 'ask_abs_shifted'] = True
+
+    # Reemplazar columnas originales con las desplazadas
+    df['bid_abs'] = df['bid_abs_shifted']
+    df['ask_abs'] = df['ask_abs_shifted']
+
+    # Contar señales después del shift
+    shifted_bid_abs = df['bid_abs'].sum()
+    shifted_ask_abs = df['ask_abs'].sum()
+    print(f"  Señales después del shift: BID={shifted_bid_abs}, ASK={shifted_ask_abs}")
+    print(f"  Señales perdidas (fuera de ventana): BID={original_bid_abs - shifted_bid_abs}, ASK={original_ask_abs - shifted_ask_abs}")
+
+    # Limpiar columnas temporales
+    df = df.drop(columns=['time_sec', 'bid_abs_shifted', 'ask_abs_shifted'])
+
+    return df
+
+
 def run_backtest(df):
     """
-    Ejecuta backtest de la estrategia.
+    Ejecuta backtest de la estrategia CON CORRECCIÓN DE BIAS.
     """
     print("\n" + "="*70)
-    print("BACKTESTING ESTRATEGIA DE ABSORCIÓN CON ATR")
+    print("BACKTESTING ESTRATEGIA CON CORRECCIÓN DE LOOK-AHEAD BIAS")
     print("="*70)
 
     trades = []
@@ -240,26 +340,26 @@ def run_backtest(df):
                 position = None
                 continue
 
-        # === SEÑALES DE ENTRADA ===
+        # === SEÑALES DE ENTRADA (CON SEÑALES CORREGIDAS) ===
         if position is None:
 
-            # LONG: BID Absorption (círculo rojo)
+            # LONG: BID Absorption (señal ahora disponible en el momento correcto)
             if bid_abs:
                 position = 'LONG'
                 entry_price = current_price
                 entry_time = current_time
                 entry_atr = current_atr
-                tp_price = entry_price + TP_POINTS  # TP fijo en puntos
-                sl_price = entry_price - SL_POINTS  # SL fijo en puntos
+                tp_price = entry_price + TP_POINTS
+                sl_price = entry_price - SL_POINTS
 
-            # SHORT: ASK Absorption (círculo verde)
+            # SHORT: ASK Absorption (señal ahora disponible en el momento correcto)
             elif ask_abs:
                 position = 'SHORT'
                 entry_price = current_price
                 entry_time = current_time
                 entry_atr = current_atr
-                tp_price = entry_price - TP_POINTS  # TP fijo en puntos
-                sl_price = entry_price + SL_POINTS  # SL fijo en puntos
+                tp_price = entry_price - TP_POINTS
+                sl_price = entry_price + SL_POINTS
 
         # Progreso
         if (idx + 1) % 10000 == 0:
@@ -300,7 +400,7 @@ def generate_statistics(trades_df):
     Genera estadísticas del backtest.
     """
     print("\n" + "="*70)
-    print("ESTADÍSTICAS DE BACKTEST")
+    print("ESTADÍSTICAS DE BACKTEST (CON CORRECCIÓN DE BIAS)")
     print("="*70)
 
     if len(trades_df) == 0:
@@ -392,10 +492,11 @@ def main():
     Función principal.
     """
     print("="*70)
-    print("ESTRATEGIA DE ABSORCIÓN - BACKTEST")
+    print("ESTRATEGIA CON CORRECCIÓN DE LOOK-AHEAD BIAS")
     print("="*70)
     print(f"\nConfiguración:")
     print(f"  Símbolo: {SYMBOL}")
+    print(f"  SIGNAL_DELAY_SEC: {SIGNAL_DELAY_SEC}s (corrección de bias)")
     print(f"  ATR Period: {ATR_PERIOD} (solo para referencia)")
     print(f"  Take Profit FIJO: {TP_POINTS} puntos")
     print(f"  Stop Loss FIJO: {SL_POINTS} puntos")
@@ -428,6 +529,9 @@ def main():
     if missing:
         raise ValueError(f"Columnas faltantes: {missing}")
 
+    # PASO CRÍTICO: Aplicar corrección de look-ahead bias
+    df = shift_signals(df, delay_seconds=SIGNAL_DELAY_SEC)
+
     # Calcular ATR
     df = calculate_atr(df, period=ATR_PERIOD)
 
@@ -437,10 +541,16 @@ def main():
     # Generar estadísticas
     generate_statistics(trades_df)
 
-    # Guardar resultados
-    os.makedirs('outputs', exist_ok=True)
+    # Guardar resultados (outputs folder already created by get_output_path)
     print(f"\nGuardando resultados en {OUTPUT_FILE}...")
     trades_df.to_csv(OUTPUT_FILE, sep=';', decimal=',', index=False)
+
+    print("\n" + "="*70)
+    print("COMPARACIÓN CON ESTRATEGIA ORIGINAL:")
+    print("  - Estrategia original (strat_fabio_ATR.py): CON look-ahead bias")
+    print("  - Esta estrategia (strat_fabio_window.py): SIN look-ahead bias")
+    print("  - Compara los resultados para ver el impacto real del bias")
+    print("="*70)
 
     print("\nBacktest completado!")
     print("="*70)
@@ -516,9 +626,9 @@ if __name__ == "__main__":
     print("\nArchivos generados:")
     print(f"  1. {OUTPUT_FILE}")
     print(f"     → Log completo de trades")
-    print(f"\n  2. charts/trades_visualization.html")
+    print(f"\n  2. charts/trades_visualization_window.html")
     print(f"     → Gráfico de entradas/salidas sobre precio")
-    print(f"\n  3. summary_report.html")
+    print(f"\n  3. summary_report_window.html")
     print(f"     → Tabla de métricas de performance")
     print(f"\n  4. charts/backtest_results_equity.html")
     print(f"     → Curva de equity + P/L por trade + Drawdown")

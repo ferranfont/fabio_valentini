@@ -8,10 +8,16 @@ Compara:
 
 import pandas as pd
 import os
+import sys
+from pathlib import Path
+
+# Add strategies folder to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from path_helper import get_output_path
 
 # Archivos
-FILE_ORIGINAL = 'outputs/tracking_record.csv'
-FILE_WINDOW = 'outputs/tracking_record_window.csv'
+FILE_ORIGINAL = get_output_path('tracking_record.csv')
+FILE_WINDOW = get_output_path('tracking_record_window.csv')
 
 
 def load_and_analyze(filepath, label):

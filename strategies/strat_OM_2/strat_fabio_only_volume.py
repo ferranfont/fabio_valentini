@@ -1,26 +1,24 @@
 """
-Estrategia de Trading basada en Volumen Extremo - SOLO SEÑALES REALES (NO FAKE).
+Estrategia de Trading basada en Volumen Extremo (Círculos Rojos/Verdes).
 
 Lógica Base:
-- LONG: Cuando bid_vol = True AND fake_bid_vol = False (círculo rojo REAL)
-- SHORT: Cuando ask_vol = True AND fake_ask_vol = False (círculo verde REAL)
+- LONG: Cuando bid_vol = True (círculo rojo - volumen extremo BID)
+- SHORT: Cuando ask_vol = True (círculo verde - volumen extremo ASK)
 - TP/SL: Fijos en 2 puntos ($40)
-
-FILTRO CLAVE: Elimina señales "fake" (invalidadas por señal más fuerte en 30s)
 
 Modos de Filtrado (mutuamente excluyentes):
 
-MODO_1: VOLUME_ONLY (solo filtro fake)
-  - LONG: bid_vol = True AND NOT fake_bid_vol
-  - SHORT: ask_vol = True AND NOT fake_ask_vol
+MODO_1: VOLUME_ONLY (sin filtros adicionales)
+  - LONG: bid_vol = True
+  - SHORT: ask_vol = True
 
-MODO_2: DENSITY (filtro fake + densidad individual)
-  - LONG: bid_vol = True AND NOT fake_bid_vol AND bid_density > DENSITY_THRESHOLD
-  - SHORT: ask_vol = True AND NOT fake_ask_vol AND ask_density > DENSITY_THRESHOLD
+MODO_2: DENSITY (filtro por densidad individual)
+  - LONG: bid_vol = True AND bid_density > DENSITY_THRESHOLD
+  - SHORT: ask_vol = True AND ask_density > DENSITY_THRESHOLD
 
-MODO_3: NET_DENSITY (filtro fake + net_density)
-  - LONG: bid_vol = True AND NOT fake_bid_vol AND net_density < -NET_DENSITY_THRESHOLD
-  - SHORT: ask_vol = True AND NOT fake_ask_vol AND net_density > NET_DENSITY_THRESHOLD
+MODO_3: NET_DENSITY (filtro por net_density = ASK - BID)
+  - LONG: bid_vol = True AND net_density < -NET_DENSITY_THRESHOLD (área roja)
+  - SHORT: ask_vol = True AND net_density > NET_DENSITY_THRESHOLD (área verde)
 
 Gestión:
 - 1 contrato por operación
@@ -32,12 +30,18 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, time
 import os
+import sys
+from pathlib import Path
+
+# Add strategies folder to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from path_helper import get_data_path, get_output_path, get_charts_path
 
 # ========== CONFIGURACIÓN ==========
-STRAT_NAME = 'strat_fabio_vol_not_fake'
+STRAT_NAME = 'strat_fabio_only_volume'
 SYMBOL = 'NQ'
-DATA_FILE = f'data/time_and_sales_absorption_{SYMBOL}.csv'
-OUTPUT_FILE = f'outputs/trading_record_{STRAT_NAME}.csv'
+DATA_FILE = get_data_path(f'time_and_sales_absorption_{SYMBOL}.csv')
+OUTPUT_FILE = get_output_path(f'trading_record_{STRAT_NAME}.csv')
 
 # Parámetros de la estrategia
 TP_POINTS = 2.0  # Take Profit: 2 puntos = $40
@@ -79,17 +83,7 @@ def load_data(filepath):
     """Carga datos de time & sales con volumen extremo."""
     print(f"Cargando datos desde {filepath}...")
 
-    df = pd.read_csv(filepath, sep=';', decimal=',', low_memory=False)
-
-    # Limpiar nombres de columnas (quitar espacios)
-    df.columns = df.columns.str.strip()
-
-    # Convertir columnas booleanas que están como strings
-    bool_cols = ['bid_vol', 'ask_vol', 'fake_bid_vol', 'fake_ask_vol', 'is_anomaly']
-    for col in bool_cols:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.strip().str.lower() == 'true'
-
+    df = pd.read_csv(filepath, sep=';', decimal=',')
     df['TimeBin'] = pd.to_datetime(df['TimeBin'])
     df = df.sort_values('TimeBin').reset_index(drop=True)
 
@@ -97,14 +91,14 @@ def load_data(filepath):
     print(f"  Rango temporal: {df['TimeBin'].min()} a {df['TimeBin'].max()}")
 
     # Verificar columnas necesarias
-    required_cols = ['TimeBin', 'Precio', 'Volumen', 'bid_vol', 'ask_vol', 'fake_bid_vol', 'fake_ask_vol']
+    required_cols = ['TimeBin', 'Precio', 'Volumen', 'bid_vol', 'ask_vol']
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
         raise ValueError(f"Faltan columnas requeridas: {missing}")
 
     # Verificar columnas según el modo de filtro
     if FILTER_MODE == "MODO_1":
-        print(f"  Modo: VOLUME_ONLY (solo filtro fake, sin densidad)")
+        print(f"  Modo: VOLUME_ONLY (sin filtros adicionales)")
 
     elif FILTER_MODE == "MODO_2":
         if 'bid_density' not in df.columns or 'ask_density' not in df.columns:
@@ -151,8 +145,6 @@ def run_backtest(df):
         current_price = row['Precio']
         bid_vol = row.get('bid_vol', False)
         ask_vol = row.get('ask_vol', False)
-        fake_bid_vol = row.get('fake_bid_vol', False)
-        fake_ask_vol = row.get('fake_ask_vol', False)
 
         # Obtener métricas según el modo
         bid_density = row.get('bid_density', 0)
@@ -302,21 +294,21 @@ def run_backtest(df):
 
             # === SEÑALES DE ENTRADA SEGÚN MODO ===
 
-            # LONG: Círculo rojo REAL (bid_vol = True AND NOT fake_bid_vol)
-            if bid_vol and not fake_bid_vol:
+            # LONG: Círculo rojo (bid_vol = True)
+            if bid_vol:
                 long_signal = False
 
                 if FILTER_MODE == "MODO_1":
-                    # Solo filtro fake (sin densidad)
+                    # Sin filtro adicional
                     long_signal = True
 
                 elif FILTER_MODE == "MODO_2":
-                    # Filtro fake + densidad individual
+                    # Filtro por densidad individual
                     if bid_density > DENSITY_THRESHOLD:
                         long_signal = True
 
                 elif FILTER_MODE == "MODO_3":
-                    # Filtro fake + net_density (área roja, más BID que ASK)
+                    # Filtro por net_density (área roja, más BID que ASK)
                     if net_density < -NET_DENSITY_THRESHOLD:
                         long_signal = True
 
@@ -330,21 +322,21 @@ def run_backtest(df):
                     entry_density_ask = ask_density
                     entry_net_density = net_density
 
-            # SHORT: Círculo verde REAL (ask_vol = True AND NOT fake_ask_vol)
-            elif ask_vol and not fake_ask_vol:
+            # SHORT: Círculo verde (ask_vol = True)
+            elif ask_vol:
                 short_signal = False
 
                 if FILTER_MODE == "MODO_1":
-                    # Solo filtro fake (sin densidad)
+                    # Sin filtro adicional
                     short_signal = True
 
                 elif FILTER_MODE == "MODO_2":
-                    # Filtro fake + densidad individual
+                    # Filtro por densidad individual
                     if ask_density > DENSITY_THRESHOLD:
                         short_signal = True
 
                 elif FILTER_MODE == "MODO_3":
-                    # Filtro fake + net_density (área verde, más ASK que BID)
+                    # Filtro por net_density (área verde, más ASK que BID)
                     if net_density > NET_DENSITY_THRESHOLD:
                         short_signal = True
 
@@ -446,7 +438,6 @@ def main():
 
     # Guardar resultados
     if len(df_trades) > 0:
-        os.makedirs('outputs', exist_ok=True)
         df_trades.to_csv(OUTPUT_FILE, index=False, sep=';', decimal=',')
         print(f"\nTrades guardados en: {OUTPUT_FILE}")
 

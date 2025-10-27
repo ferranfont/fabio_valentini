@@ -5,12 +5,18 @@ Visualización de resultados del backtest - Estrategia Fabio Only Volume.
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import sys
+from pathlib import Path
+
+# Add strategies folder to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from path_helper import get_data_path, get_output_path, get_charts_path
 
 # ==============================================================================
 # CONFIGURACIÓN
 # ==============================================================================
-TRADES_FILE = 'outputs/trading_record_strat_fabio_only_volume.csv'
-OUTPUT_FILE = 'charts/backtest_results_volume.html'
+TRADES_FILE = get_output_path('trading_record_strat_fabio_vol_not_fake.csv')
+OUTPUT_FILE = get_charts_path('backtest_results_vol_not_fake.html')
 
 
 def load_trades(filepath):
@@ -79,7 +85,7 @@ def create_equity_curve(df):
         height=700,
         showlegend=True,
         hovermode='x unified',
-        title_text=f"Backtest Results - Fabio Only Volume - {len(df):,} trades"
+        title_text=f"Backtest - Vol NOT FAKE - {len(df):,} trades"
     )
 
     return fig
@@ -161,7 +167,7 @@ def create_distribution_charts(df):
     fig.update_layout(
         height=800,
         showlegend=False,
-        title_text="Análisis de Distribuciones - Fabio Only Volume"
+        title_text="Análisis de Distribuciones - Vol NOT FAKE"
     )
 
     return fig

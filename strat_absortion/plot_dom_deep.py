@@ -131,16 +131,22 @@ else:
     start_idx = max(0, min(STARTING_INDEX, len(profiles_data) - 1))
     print(f"Starting at index: {start_idx} (timestamp: {profiles_data[start_idx][0]})")
 
-# Create figure with 5 subplots in a row
+# Create figure with 2 rows and 5 columns
+# Top row: 5 DOM+Profile panels
+# Bottom row: Price line chart (spanning all 5 columns)
 fig = plt.figure(figsize=(45, 12))
-plt.subplots_adjust(left=0.04, bottom=0.12, right=0.99, top=0.96, wspace=0.04)
+gs = fig.add_gridspec(2, 5, left=0.04, bottom=0.12, right=0.99, top=0.96,
+                      wspace=0.04, hspace=0.10, height_ratios=[3, 1])
 
-# Create 5 subplots
-ax1 = plt.subplot(1, 5, 1)
-ax2 = plt.subplot(1, 5, 2)
-ax3 = plt.subplot(1, 5, 3)
-ax4 = plt.subplot(1, 5, 4)
-ax5 = plt.subplot(1, 5, 5)
+# Top row: DOM+Profile subplots
+ax1 = fig.add_subplot(gs[0, 0])
+ax2 = fig.add_subplot(gs[0, 1])
+ax3 = fig.add_subplot(gs[0, 2])
+ax4 = fig.add_subplot(gs[0, 3])
+ax5 = fig.add_subplot(gs[0, 4])
+
+# Bottom row: Price line chart spanning all columns
+ax_price = fig.add_subplot(gs[1, :])
 
 # Global state
 current_index = [start_idx]
@@ -330,12 +336,33 @@ def plot_single_merged(ax, index, title_prefix="", common_prices=None, show_ylab
     bid_color_dom = '#999999'  # Grey
     ask_color_dom = '#aaaaaa'  # Light grey
 
-    ax.barh(y_positions, [-size for size in dom_bid_sizes], height=0.8,
-            color=bid_color_dom, label='DOM BID', edgecolor='#666666',
-            linewidth=1.5, alpha=0.3, zorder=1)
-    ax.barh(y_positions, dom_ask_sizes, height=0.8,
-            color=ask_color_dom, label='DOM ASK', edgecolor='#888888',
-            linewidth=1.5, alpha=0.3, zorder=1)
+    # Find the index of the maximum BID and ASK bars
+    max_bid_idx = dom_bid_sizes.index(max(dom_bid_sizes)) if dom_bid_sizes and max(dom_bid_sizes) > 0 else None
+    max_ask_idx = dom_ask_sizes.index(max(dom_ask_sizes)) if dom_ask_sizes and max(dom_ask_sizes) > 0 else None
+
+    # Plot all BID bars without edge first
+    for i, size in enumerate(dom_bid_sizes):
+        if size > 0:
+            edgecolor = 'black' if i == max_bid_idx else 'none'
+            linewidth = 2 if i == max_bid_idx else 0
+            ax.barh(y_positions[i], -size, height=0.8,
+                    color=bid_color_dom, edgecolor=edgecolor,
+                    linewidth=linewidth, alpha=0.3, zorder=1)
+
+    # Plot all ASK bars without edge first
+    for i, size in enumerate(dom_ask_sizes):
+        if size > 0:
+            edgecolor = 'black' if i == max_ask_idx else 'none'
+            linewidth = 2 if i == max_ask_idx else 0
+            ax.barh(y_positions[i], size, height=0.8,
+                    color=ask_color_dom, edgecolor=edgecolor,
+                    linewidth=linewidth, alpha=0.3, zorder=1)
+
+    # Add labels (only once, not per bar)
+    if max_bid_idx is not None:
+        ax.barh([], [], height=0.8, color=bid_color_dom, label='DOM BID', alpha=0.3)
+    if max_ask_idx is not None:
+        ax.barh([], [], height=0.8, color=ask_color_dom, label='DOM ASK', alpha=0.3)
 
     # Overlay MARKET PROFILE bars (solid red/green)
     if profile:
@@ -374,40 +401,24 @@ def plot_single_merged(ax, index, title_prefix="", common_prices=None, show_ylab
                 linewidth=0.5, zorder=10)
 
     # Set y-axis to prices
-    ax.set_yticks(y_positions)
     if show_ylabel:
-        ax.set_yticklabels([f"{p:.2f}" for p in all_prices], fontsize=6)
+        # Filter to show only round integer values (no decimals)
+        filtered_ticks = []
+        filtered_labels = []
+        for i, price in enumerate(all_prices):
+            # Only show prices that are whole integers (no decimal part)
+            if price == int(price):
+                filtered_ticks.append(i)
+                filtered_labels.append(f"{int(price)}")
+
+        ax.set_yticks(filtered_ticks)
+        ax.set_yticklabels(filtered_labels, fontsize=6)
     else:
+        ax.set_yticks([])
         ax.set_yticklabels([])
 
     # Add vertical line at zero
     ax.axvline(x=0, color='black', linewidth=1.5, linestyle='-', alpha=0.7, zorder=2)
-
-    # Mark current price with horizontal line and blue dot
-    if closing_price and closing_price in all_prices:
-        price_idx = all_prices.index(closing_price)
-        ax.axhline(y=price_idx, color='blue', linewidth=1, linestyle='--', alpha=0.6, zorder=25)
-        ax.plot(0, price_idx, 'o', color='blue', markersize=10, zorder=30,
-                markeredgecolor='darkblue', markeredgewidth=2)
-
-    # Set x-axis limits
-    ax.set_xlim(-max_dom_size * 1.1, max_dom_size * 1.1)
-
-    # Add dashed rectangle border
-    from matplotlib.patches import Rectangle
-    if len(y_positions) > 0:
-        rect = Rectangle(
-            (-max_dom_size * 1.1, -0.5),
-            max_dom_size * 2.2,
-            len(y_positions),
-            linewidth=2,
-            edgecolor='gray',
-            facecolor='none',
-            linestyle='--',
-            alpha=0.7,
-            zorder=20
-        )
-        ax.add_patch(rect)
 
     # Get previous close for shape evaluation
     previous_close = None
@@ -416,6 +427,27 @@ def plot_single_merged(ax, index, title_prefix="", common_prices=None, show_ylab
 
     # Evaluate profile shape with current and previous close prices
     profile_tag = evaluate_profile_shape(profile, closing_price, previous_close)
+
+    # Determine dot color based on profile shape
+    if profile_tag == 'd_shape':
+        dot_color = 'green'
+        dot_edge_color = 'darkgreen'
+    elif profile_tag == 'p_shape':
+        dot_color = 'red'
+        dot_edge_color = 'darkred'
+    else:
+        dot_color = 'blue'
+        dot_edge_color = 'darkblue'
+
+    # Mark current price with horizontal line and colored dot
+    if closing_price and closing_price in all_prices:
+        price_idx = all_prices.index(closing_price)
+        ax.axhline(y=price_idx, color='blue', linewidth=1, linestyle='--', alpha=0.6, zorder=25)
+        ax.plot(0, price_idx, 'o', color=dot_color, markersize=10, zorder=30,
+                markeredgecolor=dot_edge_color, markeredgewidth=2)
+
+    # Set x-axis limits
+    ax.set_xlim(-max_dom_size * 1.1, max_dom_size * 1.1)
 
     # Title with closing price and profile tag (only time, no date)
     close_str = f' | Close: {closing_price:.2f}' if closing_price is not None else ''
@@ -430,27 +462,165 @@ def plot_single_merged(ax, index, title_prefix="", common_prices=None, show_ylab
     if show_ylabel:
         ax.legend(loc='upper right', fontsize=8, ncol=2)
 
-    # Add statistics text box with profile tag
+    # Add statistics text box with profile tag and colored text
     total_dom_bid = sum(dom_bid_sizes)
     total_dom_ask = sum(dom_ask_sizes)
 
-    stats_text = f'DOM BID: {total_dom_bid:.0f}\n'
-    stats_text += f'DOM ASK: {total_dom_ask:.0f}\n'
+    # Build stats text (all lines in black except last line)
+    stats_lines = []
+    stats_lines.append(f'DOM BID: {total_dom_bid:.0f}')
+    stats_lines.append(f'DOM ASK: {total_dom_ask:.0f}')
 
     if profile:
         total_mp_bid = sum(mp_bid_volumes)
         total_mp_ask = sum(mp_ask_volumes)
-        stats_text += f'Profile BID: {total_mp_bid:.0f}\n'
-        stats_text += f'Profile ASK: {total_mp_ask:.0f}\n'
-        stats_text += f'BID/ASK: {total_mp_bid/total_mp_ask if total_mp_ask > 0 else 0:.2f}\n'
+        stats_lines.append(f'Profile BID: {total_mp_bid:.0f}')
+        stats_lines.append(f'Profile ASK: {total_mp_ask:.0f}')
+        stats_lines.append(f'BID/ASK: {total_mp_bid/total_mp_ask if total_mp_ask > 0 else 0:.2f}')
 
-    stats_text += f'PROFILE: {profile_display}'
+    # Join all lines except last
+    stats_text = '\n'.join(stats_lines)
 
+    # Add text box with black text
     ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
             fontsize=9, verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+            color='black')
+
+    # Add PROFILE line separately with red color if d_shape or p_shape
+    profile_color = 'red' if profile_tag in ['d_shape', 'p_shape'] else 'black'
+    profile_line = f'PROFILE: {profile_display}'
+
+    # Calculate vertical position for PROFILE line (below other lines)
+    num_lines = len(stats_lines)
+    line_height = 0.04  # Approximate height per line in axes coordinates
+    profile_y = 0.98 - (num_lines * line_height)
+
+    ax.text(0.02, profile_y, profile_line, transform=ax.transAxes,
+            fontsize=9, verticalalignment='top',
+            color=profile_color, fontweight='bold')
 
     return all_prices
+
+def plot_price_line(index):
+    """Plot price line chart showing historical close prices with d-shape and p-shape signals."""
+    ax_price.clear()
+
+    # Get historical data up to current index
+    # Show last 200 frames or all available data
+    start_idx = max(0, index - 200)
+    historical_data = profiles_data[start_idx:index + 1]
+
+    # Extract timestamps and closing prices
+    times = []
+    prices = []
+    for ts, _, close_price, _, _ in historical_data:
+        if close_price is not None:
+            times.append(ts)
+            prices.append(close_price)
+
+    if len(prices) > 0:
+        # Plot price line in grey with transparency 0.8 and width 1
+        ax_price.plot(times, prices, color='grey', linewidth=1, alpha=0.8)
+
+        # Mark T-4, T-3, T-2, T-1 positions with small grey circles
+        frame_indices = [
+            max(0, index - 4),  # T-4
+            max(0, index - 3),  # T-3
+            max(0, index - 2),  # T-2
+            max(0, index - 1),  # T-1
+        ]
+
+        for frame_idx in frame_indices:
+            if frame_idx < len(profiles_data):
+                ts_marker, _, close_marker, _, _ = profiles_data[frame_idx]
+                if close_marker is not None:
+                    # Plot small grey circle
+                    ax_price.plot(ts_marker, close_marker, 'o', color='grey',
+                                 markersize=5, alpha=0.6, zorder=4)
+
+        # Collect d-shape and p-shape signals
+        d_shape_times, d_shape_prices = [], []
+        p_shape_times, p_shape_prices = [], []
+
+        # Plot d-shape and p-shape signals for ALL historical data in view
+        for hist_idx in range(start_idx, index + 1):
+            if hist_idx < len(profiles_data):
+                ts_sig, profile_sig, close_sig, _, _ = profiles_data[hist_idx]
+
+                if close_sig is not None and profile_sig:
+                    # Get previous close for shape evaluation
+                    previous_close_sig = None
+                    if hist_idx > 0 and hist_idx - 1 < len(profiles_data):
+                        _, _, previous_close_sig, _, _ = profiles_data[hist_idx - 1]
+
+                    # Evaluate shape
+                    shape = evaluate_profile_shape(profile_sig, close_sig, previous_close_sig)
+
+                    # Collect RED dots for d-shape
+                    if shape == 'd_shape':
+                        d_shape_times.append(ts_sig)
+                        d_shape_prices.append(close_sig)
+
+                    # Collect LIME GREEN dots for p-shape
+                    elif shape == 'p_shape':
+                        p_shape_times.append(ts_sig)
+                        p_shape_prices.append(close_sig)
+
+        # Draw all d-shape and p-shape signals as scatter plots
+        if len(d_shape_times) > 0:
+            ax_price.scatter(d_shape_times, d_shape_prices,
+                            s=80, c='red', alpha=0.9, zorder=6,
+                            edgecolors='darkred', linewidths=1.5)
+
+        if len(p_shape_times) > 0:
+            ax_price.scatter(p_shape_times, p_shape_prices,
+                            s=80, c='lime', alpha=0.9, zorder=6,
+                            edgecolors='darkgreen', linewidths=1.5)
+
+        # Mark current price with a blue dot (on top of everything)
+        if len(times) > 0:
+            ax_price.plot(times[-1], prices[-1], 'o', color='blue',
+                         markersize=8, zorder=7)
+
+        # Formatting (no title, no legend, no axis labels)
+        # Only horizontal grid
+        ax_price.grid(True, alpha=0.3, axis='y')
+
+        # Format x-axis to show only time (no rotation)
+        import matplotlib.dates as mdates
+        from matplotlib.ticker import ScalarFormatter
+        ax_price.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+        ax_price.tick_params(axis='x', rotation=0, labelsize=6)
+        ax_price.tick_params(axis='y', labelsize=7)
+
+        # Disable scientific notation on Y axis
+        ax_price.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
+        ax_price.ticklabel_format(style='plain', axis='y')
+
+        # Add current price info (bottom left)
+        if len(prices) > 0:
+            current_price = prices[-1]
+
+            # Get previous close price (from index - 1)
+            previous_price = None
+            if index > 0 and index - 1 < len(profiles_data):
+                _, _, prev_close, _, _ = profiles_data[index - 1]
+                previous_price = prev_close
+
+            # Calculate change from previous close
+            if previous_price is not None:
+                price_change = current_price - previous_price
+                price_change_pct = (price_change / previous_price * 100) if previous_price != 0 else 0
+                info_text = f'Close: {current_price:.2f}\n'
+                info_text += f'Change: {price_change:+.2f} ({price_change_pct:+.2f}%)'
+            else:
+                info_text = f'Close: {current_price:.2f}\n'
+                info_text += f'Change: N/A'
+
+            ax_price.text(0.02, 0.02, info_text, transform=ax_price.transAxes,
+                         fontsize=9, verticalalignment='bottom', horizontalalignment='left',
+                         bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7))
 
 def plot_all_panels(index):
     """Plot five frames: T-4, T-3, T-2, T-1, and CURRENT with common Y axis."""
@@ -521,6 +691,9 @@ def plot_all_panels(index):
     plot_single_merged(ax5, frame5_index,
                        title_prefix="CURRENT | ",
                        common_prices=common_prices, show_ylabel=False)
+
+    # Plot price line chart in bottom panel
+    plot_price_line(index)
 
     fig.canvas.draw_idle()
 

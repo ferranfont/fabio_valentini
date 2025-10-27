@@ -3,12 +3,17 @@ import numpy as np
 import webbrowser
 import plotly.graph_objects as go
 from pathlib import Path
+import sys
+
+# Add strategies folder to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from path_helper import get_data_path, get_output_path, get_charts_path
 
 # ==============================================================================
 # CONFIGURACIÓN
 # ==============================================================================
-TRADES_FILE = 'outputs/trading_record_strat_fabio_vol_not_fake.csv'
-OUTPUT_HTML = 'charts/summary_report_vol_not_fake.html'
+TRADES_FILE = get_output_path('trading_record_strat_fabio_only_volume.csv')
+OUTPUT_HTML = get_charts_path('summary_report_volume.html')
 
 # ==============================================================================
 
@@ -120,7 +125,7 @@ summary_df = pd.DataFrame(summary_data)
 # === 4. Create HTML table and Title ===
 # Detectar el modo usado (MODO_1, MODO_2, MODO_3)
 filter_mode = df['filter_mode'].iloc[0] if 'filter_mode' in df.columns else 'MODO_1'
-table_title = f"Summary - {filter_mode} (NO FAKE)"
+table_title = f"Performance Summary - {filter_mode}"
 
 fig = go.Figure(
     data=[
@@ -178,8 +183,6 @@ print("GENERATING EQUITY CURVE AND DISTRIBUTION CHARTS")
 print('='*70)
 
 # Import plot_backtest_results functions
-import sys
-sys.path.append(str(Path(__file__).parent))
 from plot_backtest_results import load_trades, create_equity_curve, create_distribution_charts, print_summary as print_detailed_summary
 
 try:
@@ -192,14 +195,14 @@ try:
     # Create equity curve chart
     print(f"\nCreating equity curve chart...")
     fig_equity = create_equity_curve(df_trades)
-    equity_path = Path("charts/backtest_results_volume_equity.html")
+    equity_path = get_charts_path("backtest_results_volume_equity.html")
     fig_equity.write_html(str(equity_path))
     print(f"  Saved: {equity_path}")
 
     # Create distribution charts
     print(f"Creating distribution charts...")
     fig_dist = create_distribution_charts(df_trades)
-    dist_path = Path("charts/backtest_results_volume_distributions.html")
+    dist_path = get_charts_path("backtest_results_volume_distributions.html")
     fig_dist.write_html(str(dist_path))
     print(f"  Saved: {dist_path}")
 

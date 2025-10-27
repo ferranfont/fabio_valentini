@@ -32,7 +32,7 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 CHARTS_DIR = PROJECT_ROOT / "charts"
 
 # Archivos de entrada
-TNS_FILE = DATA_DIR / "time_and_sales_nq.csv"
+TNS_FILE = DATA_DIR / "time_and_sales_nq_30min.csv"
 # TNS_FILE = DATA_DIR / "time_and_sales_nq_30min.csv"  # Alternativa: 30 minutos
 
 SIGNALS_FILE = OUTPUTS_DIR / "db_shapes_20251024_003251.csv"

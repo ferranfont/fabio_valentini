@@ -1,2 +1,0 @@
-timestamp;shape;close_price;previous_close;price_change;price_change_pct;total_bid;total_ask;bid_ask_ratio;num_price_levels;lower_bid_volume;upper_ask_volume;max_lower_bid;max_upper_ask;bid_concentration;ask_concentration
-2025-10-09 18:03:50.032;p_shape;25268,25;25265,0;3,25;0,012863645359192558;46,0;68,0;0,6764705882352942;13;21,0;68,0;6,0;24,0;0,45652173913043476;1,0

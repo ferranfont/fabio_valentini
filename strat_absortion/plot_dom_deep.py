@@ -475,10 +475,6 @@ def plot_single_merged(ax, index, title_prefix="", common_prices=None, show_ylab
     # Add grid
     ax.grid(True, alpha=0.3, axis='x')
 
-    # Add legend (only on first panel)
-    if show_ylabel:
-        ax.legend(loc='upper right', fontsize=8, ncol=2)
-
     # Add statistics text box with profile tag and colored text
     total_dom_bid = sum(dom_bid_sizes)
     total_dom_ask = sum(dom_ask_sizes)

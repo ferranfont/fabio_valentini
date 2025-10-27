@@ -28,6 +28,7 @@ MIN_PRICE_LEVELS = 10  # Minimum number of active price levels (increased from 8
 MIN_BID_ASK_SIZE = 20  # Minimum absolute size of largest BID/ASK bar (increased from 10)
 PRICE_POSITION_THRESHOLD = 0.25  # Price must be in lower/upper 33% of the profile range
 DIFF_DISTANCE = 0  # Minimum absolute price difference between current and previous close (0 = no filter)
+MIN_VOLUME = 10  # Minimum total volume (BID + ASK) in the profile (default = 10)
 # =======================================
 
 # Load data
@@ -171,7 +172,8 @@ def evaluate_profile_shape(profile, current_close=None, previous_close=None):
     total_ask = sum(profile[p].get('ASK', 0) for p in active_prices)
     total_volume = total_bid + total_ask
 
-    if total_volume == 0:
+    # Check minimum volume requirement
+    if total_volume < MIN_VOLUME:
         return 'balanced'
 
     # Calculate price range
@@ -324,6 +326,9 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
     total_ask = sum(ask_volumes)
     stats_text = f'Total BID: {total_bid:.0f}\nTotal ASK: {total_ask:.0f}\n'
     stats_text += f'BID/ASK ratio: {total_bid/total_ask if total_ask > 0 else 0:.2f}\n'
+    stats_text += f'Total Vol: {total_bid + total_ask:.0f}\n'
+    stats_text += f'Diff Dist: {DIFF_DISTANCE}\n'
+    stats_text += f'Min Vol: {MIN_VOLUME}\n'
     # Format profile tag: d-Shape, p-Shape, or Balanced
     profile_display = profile_tag.replace('_', '-').title() if '_' in profile_tag else profile_tag.capitalize()
     stats_text += f'PROFILE: {profile_display}'

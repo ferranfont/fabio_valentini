@@ -27,6 +27,7 @@ MIN_PRICE_LEVELS = 10  # Minimum number of active price levels (increased from 8
 MIN_BID_ASK_SIZE = 20  # Minimum absolute size of largest BID/ASK bar (increased from 10)
 PRICE_POSITION_THRESHOLD = 0.25  # Price must be in lower/upper 33% of the profile range
 DIFF_DISTANCE = 0  # Minimum absolute price difference between current and previous close (0 = no filter)
+MIN_VOLUME = 10  # Minimum total volume (BID + ASK) in the profile (default = 10)
 # =======================================
 
 # Load data with custom parser (JSON not quoted in CSV)
@@ -212,7 +213,8 @@ def evaluate_profile_shape(profile, current_close=None, previous_close=None):
     total_ask = sum(profile[p].get('ASK', 0) for p in active_prices)
     total_volume = total_bid + total_ask
 
-    if total_volume == 0:
+    # Check minimum volume requirement
+    if total_volume < MIN_VOLUME:
         return 'balanced'
 
     # Calculate price range
@@ -490,6 +492,11 @@ def plot_single_merged(ax, index, title_prefix="", common_prices=None, show_ylab
         stats_lines.append(f'Profile BID: {total_mp_bid:.0f}')
         stats_lines.append(f'Profile ASK: {total_mp_ask:.0f}')
         stats_lines.append(f'BID/ASK: {total_mp_bid/total_mp_ask if total_mp_ask > 0 else 0:.2f}')
+        stats_lines.append(f'Total Vol: {total_mp_bid + total_mp_ask:.0f}')
+
+    # Add filter parameters
+    stats_lines.append(f'Diff Dist: {DIFF_DISTANCE}')
+    stats_lines.append(f'Min Vol: {MIN_VOLUME}')
 
     # Join all lines except last
     stats_text = '\n'.join(stats_lines)

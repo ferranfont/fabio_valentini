@@ -174,5 +174,7 @@ results/
 temp/
 
 # Project specific
+# Large CSV files
+data/ts_and_dom_24_oct.csv
 
 

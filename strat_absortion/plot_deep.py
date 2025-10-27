@@ -27,6 +27,7 @@ DENSITY_SHAPE = 0.70  # 70% of volume must be concentrated in the zone (more str
 MIN_PRICE_LEVELS = 10  # Minimum number of active price levels (increased from 8)
 MIN_BID_ASK_SIZE = 20  # Minimum absolute size of largest BID/ASK bar (increased from 10)
 PRICE_POSITION_THRESHOLD = 0.25  # Price must be in lower/upper 33% of the profile range
+DIFF_DISTANCE = 0  # Minimum absolute price difference between current and previous close (0 = no filter)
 # =======================================
 
 # Load data
@@ -135,6 +136,7 @@ def evaluate_profile_shape(profile, current_close=None, previous_close=None):
     3. >= DENSITY_SHAPE (70%) of total BID volume in lower half
     4. Current price must be in LOWER 33% of the profile range
     5. Price FALLING: current_close < previous_close (absorbing selling pressure)
+    6. Absolute price difference >= DIFF_DISTANCE
 
     STRICT Criteria for p_shape (ALL must be met):
     1. Minimum MIN_PRICE_LEVELS active price levels
@@ -142,8 +144,14 @@ def evaluate_profile_shape(profile, current_close=None, previous_close=None):
     3. >= DENSITY_SHAPE (70%) of total ASK volume in upper half
     4. Current price must be in UPPER 33% of the profile range
     5. Price RISING: current_close > previous_close (absorbing buying pressure)
+    6. Absolute price difference >= DIFF_DISTANCE
     """
     if not profile or current_close is None or previous_close is None:
+        return 'balanced'
+
+    # Check minimum price difference (absolute value)
+    price_diff = abs(current_close - previous_close)
+    if price_diff < DIFF_DISTANCE:
         return 'balanced'
 
     # Filter out price levels with no volume (empty levels)

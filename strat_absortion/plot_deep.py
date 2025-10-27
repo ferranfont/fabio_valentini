@@ -326,9 +326,17 @@ def plot_single_profile(ax, index, title_prefix="", y_limits=None, common_prices
     total_ask = sum(ask_volumes)
     stats_text = f'Total BID: {total_bid:.0f}\nTotal ASK: {total_ask:.0f}\n'
     stats_text += f'BID/ASK ratio: {total_bid/total_ask if total_ask > 0 else 0:.2f}\n'
-    stats_text += f'Total Vol: {total_bid + total_ask:.0f}\n'
-    stats_text += f'Diff Dist: {DIFF_DISTANCE}\n'
-    stats_text += f'Min Vol: {MIN_VOLUME}\n'
+
+    # Calculate real change and volume for this frame
+    if previous_close is not None and closing_price is not None:
+        price_change = closing_price - previous_close
+        stats_text += f'Change: {price_change:.2f}\n'
+    else:
+        stats_text += f'Change: N/A\n'
+
+    total_volume = total_bid + total_ask
+    stats_text += f'Volume: {total_volume:.0f}\n'
+
     # Format profile tag: d-Shape, p-Shape, or Balanced
     profile_display = profile_tag.replace('_', '-').title() if '_' in profile_tag else profile_tag.capitalize()
     stats_text += f'PROFILE: {profile_display}'

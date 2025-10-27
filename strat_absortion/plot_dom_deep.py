@@ -492,11 +492,17 @@ def plot_single_merged(ax, index, title_prefix="", common_prices=None, show_ylab
         stats_lines.append(f'Profile BID: {total_mp_bid:.0f}')
         stats_lines.append(f'Profile ASK: {total_mp_ask:.0f}')
         stats_lines.append(f'BID/ASK: {total_mp_bid/total_mp_ask if total_mp_ask > 0 else 0:.2f}')
-        stats_lines.append(f'Total Vol: {total_mp_bid + total_mp_ask:.0f}')
 
-    # Add filter parameters
-    stats_lines.append(f'Diff Dist: {DIFF_DISTANCE}')
-    stats_lines.append(f'Min Vol: {MIN_VOLUME}')
+    # Calculate real change and volume for this frame
+    if previous_close is not None and closing_price is not None:
+        price_change = closing_price - previous_close
+        stats_lines.append(f'Change: {price_change:.2f}')
+    else:
+        stats_lines.append(f'Change: N/A')
+
+    if profile:
+        total_volume = total_mp_bid + total_mp_ask
+        stats_lines.append(f'Volume: {total_volume:.0f}')
 
     # Join all lines except last
     stats_text = '\n'.join(stats_lines)
@@ -515,7 +521,7 @@ def plot_single_merged(ax, index, title_prefix="", common_prices=None, show_ylab
         label_color = 'green'
         label_text = 'p-Shape'
     else:
-        label_color = 'lightgrey'
+        label_color = '#C0C0C0'  # Silver - slightly darker than lightgrey
         label_text = 'Balanced'
 
     ax.text(0.02, 0.02, label_text, transform=ax.transAxes,

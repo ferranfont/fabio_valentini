@@ -17,18 +17,27 @@ from datetime import timedelta
 from pathlib import Path
 import glob
 import os
+
+# Set matplotlib backend BEFORE importing matplotlib
+os.environ['MPLBACKEND'] = 'TkAgg'
+
+# Matplotlib setup - FORCE TkAgg backend before any other matplotlib imports
+import matplotlib
+matplotlib.use('TkAgg', force=True)  # Force TkAgg backend consistently
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Button, Slider
+
 # Rolling profile
 sys.path.insert(0, str(Path(__file__).parent.parent / 'strat_absortion'))
 from rolling_profile import RollingMarketProfile
-# Matplotlib setup
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
-from matplotlib.widgets import Button, Slider
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
+
+# Fractal navigation configuration
+FIRST_FRACTAL = 0  # Starting fractal index (0 = first fractal, change to skip earlier fractals)
+
 
 PROJECT_ROOT = Path(__file__).parent.parent
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
@@ -36,9 +45,6 @@ DATA_DIR = PROJECT_ROOT / "data"
 
 DATA_FILE = "ts_and_dom_24_oct.csv"
 PROFILE_WINDOW = 5  # seconds
-
-# Fractal navigation configuration
-FIRST_FRACTAL = 0  # Starting fractal index (0 = first fractal, change to skip earlier fractals)
 
 # Profile shape detection (copied from plot_dom_deep.py)
 DENSITY_SHAPE = 0.70

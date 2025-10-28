@@ -37,6 +37,9 @@ DATA_DIR = PROJECT_ROOT / "data"
 DATA_FILE = "ts_and_dom_24_oct.csv"
 PROFILE_WINDOW = 5  # seconds
 
+# Fractal navigation configuration
+FIRST_FRACTAL = 0  # Starting fractal index (0 = first fractal, change to skip earlier fractals)
+
 # Profile shape detection (copied from plot_dom_deep.py)
 DENSITY_SHAPE = 0.70
 MIN_PRICE_LEVELS = 10
@@ -787,17 +790,17 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
             timer[0].start()
 
     def on_prev_fractal(event):
-        """Load previous fractal"""
+        """Load previous fractal (respects FIRST_FRACTAL limit)"""
         # Stop animation first
         is_playing[0] = False
         if timer[0]:
             timer[0].stop()
         plt.close(fig)
         new_idx = fractal_idx - 1
-        if new_idx >= 0:
+        if new_idx >= FIRST_FRACTAL:
             load_and_inspect_fractal(new_idx, df_fractals)
         else:
-            print(f"[INFO] Already at first fractal")
+            print(f"[INFO] Already at first fractal (FIRST_FRACTAL = {FIRST_FRACTAL})")
 
     def on_next_fractal(event):
         """Load next fractal"""
@@ -867,11 +870,12 @@ def main():
     # Check argument
     if len(sys.argv) < 2:
         print("\n[INFO] Available MAJOR fractals:")
-        print(f"  Index range: 0 to {len(df_fractals) - 1}")
-        print(f"\n[INFO] No fractal index provided, opening fractal #0 by default...")
+        print(f"  Index range: {FIRST_FRACTAL} to {len(df_fractals) - 1}")
+        print(f"\n[INFO] No fractal index provided, opening fractal #{FIRST_FRACTAL} (FIRST_FRACTAL config)...")
         print(f"[INFO] Usage: python {sys.argv[0]} <fractal_index>")
         print(f"[INFO] Example: python {sys.argv[0]} 5")
-        fractal_idx = 0  # Default to first fractal
+        print(f"[INFO] To change starting fractal, edit FIRST_FRACTAL in config (currently {FIRST_FRACTAL})")
+        fractal_idx = FIRST_FRACTAL  # Use configured starting fractal
     else:
         # Parse fractal index
         try:
@@ -879,6 +883,12 @@ def main():
         except ValueError:
             print(f"[ERROR] Invalid fractal index: {sys.argv[1]}")
             sys.exit(1)
+
+    # Validate fractal index is within valid range
+    if fractal_idx < FIRST_FRACTAL:
+        print(f"[WARNING] Fractal #{fractal_idx} is before FIRST_FRACTAL ({FIRST_FRACTAL})")
+        print(f"[INFO] Starting from fractal #{FIRST_FRACTAL} instead")
+        fractal_idx = FIRST_FRACTAL
 
     # Load and inspect the fractal
     load_and_inspect_fractal(fractal_idx, df_fractals)

@@ -280,7 +280,7 @@ def plot_single_merged(ax, timestamp, profile, closing_price, dom_bid, dom_ask,
                 filtered_labels.append(price_str)
 
         ax.set_yticks(filtered_ticks)
-        ax.set_yticklabels(filtered_labels, fontsize=6)
+        ax.set_yticklabels(filtered_labels, fontsize=7)  # Increased from 6 to 7
     else:
         ax.set_yticks([])
         ax.set_yticklabels([])
@@ -718,10 +718,10 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
         # Plot price line with fractal timestamp
         ax_price_ret = plot_price_line(ax_price, profiles_data, index, fractal_timestamp)
 
-        # Add title as text in upper LEFT of price chart (using "Fractal" instead of "MAJOR")
+        # Add title as text in upper LEFT of price chart (without total frames)
         if ax_price_ret:
             ax_price_ret.text(0.02, 0.95,
-                            f'Fractal #{fractal_idx} | {fractal_type} @ {fractal_price:.2f} | Frame {index}/{len(profiles_data)-1}',
+                            f'Fractal #{fractal_idx} | {fractal_type} @ {fractal_price:.2f} | Frame {index}',
                             transform=ax_price_ret.transAxes,
                             fontsize=9, verticalalignment='top', horizontalalignment='left',
                             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7),

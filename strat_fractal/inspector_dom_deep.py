@@ -686,6 +686,9 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
     current_index = [0]
     is_playing = [False]
     timer = [None]
+    screenshot_taken = [False]
+    charts_dir = Path(__file__).parent / "fractal_charts"
+    charts_dir.mkdir(exist_ok=True)
 
     def plot_all_panels(index):
         """Plot all 5 panels for T-4, T-3, T-2, T-1, CURRENT"""
@@ -751,6 +754,19 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
             )
 
         fig.canvas.draw_idle()
+
+        if (
+            fractal_frame_index is not None
+            and not screenshot_taken[0]
+            and index >= fractal_frame_index
+        ):
+            ts_frame = profiles_data[index][0]
+            if ts_frame >= fractal_timestamp:
+                timestamp_str = ts_frame.strftime("%Y%m%d_%H%M%S")
+                filename = charts_dir / f"fractal_{fractal_idx:04d}_frame_{index:04d}_{timestamp_str}.png"
+                fig.savefig(filename, dpi=150, bbox_inches="tight")
+                print(f"[OK] Saved screenshot: {filename}")
+                screenshot_taken[0] = True
 
     def update_display(val=None):
         """Update display from slider"""

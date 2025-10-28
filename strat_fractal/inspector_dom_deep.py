@@ -17,11 +17,9 @@ from datetime import timedelta
 from pathlib import Path
 import glob
 import os
-
 # Rolling profile
 sys.path.insert(0, str(Path(__file__).parent.parent / 'strat_absortion'))
 from rolling_profile import RollingMarketProfile
-
 # Matplotlib setup
 import matplotlib
 matplotlib.use('TkAgg')
@@ -270,14 +268,16 @@ def plot_single_merged(ax, timestamp, profile, closing_price, dom_bid, dom_ask,
                 color=ask_color_mp, label='Profile ASK', edgecolor='darkgreen',
                 linewidth=0.5, zorder=10)
 
-    # Y-axis labels
+    # Y-axis labels with thousand separator (dot)
     if show_ylabel:
         filtered_ticks = []
         filtered_labels = []
         for i, price in enumerate(all_prices):
             if price == int(price):
                 filtered_ticks.append(i)
-                filtered_labels.append(f"{int(price)}")
+                # Format with dot as thousand separator: 25378 -> 25.378
+                price_str = f"{int(price):,}".replace(',', '.')
+                filtered_labels.append(price_str)
 
         ax.set_yticks(filtered_ticks)
         ax.set_yticklabels(filtered_labels, fontsize=6)
@@ -450,8 +450,7 @@ def plot_price_line(ax_price, profiles_data, current_index, fractal_timestamp=No
                         linewidth=1, alpha=0.5, zorder=3)
 
     # Labels
-    ax_price.set_xlabel('Time', fontsize=10)
-    # NO y-axis label
+    # NO x-axis label, NO y-axis label
     ax_price.grid(True, alpha=0.3)
     ax_price.legend(loc='upper left', fontsize=8)
 
@@ -831,13 +830,13 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
 
     # Create slider (no label, wider)
     ax_slider = plt.axes([0.1, 0.01, 0.8, 0.02])
-    slider = Slider(ax_slider, '', 0, len(profiles_data) - 1,
+    slider = Slider(ax_slider, '', 0, max_playback_frame,  # Max at 1 min after fractal
                     valinit=0, valstep=1)
     slider.on_changed(update_display)
 
-    # Create fractal navigation buttons (right side, above slider)
-    ax_prev_fractal = plt.axes([0.91, 0.04, 0.03, 0.025])
-    ax_next_fractal = plt.axes([0.95, 0.04, 0.03, 0.025])
+    # Create fractal navigation buttons (right side, above slider, smaller height)
+    ax_prev_fractal = plt.axes([0.91, 0.04, 0.03, 0.018])  # Reduced height from 0.025 to 0.018
+    ax_next_fractal = plt.axes([0.95, 0.04, 0.03, 0.018])  # Reduced height from 0.025 to 0.018
 
     btn_prev_fractal = Button(ax_prev_fractal, '< Prev', color='#FFE4B5', hovercolor='#FFD700')
     btn_next_fractal = Button(ax_next_fractal, 'Next >', color='#E0FFFF', hovercolor='#87CEEB')
@@ -846,6 +845,8 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
     btn_next_fractal.on_clicked(on_next_fractal)
 
     # Initial plot
+    current_index[0] = 0  # Reset to frame 0
+    is_playing[0] = False  # Ensure not playing
     plot_all_panels(0)
 
     print("[OK] Visualization ready")

@@ -487,16 +487,20 @@ def load_fractal_list():
     return df
 
 
-def load_tick_data_window(preview_tick_index, num_minutes=2):
+def load_tick_data_window(preview_tick_index, fractal_tick_index, num_minutes_after=1):
     """
-    Load tick data starting from preview_tick_index for specified minutes
+    Load tick data window around fractal
 
     Args:
         preview_tick_index: Starting tick index (already 1 minute before fractal)
-        num_minutes: Total minutes to load (default 2 = 1 before + 1 after fractal)
+        fractal_tick_index: Exact fractal tick index
+        num_minutes_after: Minutes to load after fractal (default 1)
     """
     csv_path = DATA_DIR / DATA_FILE
     print(f"[INFO] Loading tick data from: {csv_path.name}")
+
+    # Calculate ticks to load after fractal (approx 60 ticks per second = 3600 per minute)
+    ticks_after_fractal = int(60 * 60 * num_minutes_after)
 
     # Read file line by line (JSON parsing)
     data_rows = []
@@ -505,7 +509,7 @@ def load_tick_data_window(preview_tick_index, num_minutes=2):
 
         current_tick_idx = 0
         target_start = preview_tick_index
-        target_end = preview_tick_index + (60 * 60 * num_minutes)  # Approx ticks per minute
+        target_end = fractal_tick_index + ticks_after_fractal  # 1 minute before + fractal + 1 minute after
 
         for line in f:
             if current_tick_idx < target_start:
@@ -625,11 +629,27 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
     print(f"  Preview Tick Index: {preview_tick_index}")
     print(f"  Fractal Tick Index: {fractal_tick_index}")
 
-    # Load 2 minutes of data
-    df_ticks = load_tick_data_window(preview_tick_index, num_minutes=2)
+    # Load data: 1 minute before fractal + 1 minute after fractal
+    df_ticks = load_tick_data_window(preview_tick_index, fractal_tick_index, num_minutes_after=1)
 
     # Pre-compute profiles
     profiles_data = precompute_profiles(df_ticks)
+
+    # Calculate the frame index where fractal occurs (for stopping animation)
+    fractal_frame_index = None
+    for i, (ts, _, _, _, _) in enumerate(profiles_data):
+        if ts >= fractal_timestamp:
+            fractal_frame_index = i
+            break
+
+    # Calculate max frame (1 minute = 60 seconds after fractal)
+    if fractal_frame_index is not None:
+        max_playback_frame = min(fractal_frame_index + 60, len(profiles_data) - 1)
+    else:
+        max_playback_frame = len(profiles_data) - 1
+
+    print(f"\n[INFO] Fractal occurs at frame {fractal_frame_index}/{len(profiles_data)-1}")
+    print(f"[INFO] Animation will stop at frame {max_playback_frame} (1 min after fractal)")
 
     # Create figure with 5 horizontal panels + price chart
     print("\n[INFO] Creating visualization...")
@@ -744,20 +764,35 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
             timer[0].stop()
 
     def animate():
-        """Animate forward"""
-        if is_playing[0]:
-            current_index[0] = min(len(profiles_data) - 1, current_index[0] + 1)
-            slider.set_val(current_index[0])
+        """Animate forward - stops at 1 minute after fractal"""
+        if not is_playing[0]:
+            return
 
-            if current_index[0] < len(profiles_data) - 1:
-                timer[0] = fig.canvas.new_timer(interval=500)
-                timer[0].add_callback(animate)
-                timer[0].start()
-            else:
-                is_playing[0] = False
+        current_index[0] = min(max_playback_frame, current_index[0] + 1)
+        slider.set_val(current_index[0])
+
+        # Stop if we reached max playback frame (1 min after fractal)
+        if current_index[0] >= max_playback_frame:
+            is_playing[0] = False
+            if timer[0]:
+                timer[0].stop()
+            print(f"\n[INFO] Animation stopped at 1 minute after fractal")
+            print(f"[INFO] Click 'Next >' button to inspect next fractal")
+            return
+
+        if is_playing[0]:
+            # Schedule next frame
+            timer[0] = fig.canvas.new_timer(interval=300)  # 300ms for smoother playback
+            timer[0].single_shot = True
+            timer[0].add_callback(animate)
+            timer[0].start()
 
     def on_prev_fractal(event):
         """Load previous fractal"""
+        # Stop animation first
+        is_playing[0] = False
+        if timer[0]:
+            timer[0].stop()
         plt.close(fig)
         new_idx = fractal_idx - 1
         if new_idx >= 0:
@@ -767,6 +802,10 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
 
     def on_next_fractal(event):
         """Load next fractal"""
+        # Stop animation first
+        is_playing[0] = False
+        if timer[0]:
+            timer[0].stop()
         plt.close(fig)
         new_idx = fractal_idx + 1
         if new_idx < len(df_fractals):

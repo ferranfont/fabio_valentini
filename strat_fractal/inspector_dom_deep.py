@@ -45,6 +45,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 
 DATA_FILE = "ts_and_dom_24_oct.csv"
 PROFILE_WINDOW = 5  # seconds
+FREQUENCY = '10S'  # Profile frequency (1 second)
 
 # Profile shape detection (copied from plot_dom_deep.py)
 DENSITY_SHAPE = 0.70
@@ -579,7 +580,7 @@ def precompute_profiles(df):
     """Pre-compute market profiles for every second"""
     start_time = df["Timestamp"].min()
     end_time = df["Timestamp"].max()
-    timestamps = pd.date_range(start=start_time, end=end_time, freq="1s")
+    timestamps = pd.date_range(start=start_time, end=end_time, freq=FREQUENCY)
 
     print(f"[INFO] Pre-computing {len(timestamps)} profiles...")
 
@@ -656,6 +657,11 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
     else:
         max_playback_frame = len(profiles_data) - 1
 
+    if fractal_frame_index is not None and 0 <= fractal_frame_index < len(profiles_data):
+        fractal_price_at_line = profiles_data[fractal_frame_index][2]
+    else:
+        fractal_price_at_line = None
+
     print(f"\n[INFO] Fractal occurs at frame {fractal_frame_index}/{len(profiles_data)-1}")
     print(f"[INFO] Animation will stop at frame {max_playback_frame} (1 min after fractal)")
 
@@ -729,17 +735,27 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
 
         # Add title as text in upper LEFT of price chart (without total frames)
         if ax_price_ret:
-            ax_price_ret.text(0.02, 0.95,
-                            f'Fractal #{fractal_idx} | {fractal_type} @ {fractal_price:.2f} | Frame {index}',
-                            transform=ax_price_ret.transAxes,
-                            fontsize=9, verticalalignment='top', horizontalalignment='left',
-                            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7),
-                            color='black', fontweight='bold')
+            display_price = fractal_price_at_line if fractal_price_at_line is not None else fractal_price
+            price_str = f"{display_price:.2f}" if display_price is not None else "N/A"
+            ax_price_ret.text(
+                0.02,
+                0.95,
+                f'{fractal_type} @ {price_str} | Fractal #{fractal_idx} | Frame {index}',
+                transform=ax_price_ret.transAxes,
+                fontsize=9,
+                verticalalignment='top',
+                horizontalalignment='left',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7),
+                color='black',
+                fontweight='bold',
+            )
 
         fig.canvas.draw_idle()
 
     def update_display(val=None):
         """Update display from slider"""
+        if is_playing[0]:
+            return
         idx = int(slider.val)
         current_index[0] = idx
         plot_all_panels(idx)
@@ -749,6 +765,7 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
         is_playing[0] = False
         if timer[0]:
             timer[0].stop()
+            timer[0] = None
         current_index[0] = max(0, current_index[0] - 1)
         slider.set_val(current_index[0])
 
@@ -757,19 +774,23 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
         is_playing[0] = False
         if timer[0]:
             timer[0].stop()
+            timer[0] = None
         current_index[0] = min(len(profiles_data) - 1, current_index[0] + 1)
         slider.set_val(current_index[0])
 
     def on_play(event):
         """Play animation"""
         is_playing[0] = True
+        btn_play.label.set_text("Playing...")
         animate()
 
     def on_pause(event):
         """Pause animation"""
         is_playing[0] = False
+        btn_play.label.set_text("Play")
         if timer[0]:
             timer[0].stop()
+            timer[0] = None
 
     def animate():
         """Animate forward - stops at 1 minute after fractal"""
@@ -778,12 +799,14 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
 
         current_index[0] = min(max_playback_frame, current_index[0] + 1)
         slider.set_val(current_index[0])
+        plot_all_panels(current_index[0])
 
         # Stop if we reached max playback frame (1 min after fractal)
         if current_index[0] >= max_playback_frame:
             is_playing[0] = False
             if timer[0]:
                 timer[0].stop()
+                timer[0] = None
             print(f"\n[INFO] Animation stopped at 1 minute after fractal")
             print(f"[INFO] Click 'Next >' button to inspect next fractal")
             return
@@ -795,31 +818,25 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
             timer[0].add_callback(animate)
             timer[0].start()
 
+    navigation_request = ['stay']
+
     def on_prev_fractal(event):
-        """Load previous fractal (respects FIRST_FRACTAL limit)"""
-        # Stop animation first
+        """Request previous fractal (respects FIRST_FRACTAL limit)"""
         is_playing[0] = False
         if timer[0]:
             timer[0].stop()
+            timer[0] = None
+        navigation_request[0] = 'prev'
         plt.close(fig)
-        new_idx = fractal_idx - 1
-        if new_idx >= FIRST_FRACTAL:
-            load_and_inspect_fractal(new_idx, df_fractals)
-        else:
-            print(f"[INFO] Already at first fractal (FIRST_FRACTAL = {FIRST_FRACTAL})")
 
     def on_next_fractal(event):
-        """Load next fractal"""
-        # Stop animation first
+        """Request next fractal"""
         is_playing[0] = False
         if timer[0]:
             timer[0].stop()
+            timer[0] = None
+        navigation_request[0] = 'next'
         plt.close(fig)
-        new_idx = fractal_idx + 1
-        if new_idx < len(df_fractals):
-            load_and_inspect_fractal(new_idx, df_fractals)
-        else:
-            print(f"[INFO] Already at last fractal")
 
     # Create frame navigation buttons (center, very small)
     ax_prev = plt.axes([0.30, 0.05, 0.03, 0.015])
@@ -863,6 +880,8 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
 
     plt.show()
 
+    return navigation_request[0]
+
 
 def main():
     """Main execution"""
@@ -896,8 +915,22 @@ def main():
         print(f"[INFO] Starting from fractal #{FIRST_FRACTAL} instead")
         fractal_idx = FIRST_FRACTAL
 
-    # Load and inspect the fractal
-    load_and_inspect_fractal(fractal_idx, df_fractals)
+    current_idx = fractal_idx
+
+    while True:
+        navigation = load_and_inspect_fractal(current_idx, df_fractals)
+        if navigation == 'prev':
+            if current_idx > FIRST_FRACTAL:
+                current_idx -= 1
+            else:
+                print(f"[INFO] Already at first fractal (FIRST_FRACTAL = {FIRST_FRACTAL})")
+        elif navigation == 'next':
+            if current_idx + 1 < len(df_fractals):
+                current_idx += 1
+            else:
+                print("[INFO] Already at last fractal")
+        else:
+            break
 
 
 if __name__ == "__main__":

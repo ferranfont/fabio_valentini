@@ -7,6 +7,29 @@ from datetime import timedelta
 from rolling_profile import RollingMarketProfile
 import os
 
+csv_path = (
+    "../data/time_and_sales_nq.csv"  # Can use time_and_sales_nq.csv or ts_and_dom_*.csv
+)
+
+# Profile shape detection configuration (modified from plot_deep.py)
+DENSITY_SHAPE = 0.3  # 50% of volume must be concentrated in 2 extreme prices
+DIAGONAL_OPPOSITION_RATIO = (
+    3.0  # Strong side must be 3x opposite at SAME levels (e.g., ASK@high vs BID@high)
+)
+
+MIN_PRICE_LEVELS = 6  # Minimum number of active price levels
+MIN_BID_ASK_SIZE = 15  # Minimum absolute size of largest BID/ASK bar
+PRICE_POSITION_THRESHOLD = 0.3  # Price must be in lower/upper 25% of the profile range
+DIFF_DISTANCE = 0  # Minimum absolute price difference between current and previous close (0 = no filter)
+MIN_VOLUME = 10  # Minimum total volume (BID + ASK) in the profile
+
+# Configuration: Set to True to filter for NY hours only
+FILTER_NY_HOURS = True  # Set to False to process all data
+
+# Configuration: Set to True to filter for European hours only
+FILTER_EUROPEAN_HOURS = True  # Set to False to process all data
+
+
 # Create output directory for plots
 os.makedirs("charts/detections", exist_ok=True)
 
@@ -22,13 +45,14 @@ def plot_detection(
     lowest_price,
     max_ask_price,
     max_bid_price,
+    current_price,
 ):
     """Create a 3-panel plot for a detection."""
 
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 8))
 
     # Helper function to plot market profile
-    def plot_market_profile(ax, profile, title):
+    def plot_market_profile(ax, profile, title, closing_price=None):
         if not profile:
             ax.text(0.5, 0.5, "No data", ha="center", va="center")
             ax.set_title(title)
@@ -63,6 +87,20 @@ def plot_detection(
         ax.set_yticklabels([f"{p:.2f}" for p in prices], fontsize=7)
         ax.axvline(x=0, color="black", linewidth=1.5, linestyle="-", alpha=0.7)
 
+        # Add blue dot at closing price (like in plot_dom.py)
+        if closing_price is not None and closing_price in prices:
+            price_idx = prices.index(closing_price)
+            ax.plot(
+                0,
+                price_idx,
+                "o",
+                color="blue",
+                markersize=10,
+                zorder=5,
+                markeredgecolor="darkblue",
+                markeredgewidth=2,
+            )
+
         max_x = (
             max(
                 max(bid_volumes) if bid_volumes else 1,
@@ -77,9 +115,25 @@ def plot_detection(
         ax.grid(True, alpha=0.3, axis="x")
         ax.legend(loc="upper right", fontsize=8)
 
+    # Get closing price at detection time
+    closing_price_now = current_price
+
+    # Get closing price after 1 minute
+    time_after = detection_time + timedelta(seconds=60)
+    price_data_after = df_all[df_all["Timestamp"] <= time_after]
+    if len(price_data_after) > 0:
+        closing_price_after = float(
+            str(price_data_after.iloc[-1]["Precio"]).replace(",", ".")
+        )
+    else:
+        closing_price_after = None
+
     # Panel 1: Market profile at detection
     plot_market_profile(
-        ax1, profile_now, f"At Detection\n{detection_time.strftime('%H:%M:%S')}"
+        ax1,
+        profile_now,
+        f"At Detection\n{detection_time.strftime('%H:%M:%S')}",
+        closing_price_now,
     )
 
     # Panel 2: Market profile after 1 minute
@@ -87,6 +141,7 @@ def plot_detection(
         ax2,
         profile_after,
         f"After 1 Minute\n{(detection_time + timedelta(seconds=60)).strftime('%H:%M:%S')}",
+        closing_price_after,
     )
 
     # Panel 3: Price movement
@@ -186,10 +241,73 @@ def plot_detection(
 
 
 # Load data
-csv_path = "data/time_and_sales_nq.csv"
 print("Loading data...")
-df = pd.read_csv(csv_path, sep=";", decimal=",")
-df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+
+# Detect CSV format by reading first line
+with open(csv_path, "r") as f:
+    first_line = f.readline().strip()
+
+# Check if it's the DOM format (comma-separated with DOM_BID, DOM_ASK columns)
+is_dom_format = "DOM_BID" in first_line and "DOM_ASK" in first_line
+
+if is_dom_format:
+    print("Detected DOM format (with JSON columns)")
+    # The CSV has malformed quoting (entire row in quotes). Parse manually.
+    with open(csv_path, "r") as f:
+        # Read header
+        header = f.readline().strip().split(",")
+
+        # Parse each line manually
+        rows = []
+        for line in f:
+            # Remove outer quotes if present
+            line = line.strip()
+            if line.startswith('"') and line.endswith('"'):
+                line = line[1:-1]
+
+            # Split by comma, but need to handle JSON dictionaries
+            parts = []
+            current = ""
+            in_dict = 0
+
+            for char in line:
+                if char == "{":
+                    in_dict += 1
+                elif char == "}":
+                    in_dict -= 1
+
+                if char == "," and in_dict == 0:
+                    parts.append(current)
+                    current = ""
+                else:
+                    current += char
+
+            # Add the last part
+            if current:
+                parts.append(current)
+
+            # We only need first 4 columns: Timestamp, Price, Size, Side
+            if len(parts) >= 4:
+                rows.append(parts[:4])
+
+    df = pd.DataFrame(rows, columns=header[:4])
+    df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+
+    # Rename columns to match expected format
+    df = df.rename(columns={"Price": "Precio", "Size": "Volumen", "Side": "Lado"})
+
+    # Convert numeric columns
+    df["Precio"] = df["Precio"].astype(float)
+    df["Volumen"] = df["Volumen"].astype(int)
+else:
+    print("Detected standard format (European CSV: semicolon separator, comma decimal)")
+    # Standard European format: semicolon separator, comma decimal
+    df = pd.read_csv(csv_path, sep=";", decimal=",")
+    df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+    # Columns already named: Timestamp, Precio, Volumen, Lado
+
+print(f"Loaded {len(df)} rows")
+print(f"Time range: {df['Timestamp'].min()} to {df['Timestamp'].max()}")
 
 # Filter for NY trading hours (9:30 AM - 4:00 PM ET)
 # Timestamps are in Madrid time (CEST: UTC+2, October)
@@ -197,24 +315,51 @@ df["Timestamp"] = pd.to_datetime(df["Timestamp"])
 # Madrid is 6 hours ahead of NY
 # 9:30 AM ET = 3:30 PM (15:30) Madrid time
 # 4:00 PM ET = 10:00 PM (22:00) Madrid time
-df["hour"] = df["Timestamp"].dt.hour
-df["minute"] = df["Timestamp"].dt.minute
-df["time_minutes"] = df["hour"] * 60 + df["minute"]
 
-# NY trading hours in Madrid time: 15:30 (930 minutes) to 22:00 (1320 minutes)
-NY_OPEN_MADRID = 15 * 60 + 30  # 15:30 = 930 minutes
-NY_CLOSE_MADRID = 22 * 60  # 22:00 = 1320 minutes
 
-df = df[(df["time_minutes"] >= NY_OPEN_MADRID) & (df["time_minutes"] < NY_CLOSE_MADRID)]
+if FILTER_NY_HOURS or FILTER_EUROPEAN_HOURS:
+    df["hour"] = df["Timestamp"].dt.hour
+    df["minute"] = df["Timestamp"].dt.minute
+    df["time_minutes"] = df["hour"] * 60 + df["minute"]
+
+    # Define time ranges
+    NY_OPEN_MADRID = 15 * 60 + 30  # 15:30 = 930 minutes
+    NY_CLOSE_MADRID = 22 * 60  # 22:00 = 1320 minutes
+    EUROPEAN_OPEN_MADRID = 8 * 60  # 08:00 = 480 minutes
+    EUROPEAN_CLOSE_MADRID = 22 * 60  # 22:00 = 1320 minutes
+
+    df_before = len(df)
+
+    if FILTER_NY_HOURS and FILTER_EUROPEAN_HOURS:
+        # Both enabled: Union of both time ranges (08:00-22:00, which covers both)
+        df = df[
+            (df["time_minutes"] >= EUROPEAN_OPEN_MADRID) & (df["time_minutes"] < EUROPEAN_CLOSE_MADRID)
+        ]
+        print(f"Filtered {df_before - len(df)} ticks outside European+NY trading hours")
+        print(f"Combined trading hours (Madrid time): 08:00 - 22:00 (covers both EU and NY)")
+    elif FILTER_NY_HOURS:
+        # NY only: 15:30-22:00
+        df = df[
+            (df["time_minutes"] >= NY_OPEN_MADRID) & (df["time_minutes"] < NY_CLOSE_MADRID)
+        ]
+        print(f"Filtered {df_before - len(df)} ticks outside NY trading hours")
+        print(f"NY trading hours (Madrid time): 15:30 - 22:00 (CEST, 6 hours ahead)")
+    else:
+        # European only: 08:00-22:00
+        df = df[
+            (df["time_minutes"] >= EUROPEAN_OPEN_MADRID) & (df["time_minutes"] < EUROPEAN_CLOSE_MADRID)
+        ]
+        print(f"Filtered {df_before - len(df)} ticks outside European trading hours")
+        print(f"European trading hours (Madrid time): 08:00 - 22:00 (CEST)")
+else:
+    print("Processing ALL data (no hours filter)")
 
 print(f"Loaded {len(df)} ticks")
 print(f"Period: {df['Timestamp'].min()} to {df['Timestamp'].max()}")
-print(f"Filtered for NY trading hours (9:30 AM - 4:00 PM ET)")
-print(f"  Madrid time equivalent: 15:30 - 22:00 (CEST, 6 hours ahead)")
 print("=" * 80)
 
-# Create rolling market profile with 60-second window
-mp = RollingMarketProfile(window=timedelta(seconds=60))
+# Create rolling market profile with 20-second window
+mp = RollingMarketProfile(window=timedelta(seconds=20))
 
 # Track detected patterns
 detection_count = 0
@@ -224,15 +369,168 @@ WARMUP_PERIOD = timedelta(seconds=120)  # Discard first 2 minutes
 start_time = df["Timestamp"].min()
 warmup_end = start_time + WARMUP_PERIOD
 
+
+def evaluate_profile_shape(profile, current_close=None, previous_close=None):
+    """
+    Evaluate the distribution shape of a market profile with STRICT criteria.
+
+    Returns:
+        str: 'd_shape', 'p_shape', or 'balanced'
+
+    STRICT Criteria for d_shape (ALL must be met):
+    1. Minimum MIN_PRICE_LEVELS active price levels
+    2. At least one BID bar >= MIN_BID_ASK_SIZE in 2 LOWEST prices
+    3. >= DENSITY_SHAPE (50%) of total BID volume concentrated in 2 LOWEST prices
+    4. BID volume in 2 LOWEST must be >= 3x ASK volume in SAME 2 LOWEST (diagonal opposition)
+    5. Current price must be in LOWER 25% of the profile range
+    6. Price FALLING: current_close < previous_close (absorbing selling pressure)
+    7. Absolute price difference >= DIFF_DISTANCE
+
+    STRICT Criteria for p_shape (ALL must be met):
+    1. Minimum MIN_PRICE_LEVELS active price levels
+    2. At least one ASK bar >= MIN_BID_ASK_SIZE in 2 HIGHEST prices
+    3. >= DENSITY_SHAPE (50%) of total ASK volume concentrated in 2 HIGHEST prices
+    4. ASK volume in 2 HIGHEST must be >= 3x BID volume in SAME 2 HIGHEST (diagonal opposition)
+    5. Current price must be in UPPER 25% of the profile range
+    6. Price RISING: current_close > previous_close (absorbing buying pressure)
+    7. Absolute price difference >= DIFF_DISTANCE
+    """
+    if not profile or current_close is None or previous_close is None:
+        return "balanced"
+
+    # Check minimum price difference (absolute value)
+    price_diff = abs(current_close - previous_close)
+    if price_diff < DIFF_DISTANCE:
+        return "balanced"
+
+    # Filter out price levels with no volume (empty levels)
+    active_prices = []
+    for price in sorted(profile.keys()):
+        bid_vol = profile[price].get("BID", 0)
+        ask_vol = profile[price].get("ASK", 0)
+        if bid_vol > 0 or ask_vol > 0:  # Only consider levels with volume
+            active_prices.append(price)
+
+    # Criterion 1: Minimum number of price levels
+    if len(active_prices) < MIN_PRICE_LEVELS:
+        return "balanced"
+
+    # Calculate total volumes
+    total_bid = sum(profile[p].get("BID", 0) for p in active_prices)
+    total_ask = sum(profile[p].get("ASK", 0) for p in active_prices)
+    total_volume = total_bid + total_ask
+
+    # Check minimum volume requirement
+    if total_volume < MIN_VOLUME:
+        return "balanced"
+
+    # Calculate price range
+    min_price = min(active_prices)
+    max_price = max(active_prices)
+    price_range = max_price - min_price
+
+    if price_range == 0:
+        return "balanced"
+
+    # Calculate where current price is in the range (0 = bottom, 1 = top)
+    price_position = (current_close - min_price) / price_range
+
+    # Get the 2 lowest and 2 highest prices for extreme level concentration check
+    lowest_2_prices = active_prices[:2] if len(active_prices) >= 2 else active_prices
+    highest_2_prices = active_prices[-2:] if len(active_prices) >= 2 else active_prices
+
+    # Calculate BID and ASK volumes in 2 lowest prices
+    lowest_2_bid = sum(profile[p].get("BID", 0) for p in lowest_2_prices)
+    lowest_2_ask = sum(profile[p].get("ASK", 0) for p in lowest_2_prices)
+
+    # Calculate ASK and BID volumes in 2 highest prices
+    highest_2_ask = sum(profile[p].get("ASK", 0) for p in highest_2_prices)
+    highest_2_bid = sum(profile[p].get("BID", 0) for p in highest_2_prices)
+
+    # Find max BID in lowest 2 prices and max ASK in highest 2 prices
+    max_lowest_2_bid = (
+        max([profile[p].get("BID", 0) for p in lowest_2_prices])
+        if lowest_2_prices
+        else 0
+    )
+    max_highest_2_ask = (
+        max([profile[p].get("ASK", 0) for p in highest_2_prices])
+        if highest_2_prices
+        else 0
+    )
+
+    # Check for d_shape - ALL criteria must be met
+    if total_bid > 0:
+        bid_concentration = lowest_2_bid / total_bid
+        # Diagonal opposition: BID@low must be >= 3x ASK@low (same price levels)
+        diagonal_opposition_ratio = (
+            lowest_2_bid / lowest_2_ask if lowest_2_ask > 0 else float("inf")
+        )
+
+        is_d_shape = (
+            max_lowest_2_bid >= MIN_BID_ASK_SIZE  # Large BID bar in 2 lowest prices
+            and bid_concentration
+            >= DENSITY_SHAPE  # 50% BID concentration in 2 lowest prices
+            and diagonal_opposition_ratio
+            >= DIAGONAL_OPPOSITION_RATIO  # BID@low >= 3x ASK@low (same levels)
+            and price_position
+            <= PRICE_POSITION_THRESHOLD  # Price in lower 25% of range
+            and current_close
+            < previous_close  # Price FALLING (absorbing selling pressure)
+        )
+
+        if is_d_shape:
+            return "d_shape"
+
+    # Check for p_shape - ALL criteria must be met
+    if total_ask > 0:
+        ask_concentration = highest_2_ask / total_ask
+        # Diagonal opposition: ASK@high must be >= 3x BID@high (same price levels)
+        diagonal_opposition_ratio = (
+            highest_2_ask / highest_2_bid if highest_2_bid > 0 else float("inf")
+        )
+
+        is_p_shape = (
+            max_highest_2_ask >= MIN_BID_ASK_SIZE  # Large ASK bar in 2 highest prices
+            and ask_concentration
+            >= DENSITY_SHAPE  # 50% ASK concentration in 2 highest prices
+            and diagonal_opposition_ratio
+            >= DIAGONAL_OPPOSITION_RATIO  # ASK@high >= 3x BID@high (same levels)
+            and price_position
+            >= (1 - PRICE_POSITION_THRESHOLD)  # Price in upper 25% of range
+            and current_close
+            > previous_close  # Price RISING (absorbing buying pressure)
+        )
+
+        if is_p_shape:
+            return "p_shape"
+
+    return "balanced"
+
+
 print(f"\nWarmup period: {start_time} to {warmup_end}")
 print(f"Detection starts after: {warmup_end}")
-print(f"Detection criteria:")
-print(f"  - ASK_AT_HIGH: Heavy ASK volume at highest price + current price at high")
-print(f"  - BID_AT_LOW: Heavy BID volume at lowest price + current price at low")
-print(f"  - Price tolerance: 0.25 (1 tick)")
+print(f"Detection criteria (modified from plot_deep.py):")
+print(
+    f"  - d_shape: BID absorption (price falling, BID concentration in 2 LOWEST prices)"
+)
+print(
+    f"  - p_shape: ASK absorption (price rising, ASK concentration in 2 HIGHEST prices)"
+)
+print(
+    f"  - DENSITY_SHAPE: {DENSITY_SHAPE*100:.0f}% volume concentration required in 2 extreme prices"
+)
+print(f"  - MIN_PRICE_LEVELS: {MIN_PRICE_LEVELS}")
+print(f"  - MIN_BID_ASK_SIZE: {MIN_BID_ASK_SIZE}")
+print(f"  - PRICE_POSITION_THRESHOLD: {PRICE_POSITION_THRESHOLD*100:.0f}%")
+print(
+    f"  - DIAGONAL_OPPOSITION_RATIO: {DIAGONAL_OPPOSITION_RATIO:.1f}x (strong side must be 3x opposite)"
+)
 print("=" * 80)
 
-# Process each tick
+# Process each tick - track previous close for shape detection
+previous_close = None
+
 for idx, row in df.iterrows():
     mp.update(row["Timestamp"], row["Precio"], row["Volumen"], row["Lado"])
 
@@ -241,85 +539,68 @@ for idx, row in df.iterrows():
 
     # Skip warmup period (first 2 minutes)
     if (current_time - start_time) < WARMUP_PERIOD:
+        previous_close = current_price  # Track for next iteration
         continue
 
     # Check if we're in cooldown period
     if last_detection_time is not None:
         time_since_last = current_time - last_detection_time
         if time_since_last < COOLDOWN_PERIOD:
+            previous_close = current_price  # Track for next iteration
             continue  # Skip detection, still in cooldown
 
     # Get current profile
     profile = mp.profile()
 
     if not profile:
+        previous_close = current_price  # Track for next iteration
         continue
 
-    # Get all prices
+    # Evaluate profile shape using the sophisticated algorithm
+    profile_shape = evaluate_profile_shape(profile, current_price, previous_close)
+
+    # Update previous close for next iteration
+    previous_close = current_price
+
+    # Only detect if shape is d_shape or p_shape (not balanced)
+    if profile_shape not in ["d_shape", "p_shape"]:
+        continue
+
+    # Get all prices for display
     prices = sorted(profile.keys())
-    if len(prices) < 2:
-        continue
+    highest_price = prices[-1] if prices else current_price
+    lowest_price = prices[0] if prices else current_price
 
-    highest_price = prices[-1]
-    lowest_price = prices[0]
-
-    # Get ASK volumes and find max
+    # Calculate volume statistics for display
     ask_volumes = {p: profile[p]["ASK"] for p in prices if profile[p]["ASK"] > 0}
-    if ask_volumes:
-        max_ask_price = max(ask_volumes, key=ask_volumes.get)
-        max_ask_volume = ask_volumes[max_ask_price]
-    else:
-        max_ask_price = None
-        max_ask_volume = 0
-
-    # Get BID volumes and find max
     bid_volumes = {p: profile[p]["BID"] for p in prices if profile[p]["BID"] > 0}
-    if bid_volumes:
-        max_bid_price = min(
-            bid_volumes,
-            key=lambda p: (
-                p if bid_volumes[p] == max(bid_volumes.values()) else float("inf")
-            ),
-        )
-        # Find the price with maximum BID volume
-        max_bid_volume = max(bid_volumes.values())
-        prices_with_max_bid = [p for p, v in bid_volumes.items() if v == max_bid_volume]
-        max_bid_price = min(prices_with_max_bid) if prices_with_max_bid else None
-    else:
-        max_bid_price = None
-        max_bid_volume = 0
 
-    # Check conditions:
-    # 1. Maximum ASK volume is at the highest price AND current price is at the high
-    # 2. Maximum BID volume is at the lowest price AND current price is at the low
-    condition_met = False
-    condition_type = ""
+    max_ask_price = max(ask_volumes, key=ask_volumes.get) if ask_volumes else None
+    max_bid_price = max(bid_volumes, key=bid_volumes.get) if bid_volumes else None
 
-    # Tolerance for price matching (1 tick = 0.25 points)
-    PRICE_TOLERANCE = 0.25
+    # Calculate shape-specific statistics (2 lowest and 2 highest prices)
+    lowest_2_prices = prices[:2] if len(prices) >= 2 else prices
+    highest_2_prices = prices[-2:] if len(prices) >= 2 else prices
 
-    # ASK_AT_HIGH: Heavy buying at highest price AND current price is at/near the high
-    if (
-        max_ask_price is not None
-        and max_ask_price == highest_price
-        and max_ask_volume > 0
-    ):
-        if abs(current_price - highest_price) <= PRICE_TOLERANCE:
-            condition_met = True
-            condition_type = "ASK_AT_HIGH"
+    lowest_2_bid_volume = sum(profile[p].get("BID", 0) for p in lowest_2_prices)
+    highest_2_ask_volume = sum(profile[p].get("ASK", 0) for p in highest_2_prices)
+    total_bid = sum(profile[p].get("BID", 0) for p in prices)
+    total_ask = sum(profile[p].get("ASK", 0) for p in prices)
 
-    # BID_AT_LOW: Heavy selling at lowest price AND current price is at/near the low
-    if (
-        max_bid_price is not None
-        and max_bid_price == lowest_price
-        and max_bid_volume > 0
-    ):
-        if abs(current_price - lowest_price) <= PRICE_TOLERANCE:
-            condition_met = True
-            if condition_type:
-                condition_type += " + BID_AT_LOW"
-            else:
-                condition_type = "BID_AT_LOW"
+    max_lowest_2_bid = (
+        max([profile[p].get("BID", 0) for p in lowest_2_prices])
+        if lowest_2_prices
+        else 0
+    )
+    max_highest_2_ask = (
+        max([profile[p].get("ASK", 0) for p in highest_2_prices])
+        if highest_2_prices
+        else 0
+    )
+
+    # Pattern detected!
+    condition_met = True
+    condition_type = profile_shape
 
     # Log the market profile if condition is met
     if condition_met:
@@ -345,7 +626,7 @@ for idx, row in df.iterrows():
 
         # Compute market profile 1 minute after detection
         time_after = current_time + timedelta(seconds=60)
-        mp_after = RollingMarketProfile(window=timedelta(seconds=60))
+        mp_after = RollingMarketProfile(window=timedelta(seconds=20))
 
         ticks_until_after = df[df["Timestamp"] <= time_after]
         for _, r in ticks_until_after.iterrows():
@@ -366,6 +647,7 @@ for idx, row in df.iterrows():
             lowest_price,
             max_ask_price,
             max_bid_price,
+            current_price,
         )
         print(f"Plot saved: {filename}")
 
@@ -379,12 +661,14 @@ for idx, row in df.iterrows():
             ask_vol = data["ASK"]
             total_vol = data["Total"]
 
-            # Mark special prices
+            # Mark special prices based on detected shape
             marker = ""
-            if price == highest_price and max_ask_price == highest_price:
-                marker = " <- MAX ASK AT HIGH"
-            if price == lowest_price and max_bid_price == lowest_price:
-                marker = " <- MAX BID AT LOW"
+            if condition_type == "d_shape" and price in lowest_2_prices:
+                if profile[price]["BID"] == max_lowest_2_bid:
+                    marker = " <- MAX BID IN 2 LOWEST (d-shape)"
+            elif condition_type == "p_shape" and price in highest_2_prices:
+                if profile[price]["ASK"] == max_highest_2_ask:
+                    marker = " <- MAX ASK IN 2 HIGHEST (p-shape)"
 
             print(
                 f"Price {price:>10.2f} | BID: {bid_vol:>6.0f} | "
@@ -394,18 +678,70 @@ for idx, row in df.iterrows():
         print(f"{'-' * 80}")
         print(f"Total price levels: {len(prices)}")
         print(f"Price range: {lowest_price:.2f} - {highest_price:.2f}")
+        print(f"Current price: {current_price:.2f} (prev: {previous_close:.2f})")
 
-        # Show top volumes
-        if bid_volumes:
-            top_bid_price = max(bid_volumes, key=bid_volumes.get)
-            print(
-                f"Highest BID volume: {bid_volumes[top_bid_price]:.0f} at {top_bid_price:.2f}"
+        # Show shape-specific statistics
+        if condition_type == "d_shape":
+            bid_concentration = (
+                (lowest_2_bid_volume / total_bid * 100) if total_bid > 0 else 0
+            )
+            # Calculate diagonal opposition for display (BID@low vs ASK@low)
+            lowest_2_ask_volume_display = sum(
+                profile[p].get("ASK", 0) for p in lowest_2_prices
+            )
+            diagonal_ratio = (
+                lowest_2_bid_volume / lowest_2_ask_volume_display
+                if lowest_2_ask_volume_display > 0
+                else float("inf")
             )
 
-        if ask_volumes:
-            top_ask_price = max(ask_volumes, key=ask_volumes.get)
+            print(f"\nd-Shape Statistics:")
             print(
-                f"Highest ASK volume: {ask_volumes[top_ask_price]:.0f} at {top_ask_price:.2f}"
+                f"  2 LOWEST prices BID volume: {lowest_2_bid_volume:.0f} ({bid_concentration:.1f}% of total BID)"
+            )
+            print(
+                f"  Lowest 2 prices: {lowest_2_prices[0]:.2f}, {lowest_2_prices[1]:.2f}"
+                if len(lowest_2_prices) >= 2
+                else f"  Lowest price: {lowest_2_prices[0]:.2f}"
+            )
+            print(f"  Max BID in lowest 2: {max_lowest_2_bid:.0f}")
+            print(f"  Total BID: {total_bid:.0f}")
+            print(
+                f"  Diagonal opposition: BID@low({lowest_2_bid_volume:.0f}) / ASK@low({lowest_2_ask_volume_display:.0f}) = {diagonal_ratio:.2f}x"
+            )
+            print(
+                f"  Price position: LOWER {PRICE_POSITION_THRESHOLD*100:.0f}% (falling)"
+            )
+        elif condition_type == "p_shape":
+            ask_concentration = (
+                (highest_2_ask_volume / total_ask * 100) if total_ask > 0 else 0
+            )
+            # Calculate diagonal opposition for display (ASK@high vs BID@high)
+            highest_2_bid_volume_display = sum(
+                profile[p].get("BID", 0) for p in highest_2_prices
+            )
+            diagonal_ratio = (
+                highest_2_ask_volume / highest_2_bid_volume_display
+                if highest_2_bid_volume_display > 0
+                else float("inf")
+            )
+
+            print(f"\np-Shape Statistics:")
+            print(
+                f"  2 HIGHEST prices ASK volume: {highest_2_ask_volume:.0f} ({ask_concentration:.1f}% of total ASK)"
+            )
+            print(
+                f"  Highest 2 prices: {highest_2_prices[0]:.2f}, {highest_2_prices[1]:.2f}"
+                if len(highest_2_prices) >= 2
+                else f"  Highest price: {highest_2_prices[0]:.2f}"
+            )
+            print(f"  Max ASK in highest 2: {max_highest_2_ask:.0f}")
+            print(f"  Total ASK: {total_ask:.0f}")
+            print(
+                f"  Diagonal opposition: ASK@high({highest_2_ask_volume:.0f}) / BID@high({highest_2_bid_volume_display:.0f}) = {diagonal_ratio:.2f}x"
+            )
+            print(
+                f"  Price position: UPPER {PRICE_POSITION_THRESHOLD*100:.0f}% (rising)"
             )
 
         print(f"{'=' * 80}\n")

@@ -46,6 +46,8 @@ DATA_DIR = PROJECT_ROOT / "data"
 DATA_FILE = "ts_and_dom_24_oct.csv"
 PROFILE_WINDOW = 5  # seconds
 FREQUENCY = '10S'  # Profile frequency (1 second)
+LOOKBACK_MINUTES_BEFORE = 2  # Minutes to include before the fractal
+LOOKAHEAD_MINUTES_AFTER = 1  # Minutes to include after the fractal
 
 # Profile shape detection (copied from plot_dom_deep.py)
 DENSITY_SHAPE = 0.70
@@ -496,14 +498,14 @@ def load_fractal_list():
     return df
 
 
-def load_tick_data_window(preview_tick_index, fractal_tick_index, num_minutes_after=1):
+def load_tick_data_window(start_tick_index, fractal_tick_index, num_minutes_after=LOOKAHEAD_MINUTES_AFTER):
     """
     Load tick data window around fractal
 
     Args:
-        preview_tick_index: Starting tick index (already 1 minute before fractal)
+        start_tick_index: Starting tick index (already adjusted lookback before fractal)
         fractal_tick_index: Exact fractal tick index
-        num_minutes_after: Minutes to load after fractal (default 1)
+        num_minutes_after: Minutes to load after fractal (default LOOKAHEAD_MINUTES_AFTER)
     """
     csv_path = DATA_DIR / DATA_FILE
     print(f"[INFO] Loading tick data from: {csv_path.name}")
@@ -517,8 +519,8 @@ def load_tick_data_window(preview_tick_index, fractal_tick_index, num_minutes_af
         header = f.readline().strip()
 
         current_tick_idx = 0
-        target_start = preview_tick_index
-        target_end = fractal_tick_index + ticks_after_fractal  # 1 minute before + fractal + 1 minute after
+        target_start = max(0, start_tick_index)
+        target_end = fractal_tick_index + ticks_after_fractal  # lookback + fractal + lookahead
 
         for line in f:
             if current_tick_idx < target_start:
@@ -635,11 +637,17 @@ def load_and_inspect_fractal(fractal_idx, df_fractals):
     print(f"  Type: {fractal_type}")
     print(f"  Price: {fractal_price:.2f}")
     print(f"  Timestamp: {fractal_timestamp_str}")
-    print(f"  Preview Tick Index: {preview_tick_index}")
-    print(f"  Fractal Tick Index: {fractal_tick_index}")
+    ticks_between = fractal_tick_index - preview_tick_index
+    if ticks_between <= 0:
+        ticks_between = 60 * 60  # Fallback to approx. 1 minute of ticks
+    start_tick_index = max(0, fractal_tick_index - LOOKBACK_MINUTES_BEFORE * ticks_between)
 
-    # Load data: 1 minute before fractal + 1 minute after fractal
-    df_ticks = load_tick_data_window(preview_tick_index, fractal_tick_index, num_minutes_after=1)
+    print(f"  Fractal Tick Index: {fractal_tick_index}")
+    print(f"  Original Preview Tick Index (1 min before): {preview_tick_index}")
+    print(f"  Start Tick Index ({LOOKBACK_MINUTES_BEFORE} min before): {start_tick_index}")
+
+    # Load data: LOOKBACK_MINUTES_BEFORE minutes before fractal + LOOKAHEAD_MINUTES_AFTER minute after fractal
+    df_ticks = load_tick_data_window(start_tick_index, fractal_tick_index, num_minutes_after=LOOKAHEAD_MINUTES_AFTER)
 
     # Pre-compute profiles
     profiles_data = precompute_profiles(df_ticks)

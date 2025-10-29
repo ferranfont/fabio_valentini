@@ -40,16 +40,18 @@ def plot_detection(
     pattern_type,
     df_all,
     profile_now,
-    profile_after,
+    profile_after_1x,
+    profile_after_2x,
     highest_price,
     lowest_price,
     max_ask_price,
     max_bid_price,
     current_price,
+    profile_window,
 ):
-    """Create a 3-panel plot for a detection."""
+    """Create a 4-panel plot showing market profiles at detection, +1x window, +2x window, and price movement."""
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 8))
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(24, 6))
 
     # Helper function to plot market profile
     def plot_market_profile(ax, profile, title, closing_price=None):
@@ -61,38 +63,41 @@ def plot_detection(
         prices = sorted(profile.keys())
         bid_volumes = [profile[p]["BID"] for p in prices]
         ask_volumes = [profile[p]["ASK"] for p in prices]
-        y_positions = range(len(prices))
 
-        # Plot bars
+        # Use actual prices on y-axis instead of index positions
+        # Determine bar height based on price tick size
+        if len(prices) > 1:
+            bar_height = min(prices[i+1] - prices[i] for i in range(len(prices)-1)) * 0.8
+        else:
+            bar_height = 0.25 * 0.8
+
+        # Plot bars using actual price values
         ax.barh(
-            y_positions,
+            prices,
             [-v for v in bid_volumes],
-            height=0.8,
+            height=bar_height,
             color=(0.8, 0, 0, 0.8),
             label="BID",
             edgecolor="darkred",
             linewidth=0.5,
         )
         ax.barh(
-            y_positions,
+            prices,
             ask_volumes,
-            height=0.8,
+            height=bar_height,
             color=(0, 0.7, 0, 0.8),
             label="ASK",
             edgecolor="darkgreen",
             linewidth=0.5,
         )
 
-        ax.set_yticks(y_positions)
-        ax.set_yticklabels([f"{p:.2f}" for p in prices], fontsize=7)
         ax.axvline(x=0, color="black", linewidth=1.5, linestyle="-", alpha=0.7)
 
         # Add blue dot at closing price (like in plot_dom.py)
         if closing_price is not None and closing_price in prices:
-            price_idx = prices.index(closing_price)
             ax.plot(
                 0,
-                price_idx,
+                closing_price,
                 "o",
                 color="blue",
                 markersize=10,
@@ -115,18 +120,26 @@ def plot_detection(
         ax.grid(True, alpha=0.3, axis="x")
         ax.legend(loc="upper right", fontsize=8)
 
-    # Get closing price at detection time
+    # Get closing prices at different time points
     closing_price_now = current_price
 
-    # Get closing price after 1 minute
-    time_after = detection_time + timedelta(seconds=60)
-    price_data_after = df_all[df_all["Timestamp"] <= time_after]
-    if len(price_data_after) > 0:
-        closing_price_after = float(
-            str(price_data_after.iloc[-1]["Precio"]).replace(",", ".")
+    time_after_1x = detection_time + timedelta(seconds=profile_window)
+    price_data_after_1x = df_all[df_all["Timestamp"] <= time_after_1x]
+    if len(price_data_after_1x) > 0:
+        closing_price_after_1x = float(
+            str(price_data_after_1x.iloc[-1]["Precio"]).replace(",", ".")
         )
     else:
-        closing_price_after = None
+        closing_price_after_1x = None
+
+    time_after_2x = detection_time + timedelta(seconds=profile_window * 2)
+    price_data_after_2x = df_all[df_all["Timestamp"] <= time_after_2x]
+    if len(price_data_after_2x) > 0:
+        closing_price_after_2x = float(
+            str(price_data_after_2x.iloc[-1]["Precio"]).replace(",", ".")
+        )
+    else:
+        closing_price_after_2x = None
 
     # Panel 1: Market profile at detection
     plot_market_profile(
@@ -136,15 +149,23 @@ def plot_detection(
         closing_price_now,
     )
 
-    # Panel 2: Market profile after 1 minute
+    # Panel 2: Market profile after profile_window seconds
     plot_market_profile(
         ax2,
-        profile_after,
-        f"After 1 Minute\n{(detection_time + timedelta(seconds=60)).strftime('%H:%M:%S')}",
-        closing_price_after,
+        profile_after_1x,
+        f"After {profile_window}s\n{time_after_1x.strftime('%H:%M:%S')}",
+        closing_price_after_1x,
     )
 
-    # Panel 3: Price movement
+    # Panel 3: Market profile after 2x profile_window seconds
+    plot_market_profile(
+        ax3,
+        profile_after_2x,
+        f"After {profile_window*2}s\n{time_after_2x.strftime('%H:%M:%S')}",
+        closing_price_after_2x,
+    )
+
+    # Panel 4: Price movement chart
     start_time = detection_time - timedelta(seconds=10)
     end_time = detection_time + timedelta(seconds=60)
     price_data = df_all[
@@ -162,7 +183,7 @@ def plot_detection(
         bid_mask = price_data["Lado"].str.upper() == "BID"
         ask_mask = price_data["Lado"].str.upper() == "ASK"
 
-        ax3.scatter(
+        ax4.scatter(
             [t for i, t in enumerate(times_rel) if bid_mask.iloc[i]],
             [p for i, p in enumerate(prices_plot) if bid_mask.iloc[i]],
             c="red",
@@ -170,7 +191,7 @@ def plot_detection(
             alpha=0.6,
             label="BID",
         )
-        ax3.scatter(
+        ax4.scatter(
             [t for i, t in enumerate(times_rel) if ask_mask.iloc[i]],
             [p for i, p in enumerate(prices_plot) if ask_mask.iloc[i]],
             c="green",
@@ -180,20 +201,23 @@ def plot_detection(
         )
 
         # Mark detection time
-        ax3.axvline(
+        ax4.axvline(
             x=0, color="blue", linewidth=2, linestyle="--", alpha=0.7, label="Detection"
         )
 
-        # Mark 1 minute after
-        ax3.axvline(
-            x=60, color="orange", linewidth=2, linestyle="--", alpha=0.7, label="+1 min"
+        # Mark profile_window and 2x profile_window
+        ax4.axvline(
+            x=profile_window, color="orange", linewidth=2, linestyle="--", alpha=0.7, label=f"+{profile_window}s"
+        )
+        ax4.axvline(
+            x=profile_window*2, color="purple", linewidth=2, linestyle="--", alpha=0.7, label=f"+{profile_window*2}s"
         )
 
-        ax3.set_xlabel("Time (seconds relative to detection)", fontsize=9)
-        ax3.set_ylabel("Price", fontsize=9)
-        ax3.set_title("Price Movement\n(-10s to +60s)", fontsize=10, fontweight="bold")
-        ax3.grid(True, alpha=0.3)
-        ax3.legend(loc="best", fontsize=8)
+        ax4.set_xlabel("Time (seconds relative to detection)", fontsize=9)
+        ax4.set_ylabel("Price", fontsize=9)
+        ax4.set_title("Price Movement\n(-10s to +60s)", fontsize=10, fontweight="bold")
+        ax4.grid(True, alpha=0.3)
+        ax4.legend(loc="best", fontsize=8)
 
         # Add price range info
         price_at_detect = (
@@ -209,18 +233,50 @@ def plot_detection(
 
         if price_at_detect is not None:
             price_change = price_after_1min - price_at_detect
-            ax3.text(
+            ax4.text(
                 0.02,
                 0.98,
                 f"Start: {price_at_detect:.2f}\nEnd: {price_after_1min:.2f}\nChange: {price_change:+.2f}",
-                transform=ax3.transAxes,
+                transform=ax4.transAxes,
                 fontsize=8,
                 verticalalignment="top",
                 bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
             )
     else:
-        ax3.text(0.5, 0.5, "No price data available", ha="center", va="center")
-        ax3.set_title("Price Movement", fontsize=10, fontweight="bold")
+        ax4.text(0.5, 0.5, "No price data available", ha="center", va="center")
+        ax4.set_title("Price Movement", fontsize=10, fontweight="bold")
+
+    # Synchronize y-axis scales across all 4 panels
+    all_prices = []
+
+    # Collect prices from all three market profiles
+    if profile_now:
+        all_prices.extend(list(profile_now.keys()))
+    if profile_after_1x:
+        all_prices.extend(list(profile_after_1x.keys()))
+    if profile_after_2x:
+        all_prices.extend(list(profile_after_2x.keys()))
+
+    # Also include prices from price movement chart
+    if len(price_data) > 0:
+        all_prices.extend(price_data["Precio"].values)
+
+    # Find global min and max
+    if all_prices:
+        global_min = min(all_prices)
+        global_max = max(all_prices)
+
+        # Add some padding (2% on each side)
+        price_range = global_max - global_min
+        padding = price_range * 0.02
+        y_min = global_min - padding
+        y_max = global_max + padding
+
+        # Apply same limits to all axes
+        ax1.set_ylim(y_min, y_max)
+        ax2.set_ylim(y_min, y_max)
+        ax3.set_ylim(y_min, y_max)
+        ax4.set_ylim(y_min, y_max)
 
     # Main title
     fig.suptitle(
@@ -333,21 +389,26 @@ if FILTER_NY_HOURS or FILTER_EUROPEAN_HOURS:
     if FILTER_NY_HOURS and FILTER_EUROPEAN_HOURS:
         # Both enabled: Union of both time ranges (08:00-22:00, which covers both)
         df = df[
-            (df["time_minutes"] >= EUROPEAN_OPEN_MADRID) & (df["time_minutes"] < EUROPEAN_CLOSE_MADRID)
+            (df["time_minutes"] >= EUROPEAN_OPEN_MADRID)
+            & (df["time_minutes"] < EUROPEAN_CLOSE_MADRID)
         ]
         print(f"Filtered {df_before - len(df)} ticks outside European+NY trading hours")
-        print(f"Combined trading hours (Madrid time): 08:00 - 22:00 (covers both EU and NY)")
+        print(
+            f"Combined trading hours (Madrid time): 08:00 - 22:00 (covers both EU and NY)"
+        )
     elif FILTER_NY_HOURS:
         # NY only: 15:30-22:00
         df = df[
-            (df["time_minutes"] >= NY_OPEN_MADRID) & (df["time_minutes"] < NY_CLOSE_MADRID)
+            (df["time_minutes"] >= NY_OPEN_MADRID)
+            & (df["time_minutes"] < NY_CLOSE_MADRID)
         ]
         print(f"Filtered {df_before - len(df)} ticks outside NY trading hours")
         print(f"NY trading hours (Madrid time): 15:30 - 22:00 (CEST, 6 hours ahead)")
     else:
         # European only: 08:00-22:00
         df = df[
-            (df["time_minutes"] >= EUROPEAN_OPEN_MADRID) & (df["time_minutes"] < EUROPEAN_CLOSE_MADRID)
+            (df["time_minutes"] >= EUROPEAN_OPEN_MADRID)
+            & (df["time_minutes"] < EUROPEAN_CLOSE_MADRID)
         ]
         print(f"Filtered {df_before - len(df)} ticks outside European trading hours")
         print(f"European trading hours (Madrid time): 08:00 - 22:00 (CEST)")
@@ -359,7 +420,8 @@ print(f"Period: {df['Timestamp'].min()} to {df['Timestamp'].max()}")
 print("=" * 80)
 
 # Create rolling market profile with 20-second window
-mp = RollingMarketProfile(window=timedelta(seconds=20))
+profile_window = 20
+mp = RollingMarketProfile(window=timedelta(seconds=profile_window))
 
 # Track detected patterns
 detection_count = 0
@@ -624,15 +686,24 @@ for idx, row in df.iterrows():
         print(f"Cooldown active until: {current_time + COOLDOWN_PERIOD}")
         print(f"{'=' * 80}")
 
-        # Compute market profile 1 minute after detection
-        time_after = current_time + timedelta(seconds=60)
-        mp_after = RollingMarketProfile(window=timedelta(seconds=20))
+        # Compute market profile after profile_window (20s) and 2x profile_window (40s)
+        time_after_1x = current_time + timedelta(seconds=profile_window)
+        mp_after_1x = RollingMarketProfile(window=timedelta(seconds=profile_window))
 
-        ticks_until_after = df[df["Timestamp"] <= time_after]
-        for _, r in ticks_until_after.iterrows():
-            mp_after.update(r["Timestamp"], r["Precio"], r["Volumen"], r["Lado"])
+        ticks_until_after_1x = df[df["Timestamp"] <= time_after_1x]
+        for _, r in ticks_until_after_1x.iterrows():
+            mp_after_1x.update(r["Timestamp"], r["Precio"], r["Volumen"], r["Lado"])
 
-        profile_after = mp_after.profile()
+        profile_after_1x = mp_after_1x.profile()
+
+        time_after_2x = current_time + timedelta(seconds=profile_window * 2)
+        mp_after_2x = RollingMarketProfile(window=timedelta(seconds=profile_window))
+
+        ticks_until_after_2x = df[df["Timestamp"] <= time_after_2x]
+        for _, r in ticks_until_after_2x.iterrows():
+            mp_after_2x.update(r["Timestamp"], r["Precio"], r["Volumen"], r["Lado"])
+
+        profile_after_2x = mp_after_2x.profile()
 
         # Create plot
         print(f"Creating visualization...")
@@ -642,17 +713,19 @@ for idx, row in df.iterrows():
             condition_type,
             df,
             profile,
-            profile_after,
+            profile_after_1x,
+            profile_after_2x,
             highest_price,
             lowest_price,
             max_ask_price,
             max_bid_price,
             current_price,
+            profile_window,
         )
         print(f"Plot saved: {filename}")
 
         # Display market profile (high to low)
-        print(f"\nMarket Profile (60-second rolling window):")
+        print(f"\nMarket Profile ({profile_window}-second rolling window):")
         print(f"{'-' * 80}")
 
         for price in reversed(prices):

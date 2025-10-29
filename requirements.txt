@@ -4,6 +4,7 @@ pandas>=2.0.0
 
 # Visualization
 plotly>=5.0.0
+mpld3>=0.5.9
 
 # Environment variables
 python-dotenv>=1.0.0

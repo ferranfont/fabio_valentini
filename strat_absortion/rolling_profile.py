@@ -1,6 +1,6 @@
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
-from typing import Deque, Dict, Iterable, Literal, Optional, Tuple
+from typing import Any, Deque, Dict, Iterable, List, Literal, Optional, Tuple
 
 from tick import Tick, Side
 from utils import parse_ts, parse_num
@@ -20,8 +20,14 @@ class RollingMarketProfile:
         self.window = window
         self.price_tick = price_tick
         self._ticks: Deque[Tick] = deque()
-        self._agg: Dict[float, Dict[str, float]] = defaultdict(
-            lambda: {"BID": 0.0, "ASK": 0.0, "_BID_COUNT": 0, "_ASK_COUNT": 0}
+        self._agg: Dict[float, Dict[str, Any]] = defaultdict(
+            lambda: {
+                "BID": 0.0,
+                "ASK": 0.0,
+                "_BID_COUNT": 0,
+                "_ASK_COUNT": 0,
+                "_TRADES": {"BID": [], "ASK": []},
+            }
         )
 
     # ----- Internal helpers -----
@@ -38,11 +44,23 @@ class RollingMarketProfile:
             d = self._agg[old.price]
             d[old.side] -= old.vol
             d[f"_{old.side}_COUNT"] -= 1
+            trades = d.get("_TRADES", {})
+            side_trades: List[Tick] = trades.get(old.side, []) if trades else []
+
+            if side_trades:
+                try:
+                    side_trades.remove(old)
+                except ValueError:
+                    # Tick already removed (e.g. duplicated price rounding)
+                    pass
+
             if (
                 d["BID"] <= 0
                 and d["ASK"] <= 0
                 and d["_BID_COUNT"] <= 0
                 and d["_ASK_COUNT"] <= 0
+                and not trades.get("BID")
+                and not trades.get("ASK")
             ):
                 del self._agg[old.price]
 
@@ -55,17 +73,35 @@ class RollingMarketProfile:
         sd: Side = "ASK" if str(side).upper() == "ASK" else "BID"
 
         self._expire(ts)
-        self._ticks.append(Tick(ts=ts, price=px, side=sd, vol=vol))
-        self._agg[px][sd] += vol
-        self._agg[px][f"_{sd}_COUNT"] += 1
+        tick = Tick(ts=ts, price=px, side=sd, vol=vol)
+        self._ticks.append(tick)
+        entry = self._agg[px]
+        entry[sd] += vol
+        entry[f"_{sd}_COUNT"] += 1
+        entry.setdefault("_TRADES", {"BID": [], "ASK": []})[sd].append(tick)
 
-    def profile(self) -> Dict[float, Dict[str, float]]:
-        out: Dict[float, Dict[str, float]] = {}
+    def profile(self, include_trades: bool = False) -> Dict[float, Dict[str, Any]]:
+        out: Dict[float, Dict[str, Any]] = {}
         for p, d in self._agg.items():
             bid = d["BID"]
             ask = d["ASK"]
             if bid > 0 or ask > 0:
-                out[p] = {"BID": bid, "ASK": ask, "Total": bid + ask}
+                record: Dict[str, Any] = {"BID": bid, "ASK": ask, "Total": bid + ask}
+                if include_trades:
+                    trades = d.get("_TRADES", {"BID": [], "ASK": []})
+                    record["Trades"] = {
+                        side: [
+                            {
+                                "timestamp": t.ts,
+                                "timestamp_str": t.ts.strftime("%H:%M:%S.%f")[:-3],
+                                "volume": t.vol,
+                                "side": t.side,
+                            }
+                            for t in trades.get(side, [])
+                        ]
+                        for side in ("BID", "ASK")
+                    }
+                out[p] = record
         return out
 
     def price_level(self, price) -> Optional[Dict[str, float]]:

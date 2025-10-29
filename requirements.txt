@@ -1,10 +1,19 @@
 # Tres Soldados Project Dependencies
 # Data manipulation
 pandas>=2.0.0
+numpy>=1.24.0
 
 # Visualization
 plotly>=5.0.0
 mpld3>=0.5.9
+matplotlib>=3.7.0
+mplcursors>=0.5.0
 
 # Environment variables
 python-dotenv>=1.0.0
+
+# Web apps & APIs
+streamlit>=1.25.0
+dash>=2.0.0
+flask>=2.3.0
+requests>=2.31.0

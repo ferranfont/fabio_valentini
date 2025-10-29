@@ -10,16 +10,17 @@ matplotlib.use("Agg")  # Use non-interactive backend
 import matplotlib.pyplot as plt
 
 csv_path = (
-    "../data/ts_and_dom_24_oct.csv"  # Can use time_and_sales_nq.csv or ts_and_dom_*.csv
+    "../data/time_and_sales_nq.csv"  # Can use time_and_sales_nq.csv or ts_and_dom_*.csv
 )
 
 # Profile shape detection configuration (modified from plot_deep.py)
+EXTREME_VOLUME_MULTIPLIER = 3  # Extreme bar must be N times the second-largest overall
 MIN_PRICE_LEVELS = 10  # Minimum number of active price levels
-MIN_BID_ASK_SIZE = 20  # Minimum absolute size of largest BID/ASK bar
+MIN_BID_ASK_SIZE = 30  # Minimum absolute size of largest BID/ASK bar
 PRICE_POSITION_THRESHOLD = 0.3  # Price must be in lower/upper 25% of the profile range
 DIFF_DISTANCE = 0  # Minimum absolute price difference between current and previous close (0 = no filter)
 MIN_VOLUME = 10  # Minimum total volume (BID + ASK) in the profile
-EXTREME_VOLUME_MULTIPLIER = 4  # Extreme bar must be N times the second-largest overall
+
 
 # Configuration: Set to True to filter for NY hours only
 FILTER_NY_HOURS = True  # Set to False to process all data
@@ -642,7 +643,7 @@ def evaluate_profile_shape(profile, current_close=None, previous_close=None):
     STRICT Criteria for d_shape (ALL must be met):
     1. Minimum MIN_PRICE_LEVELS active price levels
     2. Largest BID bar across all prices is located within the 2 LOWEST prices
-    3. That BID bar is >= MIN_BID_ASK_SIZE and at least EXTREME_VOLUME_MULTIPLIER times the second-largest BID bar
+    3. That BID bar is >= MIN_BID_ASK_SIZE and at least EXTREME_VOLUME_MULTIPLIER times the second-largest bar overall (BID or ASK)
     4. Current price must be in LOWER 25% of the profile range
     5. Price FALLING: current_close < previous_close (absorbing selling pressure)
     6. Absolute price difference >= DIFF_DISTANCE
@@ -650,7 +651,7 @@ def evaluate_profile_shape(profile, current_close=None, previous_close=None):
     STRICT Criteria for p_shape (ALL must be met):
     1. Minimum MIN_PRICE_LEVELS active price levels
     2. Largest ASK bar across all prices is located within the 2 HIGHEST prices
-    3. That ASK bar is >= MIN_BID_ASK_SIZE and at least EXTREME_VOLUME_MULTIPLIER times the second-largest ASK bar
+    3. That ASK bar is >= MIN_BID_ASK_SIZE and at least EXTREME_VOLUME_MULTIPLIER times the second-largest bar overall (BID or ASK)
     4. Current price must be in UPPER 25% of the profile range
     5. Price RISING: current_close > previous_close (absorbing buying pressure)
     6. Absolute price difference >= DIFF_DISTANCE
@@ -708,9 +709,7 @@ def evaluate_profile_shape(profile, current_close=None, previous_close=None):
     )
 
     max_bid_value = bid_volumes_sorted[0] if bid_volumes_sorted else 0
-    second_bid_value = bid_volumes_sorted[1] if len(bid_volumes_sorted) > 1 else 0
     max_ask_value = ask_volumes_sorted[0] if ask_volumes_sorted else 0
-    second_ask_value = ask_volumes_sorted[1] if len(ask_volumes_sorted) > 1 else 0
 
     max_bid_price = (
         max(active_prices, key=lambda p: profile[p].get("BID", 0))
@@ -723,11 +722,29 @@ def evaluate_profile_shape(profile, current_close=None, previous_close=None):
         else None
     )
 
+    # Combine ALL volumes (both BID and ASK) to find second-largest overall
+    all_volumes = []
+    for p in active_prices:
+        bid_vol = profile[p].get("BID", 0)
+        ask_vol = profile[p].get("ASK", 0)
+        if bid_vol > 0:
+            all_volumes.append(bid_vol)
+        if ask_vol > 0:
+            all_volumes.append(ask_vol)
+
+    all_volumes_sorted = sorted(all_volumes, reverse=True)
+    second_largest_overall = all_volumes_sorted[1] if len(all_volumes_sorted) > 1 else 0
+
+    # Compare extreme bar against second-largest across BOTH BID and ASK
     bid_ratio = (
-        max_bid_value / second_bid_value if second_bid_value > 0 else float("inf")
+        max_bid_value / second_largest_overall
+        if second_largest_overall > 0
+        else float("inf")
     )
     ask_ratio = (
-        max_ask_value / second_ask_value if second_ask_value > 0 else float("inf")
+        max_ask_value / second_largest_overall
+        if second_largest_overall > 0
+        else float("inf")
     )
 
     # Check for d_shape - ALL criteria must be met
@@ -766,7 +783,7 @@ print(f"  - MIN_PRICE_LEVELS: {MIN_PRICE_LEVELS}")
 print(f"  - MIN_BID_ASK_SIZE: {MIN_BID_ASK_SIZE}")
 print(f"  - PRICE_POSITION_THRESHOLD: {PRICE_POSITION_THRESHOLD*100:.0f}%")
 print(
-    f"  - EXTREME_VOLUME_MULTIPLIER: {EXTREME_VOLUME_MULTIPLIER}x (extreme bar vs second largest)"
+    f"  - EXTREME_VOLUME_MULTIPLIER: {EXTREME_VOLUME_MULTIPLIER}x (extreme bar vs second largest overall BID/ASK)"
 )
 print("=" * 80)
 

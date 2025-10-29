@@ -1,6 +1,6 @@
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
-from typing import Any, Deque, Dict, Iterable, List, Literal, Optional, Tuple
+from typing import Any, Deque, Dict, Iterable, Literal, Optional, Tuple
 
 from tick import Tick, Side
 from utils import parse_ts, parse_num
@@ -20,6 +20,7 @@ class RollingMarketProfile:
         self.window = window
         self.price_tick = price_tick
         self._ticks: Deque[Tick] = deque()
+        self._current_time: Optional[datetime] = None  # Track latest timestamp
         self._agg: Dict[float, Dict[str, Any]] = defaultdict(
             lambda: {
                 "BID": 0.0,
@@ -37,6 +38,12 @@ class RollingMarketProfile:
             return round(round(price / self.price_tick) * self.price_tick, 10)
         return price
 
+    @staticmethod
+    def _normalize_side(side: Side) -> Side:
+        """Normalize side string to BID or ASK (optimization to avoid repeated str/upper calls)"""
+        side_upper = str(side).upper()
+        return "ASK" if side_upper == "ASK" else "BID"
+
     def _expire(self, now: datetime) -> None:
         cutoff = now - self.window
         while self._ticks and self._ticks[0].ts < cutoff:
@@ -44,23 +51,16 @@ class RollingMarketProfile:
             d = self._agg[old.price]
             d[old.side] -= old.vol
             d[f"_{old.side}_COUNT"] -= 1
-            trades = d.get("_TRADES", {})
-            side_trades: List[Tick] = trades.get(old.side, []) if trades else []
 
-            if side_trades:
-                try:
-                    side_trades.remove(old)
-                except ValueError:
-                    # Tick already removed (e.g. duplicated price rounding)
-                    pass
+            # NOTE: We don't remove from trades list here (O(n) operation)
+            # Instead, trades will be filtered by timestamp when needed in profile()
 
+            # Clean up price level if empty
             if (
                 d["BID"] <= 0
                 and d["ASK"] <= 0
                 and d["_BID_COUNT"] <= 0
                 and d["_ASK_COUNT"] <= 0
-                and not trades.get("BID")
-                and not trades.get("ASK")
             ):
                 del self._agg[old.price]
 
@@ -70,8 +70,9 @@ class RollingMarketProfile:
         ts = parse_ts(timestamp)
         px = self._bucket_price(parse_num(price))
         vol = float(parse_num(volume))
-        sd: Side = "ASK" if str(side).upper() == "ASK" else "BID"
+        sd = self._normalize_side(side)
 
+        self._current_time = ts  # Track latest timestamp
         self._expire(ts)
         tick = Tick(ts=ts, price=px, side=sd, vol=vol)
         self._ticks.append(tick)
@@ -82,6 +83,12 @@ class RollingMarketProfile:
 
     def profile(self, include_trades: bool = False) -> Dict[float, Dict[str, Any]]:
         out: Dict[float, Dict[str, Any]] = {}
+
+        # Calculate cutoff time for filtering trades if needed
+        cutoff = None
+        if include_trades and self._current_time:
+            cutoff = self._current_time - self.window
+
         for p, d in self._agg.items():
             bid = d["BID"]
             ask = d["ASK"]
@@ -98,6 +105,7 @@ class RollingMarketProfile:
                                 "side": t.side,
                             }
                             for t in trades.get(side, [])
+                            if cutoff is None or t.ts >= cutoff  # Filter expired trades
                         ]
                         for side in ("BID", "ASK")
                     }
@@ -113,7 +121,7 @@ class RollingMarketProfile:
 
     def get_volume(self, price, side: Side) -> float:
         px = self._bucket_price(parse_num(price))
-        sd: Side = "ASK" if str(side).upper() == "ASK" else "BID"
+        sd = self._normalize_side(side)
         return float(self._agg.get(px, {}).get(sd, 0.0))
 
     def get_trade_count(self, price, side: Optional[Side] = None) -> int:
@@ -123,7 +131,7 @@ class RollingMarketProfile:
             return 0
         if side is None:
             return int(d["_BID_COUNT"] + d["_ASK_COUNT"])
-        sd: Side = "ASK" if str(side).upper() == "ASK" else "BID"
+        sd = self._normalize_side(side)
         return int(d.get(f"_{sd}_COUNT", 0))
 
     def get_bid_count(self, price) -> int:
@@ -135,16 +143,18 @@ class RollingMarketProfile:
         return int(self._agg.get(px, {}).get("_ASK_COUNT", 0))
 
     def get_max_ask(self) -> Optional[Tuple[float, float]]:
-        asks = [(p, d["ASK"]) for p, d in self._agg.items() if d["ASK"] > 0]
-        if not asks:
+        # Use generator expression to avoid creating full list
+        try:
+            return max(((p, d["ASK"]) for p, d in self._agg.items() if d["ASK"] > 0), key=lambda x: x[0])
+        except ValueError:
             return None
-        return max(asks, key=lambda x: x[0])
 
     def get_min_bid(self) -> Optional[Tuple[float, float]]:
-        bids = [(p, d["BID"]) for p, d in self._agg.items() if d["BID"] > 0]
-        if not bids:
+        # Use generator expression to avoid creating full list
+        try:
+            return min(((p, d["BID"]) for p, d in self._agg.items() if d["BID"] > 0), key=lambda x: x[0])
+        except ValueError:
             return None
-        return min(bids, key=lambda x: x[0])
 
     def top_prices(self, n: int = 10) -> Iterable[Tuple[float, float]]:
         items = ((p, d["BID"] + d["ASK"]) for p, d in self._agg.items())

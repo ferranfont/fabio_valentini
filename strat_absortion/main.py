@@ -10,7 +10,7 @@ matplotlib.use("Agg")  # Use non-interactive backend
 import matplotlib.pyplot as plt
 
 csv_path = (
-    "../data/time_and_sales_nq.csv"  # Can use time_and_sales_nq.csv or ts_and_dom_*.csv
+    "../data/ts_and_dom_24_oct.csv"  # Can use time_and_sales_nq.csv or ts_and_dom_*.csv
 )
 
 # Profile shape detection configuration (modified from plot_deep.py)
@@ -792,15 +792,15 @@ previous_close: Optional[float] = None
 total_ticks = len(df)
 progress_interval = max(total_ticks // 100, 1)
 
-for idx, row in df.iterrows():
-    mp.update(row["Timestamp"], row["Precio"], row["Volumen"], row["Lado"])
+for idx, row in enumerate(df.itertuples()):
+    mp.update(row.Timestamp, row.Precio, row.Volumen, row.Lado)
 
     if idx % progress_interval == 0:
         percent = (idx / total_ticks) * 100
         print(f"Progress: {percent:5.1f}% ({idx:,}/{total_ticks:,})")
 
-    current_time = row["Timestamp"]
-    current_price = float(str(row["Precio"]).replace(",", "."))
+    current_time = row.Timestamp
+    current_price = float(str(row.Precio).replace(",", "."))
 
     # Skip warmup period (first 2 minutes)
     if (current_time - start_time) < WARMUP_PERIOD:
@@ -883,7 +883,7 @@ for idx, row in df.iterrows():
         last_detection_time = current_time
 
         print(f"\n{'=' * 80}")
-        print(f"DETECTION #{detection_count} at {row['Timestamp']}{time_since_str}")
+        print(f"DETECTION #{detection_count} at {current_time}{time_since_str}")
         print(f"Pattern: {condition_type}")
         print(
             f"Current Price: {current_price:.2f} | Profile Range: {lowest_price:.2f} - {highest_price:.2f}"
@@ -895,18 +895,24 @@ for idx, row in df.iterrows():
         time_after_1x = current_time + timedelta(seconds=profile_window)
         mp_after_1x = RollingMarketProfile(window=timedelta(seconds=profile_window))
 
-        ticks_until_after_1x = df[df["Timestamp"] <= time_after_1x]
-        for _, r in ticks_until_after_1x.iterrows():
-            mp_after_1x.update(r["Timestamp"], r["Precio"], r["Volumen"], r["Lado"])
+        # Only process ticks from detection time to target time (much faster)
+        ticks_until_after_1x = df[
+            (df["Timestamp"] > current_time) & (df["Timestamp"] <= time_after_1x)
+        ]
+        for r in ticks_until_after_1x.itertuples():
+            mp_after_1x.update(r.Timestamp, r.Precio, r.Volumen, r.Lado)
 
         profile_after_1x = mp_after_1x.profile(include_trades=True)
 
         time_after_2x = current_time + timedelta(seconds=profile_window * 2)
         mp_after_2x = RollingMarketProfile(window=timedelta(seconds=profile_window))
 
-        ticks_until_after_2x = df[df["Timestamp"] <= time_after_2x]
-        for _, r in ticks_until_after_2x.iterrows():
-            mp_after_2x.update(r["Timestamp"], r["Precio"], r["Volumen"], r["Lado"])
+        # Only process ticks from detection time to target time (much faster)
+        ticks_until_after_2x = df[
+            (df["Timestamp"] > current_time) & (df["Timestamp"] <= time_after_2x)
+        ]
+        for r in ticks_until_after_2x.itertuples():
+            mp_after_2x.update(r.Timestamp, r.Precio, r.Volumen, r.Lado)
 
         profile_after_2x = mp_after_2x.profile(include_trades=True)
 

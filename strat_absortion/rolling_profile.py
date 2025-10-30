@@ -27,7 +27,7 @@ class RollingMarketProfile:
                 "ASK": 0.0,
                 "_BID_COUNT": 0,
                 "_ASK_COUNT": 0,
-                "_TRADES": {"BID": [], "ASK": []},
+                "_TRADES": {"BID": deque(), "ASK": deque()},
             }
         )
 
@@ -54,6 +54,20 @@ class RollingMarketProfile:
 
             # NOTE: We don't remove from trades list here (O(n) operation)
             # Instead, trades will be filtered by timestamp when needed in profile()
+            trades = d.get("_TRADES", {})
+            side_trades: Optional[Deque[Tick]] = (
+                trades.get(old.side) if trades else None
+            )
+
+            if side_trades:
+                if side_trades and side_trades[0] is old:
+                    side_trades.popleft()
+                else:
+                    # Fallback to removing by equality if order mismatch occurs
+                    try:
+                        side_trades.remove(old)
+                    except ValueError:
+                        pass
 
             # Clean up price level if empty
             if (
@@ -79,7 +93,12 @@ class RollingMarketProfile:
         entry = self._agg[px]
         entry[sd] += vol
         entry[f"_{sd}_COUNT"] += 1
-        entry.setdefault("_TRADES", {"BID": [], "ASK": []})[sd].append(tick)
+        entry.setdefault("_TRADES", {"BID": deque(), "ASK": deque()})[sd].append(tick)
+
+    def expire_until(self, timestamp) -> None:
+        """Force expiration up to the provided timestamp without adding new ticks."""
+        ts = parse_ts(timestamp)
+        self._expire(ts)
 
     def profile(self, include_trades: bool = False) -> Dict[float, Dict[str, Any]]:
         out: Dict[float, Dict[str, Any]] = {}
@@ -95,7 +114,7 @@ class RollingMarketProfile:
             if bid > 0 or ask > 0:
                 record: Dict[str, Any] = {"BID": bid, "ASK": ask, "Total": bid + ask}
                 if include_trades:
-                    trades = d.get("_TRADES", {"BID": [], "ASK": []})
+                    trades = d.get("_TRADES", {"BID": deque(), "ASK": deque()})
                     record["Trades"] = {
                         side: [
                             {
@@ -145,14 +164,20 @@ class RollingMarketProfile:
     def get_max_ask(self) -> Optional[Tuple[float, float]]:
         # Use generator expression to avoid creating full list
         try:
-            return max(((p, d["ASK"]) for p, d in self._agg.items() if d["ASK"] > 0), key=lambda x: x[0])
+            return max(
+                ((p, d["ASK"]) for p, d in self._agg.items() if d["ASK"] > 0),
+                key=lambda x: x[0],
+            )
         except ValueError:
             return None
 
     def get_min_bid(self) -> Optional[Tuple[float, float]]:
         # Use generator expression to avoid creating full list
         try:
-            return min(((p, d["BID"]) for p, d in self._agg.items() if d["BID"] > 0), key=lambda x: x[0])
+            return min(
+                ((p, d["BID"]) for p, d in self._agg.items() if d["BID"] > 0),
+                key=lambda x: x[0],
+            )
         except ValueError:
             return None
 

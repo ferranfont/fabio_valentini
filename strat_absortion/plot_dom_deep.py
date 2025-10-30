@@ -20,14 +20,15 @@ os.environ['QT_QPA_PLATFORM'] = 'windows'
 STARTING_INDEX = 0  # Change this to start at a different frame (0 = first frame)
 STARTING_TIME = None  # Set to a specific time like "2025-10-20 18:09:00" or None
 PROFILE_WINDOW = 5  # Market profile rolling window in seconds
+FRECUENCIA = "1s"
 
 # Profile shape detection configuration
 DENSITY_SHAPE = 0.70  # 70% of volume must be concentrated in the zone (more strict)
 MIN_PRICE_LEVELS = 10  # Minimum number of active price levels (increased from 8)
-MIN_BID_ASK_SIZE = 20  # Minimum absolute size of largest BID/ASK bar (increased from 10)
+MIN_BID_ASK_SIZE = 5  # Minimum absolute size of largest BID/ASK bar (increased from 10)
 PRICE_POSITION_THRESHOLD = 0.25  # Price must be in lower/upper 33% of the profile range
 DIFF_DISTANCE = 0  # Minimum absolute price difference between current and previous close (0 = no filter)
-MIN_VOLUME = 10  # Minimum total volume (BID + ASK) in the profile (default = 10)
+MIN_VOLUME = 1 # Minimum total volume (BID + ASK) in the profile (default = 10)
 # =======================================
 
 # Load data with custom parser (JSON not quoted in CSV)
@@ -84,6 +85,8 @@ with open(csv_path, 'r') as f:
 print(f"Loaded {len(data_rows)} rows")
 df = pd.DataFrame(data_rows)
 df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+df_sorted = df.sort_values("Timestamp").reset_index(drop=True)
+tick_records = df_sorted.to_dict("records")
 
 # Generate timestamps every 1 second
 start_time = df["Timestamp"].min()
@@ -93,28 +96,31 @@ timestamps = pd.date_range(start=start_time, end=end_time, freq="1s")
 # Pre-compute market profiles and order book snapshots for all timestamps
 print("Pre-computing market profiles and order book snapshots...")
 profiles_data = []
+mp = RollingMarketProfile(window=timedelta(seconds=PROFILE_WINDOW))
+tick_idx = 0
+total_ticks = len(tick_records)
+last_snapshot = None
 
 for i, ts in enumerate(timestamps):
     if i % 50 == 0:
         print(f"  Processing {i}/{len(timestamps)}...")
 
-    # Market Profile
-    mp = RollingMarketProfile(window=timedelta(seconds=PROFILE_WINDOW))
-    ticks_until = df[df["Timestamp"] <= ts]
+    while tick_idx < total_ticks and tick_records[tick_idx]["Timestamp"] <= ts:
+        row = tick_records[tick_idx]
+        mp.update(row["Timestamp"], row["Price"], row["Size"], row["Side"])
+        last_snapshot = row
+        tick_idx += 1
 
-    # Get closing price and latest order book
-    if len(ticks_until) > 0:
-        last_row = ticks_until.iloc[-1]
-        closing_price = float(last_row["Price"])
-        dom_bid = last_row["DOM_BID_parsed"]
-        dom_ask = last_row["DOM_ASK_parsed"]
+    mp.expire_until(ts)
+
+    if last_snapshot and last_snapshot["Timestamp"] <= ts:
+        closing_price = float(last_snapshot["Price"])
+        dom_bid = last_snapshot["DOM_BID_parsed"]
+        dom_ask = last_snapshot["DOM_ASK_parsed"]
     else:
         closing_price = None
         dom_bid = {}
         dom_ask = {}
-
-    for _, row in ticks_until.iterrows():
-        mp.update(row["Timestamp"], row["Price"], row["Size"], row["Side"])
 
     profile = mp.profile()
     profiles_data.append((ts, profile, closing_price, dom_bid, dom_ask))

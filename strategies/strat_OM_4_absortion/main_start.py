@@ -32,10 +32,11 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 CHARTS_DIR = PROJECT_ROOT / "charts"
 
 # Archivos de entrada
-TNS_FILE = DATA_DIR / "time_and_sales_nq_30min.csv"
+TNS_FILE = DATA_DIR / "time_and_sales_nq.csv"
 # TNS_FILE = DATA_DIR / "time_and_sales_nq_30min.csv"  # Alternativa: 30 minutos
 
-SIGNALS_FILE = OUTPUTS_DIR / "db_shapes_20251024_003251.csv"
+# PLASE HERE THE db_shapes FILE YOU WANT TO USE
+SIGNALS_FILE = OUTPUTS_DIR / "db_shapes_dom_20251030_074835.csv"
 # SIGNALS_FILE = OUTPUTS_DIR / "db_shapes.csv"  # Alternativa: señales genéricas
 
 # Archivos de salida
@@ -46,11 +47,12 @@ SUMMARY_REPORT_FILE = CHARTS_DIR / "summary_report_absortion_shape_all_day.html"
 
 # ========= PARÁMETROS DE ESTRATEGIA =========
 SYMBOL = "NQ"
-TP_POINTS = 4.0                     # Take Profit en puntos
-SL_POINTS = 3.0                     # Stop Loss en puntos
+TP_POINTS = 30.0                     # Take Profit en puntos
+SL_POINTS = 20.0                     # Stop Loss en puntos
 POINT_VALUE = 20.0                  # Valor del punto en dólares
 CONTRACTS = 1                       # Número de contratos por trade
-NUM_MAX_OPEN_CONTRACTS = 1          # Máximo de posiciones abiertas simultáneamente
+BREAK_EVEN_POINTS = 20.0             # Avance necesario para mover el stop a precio de entrada
+NUM_MAX_OPEN_CONTRACTS = 2          # Máximo de posiciones abiertas simultáneamente
 
 # ========= PARÁMETROS DE VISUALIZACIÓN =========
 # Filtros para plot_trades_chart.py
@@ -91,6 +93,7 @@ def run_backtest():
     strat_absortion_shape.TP_POINTS = TP_POINTS
     strat_absortion_shape.SL_POINTS = SL_POINTS
     strat_absortion_shape.POINT_VALUE = POINT_VALUE
+    strat_absortion_shape.BREAK_EVEN_POINTS = BREAK_EVEN_POINTS
     strat_absortion_shape.CONTRACTS = CONTRACTS
     strat_absortion_shape.NUM_MAX_OPEN_CONTRACTS = NUM_MAX_OPEN_CONTRACTS
 
@@ -161,6 +164,7 @@ def main():
     print(f"  Stop Loss: {SL_POINTS} puntos")
     print(f"  Contratos: {CONTRACTS}")
     print(f"  Max posiciones abiertas: {NUM_MAX_OPEN_CONTRACTS}")
+    print(f"  Break-even a favor: {BREAK_EVEN_POINTS} puntos")
     print(f"\n  Datos T&S: {TNS_FILE.name}")
     print(f"  Señales: {SIGNALS_FILE.name}")
     print(f"  Salida: {TRACKING_RECORD_FILE.name}")

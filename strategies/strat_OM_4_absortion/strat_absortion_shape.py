@@ -12,6 +12,7 @@ Cambia respecto a versiones previas:
 - Control de posiciones máximas abiertas simultáneamente (NUM_MAX_OPEN_CONTRACTS).
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -28,7 +29,28 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
 TNS_FILE = DATA_DIR / "time_and_sales_nq.csv"
 #TNS_FILE = DATA_DIR / "time_and_sales_nq_30min.csv"    # precio base
-SIGNALS_FILE = OUTPUTS_DIR / "db_shapes_20251024_003251.csv"
+
+def _resolve_signals_file() -> Path:
+    override = os.getenv("ABSORTION_SIGNALS_CSV")
+    if override:
+        return Path(override).expanduser()
+
+    candidates: list[tuple[float, Path]] = []
+    for pattern in ("db_shapes_dom_*.csv", "db_shapes_*.csv"):
+        for path in OUTPUTS_DIR.glob(pattern):
+            try:
+                candidates.append((path.stat().st_mtime, path))
+            except FileNotFoundError:
+                continue
+
+    if candidates:
+        _, latest = max(candidates, key=lambda item: item[0])
+        return latest
+
+    return OUTPUTS_DIR / "db_shapes.csv"
+
+
+SIGNALS_FILE = _resolve_signals_file().resolve()
 #SIGNALS_FILE = OUTPUTS_DIR / "db_shapes.csv"    # señales
 OUTPUT_FILE = OUTPUTS_DIR / "tracking_record_absortion_shape_all_day.csv"
 
@@ -39,6 +61,7 @@ SL_POINTS = 3.0
 POINT_VALUE = 20.0
 CONTRACTS = 1         # Número de contratos por trade
 NUM_MAX_OPEN_CONTRACTS = 1  # Máximo número de posiciones abiertas simultáneamente
+BREAK_EVEN_POINTS = 4.0  # Desplaza el stop a precio de entrada al avanzar X puntos
 
 # ========= HELPERS =========
 def _read_csv_semicolon_decimal(path: Path) -> pd.DataFrame:
@@ -62,6 +85,7 @@ class OpenPosition:
     entry_signal: str
     tp_price: float
     sl_price: float
+    break_even_active: bool = False
 
 # ========= BACKTEST =========
 def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> pd.DataFrame:
@@ -101,6 +125,18 @@ def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> 
         for pos in open_positions:
             exit_reason = None
             exit_price = None
+
+            if (
+                not pos.break_even_active
+                and BREAK_EVEN_POINTS is not None
+                and BREAK_EVEN_POINTS > 0
+            ):
+                if pos.side == "LONG" and current_price >= pos.entry_price + BREAK_EVEN_POINTS:
+                    pos.sl_price = pos.entry_price
+                    pos.break_even_active = True
+                elif pos.side == "SHORT" and current_price <= pos.entry_price - BREAK_EVEN_POINTS:
+                    pos.sl_price = pos.entry_price
+                    pos.break_even_active = True
 
             if pos.side == "LONG":
                 if current_price >= pos.tp_price:
@@ -209,6 +245,7 @@ def main() -> pd.DataFrame:
     print("=" * 70)
     print(f"  Rutas:\n    Señales: {SIGNALS_FILE}\n    T&S:     {TNS_FILE}\n    Out:     {OUTPUT_FILE}")
     print(f"  Parámetros: TP={TP_POINTS} pts, SL={SL_POINTS} pts, {CONTRACTS} contratos, ${POINT_VALUE}/pt")
+    print(f"  Break-even activacion: {BREAK_EVEN_POINTS} pts")
     print(f"  Max posiciones abiertas simultáneamente: {NUM_MAX_OPEN_CONTRACTS}\n")
 
     # Cargar señales

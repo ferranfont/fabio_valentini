@@ -12,6 +12,7 @@ Cambia respecto a versiones previas:
 - Control de posiciones máximas abiertas simultáneamente (NUM_MAX_OPEN_CONTRACTS).
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -28,7 +29,28 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
 TNS_FILE = DATA_DIR / "time_and_sales_nq.csv"
 #TNS_FILE = DATA_DIR / "time_and_sales_nq_30min.csv"    # precio base
-SIGNALS_FILE = OUTPUTS_DIR / "db_shapes_20251024_003251.csv"
+
+def _resolve_signals_file() -> Path:
+    override = os.getenv("ABSORTION_SIGNALS_CSV")
+    if override:
+        return Path(override).expanduser()
+
+    candidates: list[tuple[float, Path]] = []
+    for pattern in ("db_shapes_dom_*.csv", "db_shapes_*.csv"):
+        for path in OUTPUTS_DIR.glob(pattern):
+            try:
+                candidates.append((path.stat().st_mtime, path))
+            except FileNotFoundError:
+                continue
+
+    if candidates:
+        _, latest = max(candidates, key=lambda item: item[0])
+        return latest
+
+    return OUTPUTS_DIR / "db_shapes.csv"
+
+
+SIGNALS_FILE = _resolve_signals_file().resolve()
 #SIGNALS_FILE = OUTPUTS_DIR / "db_shapes.csv"    # señales
 OUTPUT_FILE = OUTPUTS_DIR / "tracking_record_absortion_shape_all_day.csv"
 

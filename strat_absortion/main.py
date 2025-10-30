@@ -2,16 +2,25 @@ import base64
 import io
 import os
 import sys
-from datetime import timedelta
-from typing import Optional
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Optional
 import matplotlib
 
 matplotlib.use("Agg")  # Use non-interactive backend
 import matplotlib.pyplot as plt
 
+_BASE_DIR = Path(__file__).resolve().parent
+_DATA_DIR = _BASE_DIR.parent / "data"
+_OUTPUT_DIR = _BASE_DIR.parent / "outputs"
+_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+_ENV_CSV = os.getenv("ABSORTION_SOURCE_CSV")
 csv_path = (
-    "../data/time_and_sales_nq.csv"  # Can use time_and_sales_nq.csv or ts_and_dom_*.csv
+    Path(_ENV_CSV).expanduser()
+    if _ENV_CSV
+    else (_DATA_DIR / "time_and_sales_nq.csv")
 )
+csv_path = csv_path.resolve()
 
 # Profile shape detection configuration (modified from plot_deep.py)
 EXTREME_VOLUME_MULTIPLIER = 3  # Extreme bar must be N times the second-largest overall
@@ -60,6 +69,8 @@ if mpld3 is None or plugins is None:
 os.makedirs("charts/detections", exist_ok=True)
 
 OUTPUT_HTML = None
+OUTPUT_SIGNALS_CSV: Optional[Path] = None
+_signal_records: List[Dict[str, float]] = []
 
 
 def plot_detection(
@@ -822,7 +833,10 @@ for idx, row in df.iterrows():
         continue
 
     # Evaluate profile shape using the sophisticated algorithm
-    profile_shape = evaluate_profile_shape(profile, current_price, previous_close)
+    prev_close_for_detection = previous_close
+    profile_shape = evaluate_profile_shape(
+        profile, current_price, prev_close_for_detection
+    )
 
     # Update previous close for next iteration
     previous_close = current_price
@@ -870,6 +884,62 @@ for idx, row in df.iterrows():
     # Log the market profile if condition is met
     if condition_met:
         detection_count += 1
+
+        detection_prev_close = (
+            float(prev_close_for_detection)
+            if prev_close_for_detection is not None
+            else current_price
+        )
+
+        active_prices = [
+            price
+            for price in prices
+            if profile[price].get("BID", 0) > 0 or profile[price].get("ASK", 0) > 0
+        ]
+        mid_point = len(active_prices) // 2
+        lower_prices = active_prices[: mid_point + (1 if len(active_prices) % 2 == 1 else 0)]
+        upper_prices = active_prices[mid_point:]
+
+        lower_bid_volume = sum(profile[p].get("BID", 0) for p in lower_prices)
+        upper_ask_volume = sum(profile[p].get("ASK", 0) for p in upper_prices)
+        max_lower_bid = (
+            max([profile[p].get("BID", 0) for p in lower_prices]) if lower_prices else 0
+        )
+        max_upper_ask = (
+            max([profile[p].get("ASK", 0) for p in upper_prices]) if upper_prices else 0
+        )
+
+        price_change = current_price - detection_prev_close
+        price_change_pct = (
+            (price_change / detection_prev_close) * 100
+            if detection_prev_close not in (0, float("inf"))
+            else 0
+        )
+        bid_ask_ratio = total_bid / total_ask if total_ask > 0 else 0
+        bid_concentration = lower_bid_volume / total_bid if total_bid > 0 else 0
+        ask_concentration = upper_ask_volume / total_ask if total_ask > 0 else 0
+
+        timestamp_str = current_time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        _signal_records.append(
+            {
+                "timestamp": timestamp_str,
+                "shape": condition_type,
+                "close_price": current_price,
+                "previous_close": detection_prev_close,
+                "price_change": price_change,
+                "price_change_pct": price_change_pct,
+                "total_bid": total_bid,
+                "total_ask": total_ask,
+                "bid_ask_ratio": bid_ask_ratio,
+                "num_price_levels": len(active_prices),
+                "lower_bid_volume": lower_bid_volume,
+                "upper_ask_volume": upper_ask_volume,
+                "max_lower_bid": max_lower_bid,
+                "max_upper_ask": max_upper_ask,
+                "bid_concentration": bid_concentration,
+                "ask_concentration": ask_concentration,
+            }
+        )
 
         # Calculate time since last detection
         time_since_str = ""
@@ -957,7 +1027,7 @@ for idx, row in df.iterrows():
         summary_lines = [
             f"Total price levels: {len(prices)}",
             f"Price range: {lowest_price:.2f} - {highest_price:.2f}",
-            f"Current price: {current_price:.2f} (prev: {previous_close:.2f})",
+            f"Current price: {current_price:.2f} (prev: {detection_prev_close:.2f})",
         ]
 
         for line in summary_lines:
@@ -1055,9 +1125,20 @@ with open(OUTPUT_HTML, "a", encoding="utf-8") as report:
         report.write("<p>No detections matched the criteria.</p>\n")
     report.write("</body></html>\n")
 
+if _signal_records:
+    signals_df = pd.DataFrame(_signal_records)
+    timestamp_slug = datetime.now().strftime("%Y%m%d_%H%M%S")
+    OUTPUT_SIGNALS_CSV = _OUTPUT_DIR / f"db_shapes_dom_{timestamp_slug}.csv"
+    signals_df.to_csv(OUTPUT_SIGNALS_CSV, index=False, sep=";", decimal=",")
+    print(f"Signals CSV: {OUTPUT_SIGNALS_CSV}")
+else:
+    print("No signals recorded; signals CSV not created.")
+
 print(f"\n{'=' * 80}")
 print(f"Processing complete!")
 print(f"Total ticks processed: {len(df)}")
 print(f"Total detections: {detection_count}")
 print(f"HTML report: {OUTPUT_HTML}")
+if OUTPUT_SIGNALS_CSV:
+    print(f"Signals CSV: {OUTPUT_SIGNALS_CSV}")
 print(f"{'=' * 80}")

@@ -16,7 +16,9 @@ _OUTPUT_DIR = _BASE_DIR.parent / "outputs"
 _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 _ENV_CSV = os.getenv("ABSORTION_SOURCE_CSV")
 csv_path = (
-    Path(_ENV_CSV).expanduser() if _ENV_CSV else (_DATA_DIR / "time_and_sales_nq.csv")
+    Path(_ENV_CSV).expanduser()
+    if _ENV_CSV
+    else (_DATA_DIR / "historic/time_and_sales_nq_20250917.csv")
 )
 csv_path = csv_path.resolve()
 

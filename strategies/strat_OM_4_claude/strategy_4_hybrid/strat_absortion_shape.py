@@ -27,7 +27,8 @@ PROJECT_ROOT = THIS_FILE.parents[2]  # .../strategies/strat_OM_4_absortion -> st
 DATA_DIR = PROJECT_ROOT / "data"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
-TNS_FILE = DATA_DIR / "time_and_sales_nq.csv"
+TNS_FILE = DATA_DIR / "time_and_sales_20251031_074530.csv"
+#TNS_FILE = DATA_DIR / "time_and_sales_nq.csv"    # Alternativa: octubre
 #TNS_FILE = DATA_DIR / "time_and_sales_nq_30min.csv"    # precio base
 
 def _resolve_signals_file() -> Path:
@@ -52,7 +53,7 @@ def _resolve_signals_file() -> Path:
 
 SIGNALS_FILE = _resolve_signals_file().resolve()
 #SIGNALS_FILE = OUTPUTS_DIR / "db_shapes.csv"    # señales
-OUTPUT_FILE = OUTPUTS_DIR / "tracking_record_absortion_shape_all_day.csv"
+OUTPUT_FILE = OUTPUTS_DIR / "tracking_record_absortion_shape_INV_all_day.csv"
 
 # ========= PARÁMETROS =========
 SYMBOL = "NQ"
@@ -62,6 +63,10 @@ POINT_VALUE = 20.0
 CONTRACTS = 1         # Número de contratos por trade
 NUM_MAX_OPEN_CONTRACTS = 3  # Máximo número de posiciones abiertas simultáneamente
 BREAK_EVEN_POINTS = 4.0  # Desplaza el stop a precio de entrada al avanzar X puntos
+
+# ========= PARÁMETROS EMA =========
+EMA_FAST_PERIOD = 20   # Período de la EMA rápida (en minutos)
+EMA_SLOW_PERIOD = 100  # Período de la EMA lenta (en minutos)
 
 # ========= HELPERS =========
 def _read_csv_semicolon_decimal(path: Path) -> pd.DataFrame:
@@ -85,12 +90,17 @@ class OpenPosition:
     entry_signal: str
     tp_price: float
     sl_price: float
+    signal_category: str = ""  # "p_above_green", "d_inside_green", "d_below_red", "p_inside_red"
     break_even_active: bool = False
 
 # ========= BACKTEST =========
 def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> pd.DataFrame:
     """
     Backtest tick-driven con control de posiciones máximas abiertas.
+    Estrategia basada en EMAs:
+    - Si EMA_FAST < EMA_SLOW: Solo SHORT (tanto d_shape como p_shape)
+    - Si EMA_FAST > EMA_SLOW: Solo LONG (tanto d_shape como p_shape)
+
     df_signals: columnas ['timestamp','shape','close_price']
     df_base:    columnas ['timestamp','price'] (derivado de T&S)
     """
@@ -99,6 +109,19 @@ def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> 
     sig['signal_idx'] = range(len(sig))  # Para tracking
 
     base = df_base.copy().sort_values("timestamp").reset_index(drop=True)
+
+    # Calcular EMAs en base de datos de 1 minuto
+    print(f"\n  Calculando EMAs (Fast={EMA_FAST_PERIOD}min, Slow={EMA_SLOW_PERIOD}min)...")
+    base_resampled = base.set_index('timestamp').resample('1min')['price'].last().dropna().reset_index()
+    base_resampled.columns = ['timestamp', 'price']
+
+    base_resampled['ema_fast'] = base_resampled['price'].ewm(span=EMA_FAST_PERIOD, adjust=False).mean()
+    base_resampled['ema_slow'] = base_resampled['price'].ewm(span=EMA_SLOW_PERIOD, adjust=False).mean()
+
+    # Merge EMAs back to tick data (forward fill)
+    base = base.merge(base_resampled[['timestamp', 'ema_fast', 'ema_slow']], on='timestamp', how='left')
+    base['ema_fast'] = base['ema_fast'].ffill()
+    base['ema_slow'] = base['ema_slow'].ffill()
 
     # Crear diccionario de señales por timestamp (permite múltiples señales por timestamp)
     signals_by_time = {}
@@ -124,6 +147,8 @@ def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> 
 
         current_time = row['timestamp']
         current_price = row['price']
+        ema_fast = row.get('ema_fast', None)
+        ema_slow = row.get('ema_slow', None)
 
         # 1. Check for exits FIRST (before processing new signals)
         positions_to_close = []
@@ -173,6 +198,7 @@ def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> 
                     "exit_price": float(exit_price),
                     "side": pos.side,
                     "entry_signal": pos.entry_signal,
+                    "signal_category": pos.signal_category,
                     "tp_price": float(pos.tp_price),
                     "sl_price": float(pos.sl_price),
                     "exit_reason": exit_reason,
@@ -199,34 +225,120 @@ def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> 
 
                 # Only open if we have room for more positions
                 if len(open_positions) >= NUM_MAX_OPEN_CONTRACTS:
-                    continue  # Changed from break to continue to process other signals
+                    continue
+
+                # Skip if EMAs are not available yet
+                if pd.isna(ema_fast) or pd.isna(ema_slow):
+                    continue
 
                 shape = str(signal_data['shape']).strip().lower()
                 signal_price = float(signal_data['close_price'])
 
                 new_pos = None
-                if shape == "d_shape":
-                    new_pos = OpenPosition(
-                        side="LONG",
-                        entry_time=current_time,
-                        entry_price=signal_price,
-                        entry_signal="d_shape",
-                        tp_price=signal_price + TP_POINTS,
-                        sl_price=signal_price - SL_POINTS
-                    )
-                elif shape == "p_shape":
-                    new_pos = OpenPosition(
-                        side="SHORT",
-                        entry_time=current_time,
-                        entry_price=signal_price,
-                        entry_signal="p_shape",
-                        tp_price=signal_price - TP_POINTS,
-                        sl_price=signal_price + SL_POINTS
-                    )
+
+                # ESTRATEGIA HÍBRIDA:
+                # 1. Filtro de Tendencia (EMA)
+                # 2. Detección de Clustering (señales recientes del mismo tipo)
+                # 3. Detección de Rangos (ATR bajo)
+                # 4. Targets dinámicos según contexto
+
+                # Check for clustering: look for same signal type in last 30 minutes
+                clustering_window_minutes = 30
+                time_window_start = current_time - pd.Timedelta(minutes=clustering_window_minutes)
+                recent_signals = df_signals[(df_signals['timestamp'] > time_window_start) &
+                                           (df_signals['timestamp'] < current_time) &
+                                           (df_signals['shape'] == shape)]
+                has_clustering = len(recent_signals) > 0
+
+                # Calculate ATR for range detection (simple approximation)
+                # Use last 14 1-minute bars for ATR
+                lookback_time = current_time - pd.Timedelta(minutes=14)
+                recent_prices = base[(base['timestamp'] >= lookback_time) & (base['timestamp'] < current_time)]['price']
+                if len(recent_prices) > 1:
+                    price_range = recent_prices.max() - recent_prices.min()
+                    avg_price = recent_prices.mean()
+                    atr_pct = (price_range / avg_price) * 100 if avg_price > 0 else 999
+                    is_ranging = atr_pct < 0.15  # Less than 0.15% range = ranging market
+
+                    # Calculate range center for ranging markets
+                    range_high = recent_prices.max()
+                    range_low = recent_prices.min()
+                    range_center = (range_high + range_low) / 2
+                else:
+                    is_ranging = False
+                    range_center = signal_price
+
+                # Determine signal category
+                market_context = "range" if is_ranging else "trend"
+                cluster_suffix = "cluster" if has_clustering else "single"
+
+                if ema_fast < ema_slow:
+                    # BEARISH ZONE: EMA20 < EMA100
+                    if shape == "d_shape" and signal_price < ema_fast:
+                        # d_shape below orange EMA: SHORT (but weak in ranging)
+                        if not is_ranging:  # Only in trending markets
+                            tp_price = signal_price - TP_POINTS
+                            new_pos = OpenPosition(
+                                side="SHORT",
+                                entry_time=current_time,
+                                entry_price=signal_price,
+                                entry_signal=shape,
+                                tp_price=tp_price,
+                                sl_price=signal_price + SL_POINTS,
+                                signal_category=f"{market_context}_{cluster_suffix}_d_below_red"
+                            )
+                    elif shape == "p_shape" and ema_fast < signal_price < ema_slow:
+                        # p_shape between EMAs: SHORT
+                        if is_ranging:
+                            # In ranging: target is range center
+                            tp_price = range_center if signal_price > range_center else signal_price - TP_POINTS
+                        else:
+                            tp_price = signal_price - TP_POINTS
+                        new_pos = OpenPosition(
+                            side="SHORT",
+                            entry_time=current_time,
+                            entry_price=signal_price,
+                            entry_signal=shape,
+                            tp_price=tp_price,
+                            sl_price=signal_price + SL_POINTS,
+                            signal_category=f"{market_context}_{cluster_suffix}_p_inside_red"
+                        )
+
+                elif ema_fast > ema_slow:
+                    # BULLISH ZONE: EMA20 > EMA100
+                    if shape == "d_shape" and ema_slow < signal_price < ema_fast:
+                        # d_shape between EMAs: LONG
+                        if is_ranging:
+                            # In ranging: target is range center
+                            tp_price = range_center if signal_price < range_center else signal_price + TP_POINTS
+                        else:
+                            tp_price = signal_price + TP_POINTS
+                        new_pos = OpenPosition(
+                            side="LONG",
+                            entry_time=current_time,
+                            entry_price=signal_price,
+                            entry_signal=shape,
+                            tp_price=tp_price,
+                            sl_price=signal_price - SL_POINTS,
+                            signal_category=f"{market_context}_{cluster_suffix}_d_inside_green"
+                        )
+                    elif shape == "p_shape" and signal_price > ema_fast:
+                        # p_shape above orange EMA: LONG (but weak in ranging)
+                        if not is_ranging:  # Only in trending markets
+                            tp_price = signal_price + TP_POINTS
+                            new_pos = OpenPosition(
+                                side="LONG",
+                                entry_time=current_time,
+                                entry_price=signal_price,
+                                entry_signal=shape,
+                                tp_price=tp_price,
+                                sl_price=signal_price - SL_POINTS,
+                                signal_category=f"{market_context}_{cluster_suffix}_p_above_green"
+                            )
 
                 if new_pos:
                     open_positions.append(new_pos)
-                    processed_signals.add(signal_idx)  # Mark this signal as processed
+                    processed_signals.add(signal_idx)
 
     # 3. Close any remaining open positions at END_OF_DATA
     if open_positions:

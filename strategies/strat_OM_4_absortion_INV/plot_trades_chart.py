@@ -53,15 +53,15 @@ try:
 except Exception:
     get_data_path = None
 
-TRADES_FILE = get_output_path("tracking_record_absortion_shape_all_day.csv")
-SIGNALS_FILE = get_output_path("db_shapes_20251024_003251.csv")
+TRADES_FILE = get_output_path("tracking_record_absortion_shape_INV_all_day.csv")
+SIGNALS_FILE = get_output_path("db_shapes_dom_20251101_150013.csv")
 if get_data_path:
-    BASE_TNS_FILE = get_data_path("time_and_sales_nq.csv")
+    BASE_TNS_FILE = get_data_path("time_and_sales_20251031_074530.csv")
 else:
     PROJECT_ROOT = Path(__file__).resolve().parents[2]
-    BASE_TNS_FILE = PROJECT_ROOT / "data" / "time_and_sales_nq.csv"
+    BASE_TNS_FILE = PROJECT_ROOT / "data" / "time_and_sales_20251031_074530.csv"
 
-OUTPUT_HTML = get_charts_path("trades_visualization_absortion_shape_all_day.html")
+OUTPUT_HTML = get_charts_path("trades_visualization_absortion_shape_INV_all_day.html")
 
 # ============================================================
 # CONFIGURACIÓN DE VISUALIZACIÓN
@@ -165,6 +165,20 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
     print(f"Señales en ventana: {len(sig_win):,}")
     print(f"Ventana: {time_start} — {time_end}")
 
+    # --------- Calcular EMAs ----------
+    # Resamplear a 1 minuto para cálculo de EMAs
+    EMA_FAST_PERIOD = 20  # minutos
+    EMA_SLOW_PERIOD = 100  # minutos
+
+    print(f"\nCalculando EMAs (Fast={EMA_FAST_PERIOD}min, Slow={EMA_SLOW_PERIOD}min)...")
+    base_resampled = base_win.set_index(ts_col).resample('1min')[px_col].last().dropna().reset_index()
+    base_resampled.columns = ['timestamp', 'price']
+
+    base_resampled['ema_fast'] = base_resampled['price'].ewm(span=EMA_FAST_PERIOD, adjust=False).mean()
+    base_resampled['ema_slow'] = base_resampled['price'].ewm(span=EMA_SLOW_PERIOD, adjust=False).mean()
+
+    print(f"  EMAs calculadas: {len(base_resampled)} puntos")
+
     # ========================================================
     # PLOT
     # ========================================================
@@ -183,9 +197,124 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
         )
     )
 
-    # NO mostrar señales d_shape / p_shape (comentado)
-    # df_d = sig_win[sig_win["shape"].eq("d_shape")]
-    # df_p = sig_win[sig_win["shape"].eq("p_shape")]
+    # EMA rápida (naranja)
+    fig.add_trace(
+        go.Scatter(
+            x=base_resampled['timestamp'],
+            y=base_resampled['ema_fast'],
+            mode="lines",
+            line=dict(width=1.5, color='orange'),
+            name=f"EMA({EMA_FAST_PERIOD})",
+            hovertemplate="<b>%{x}</b><br>EMA Fast: %{y:.2f}<extra></extra>",
+        )
+    )
+
+    # EMA lenta (verde)
+    fig.add_trace(
+        go.Scatter(
+            x=base_resampled['timestamp'],
+            y=base_resampled['ema_slow'],
+            mode="lines",
+            line=dict(width=1.5, color='green'),
+            name=f"EMA({EMA_SLOW_PERIOD})",
+            hovertemplate="<b>%{x}</b><br>EMA Slow: %{y:.2f}<extra></extra>",
+        )
+    )
+
+    # Relleno entre EMAs (azul si EMA rápida > EMA lenta, rojo si no)
+    base_resampled['ema_diff'] = base_resampled['ema_fast'] - base_resampled['ema_slow']
+
+    # Segmentos alcistas (EMA > EMA_SLOW) - Relleno azul
+    df_bullish = base_resampled[base_resampled['ema_diff'] > 0].copy()
+    if len(df_bullish) > 0:
+        fig.add_trace(
+            go.Scatter(
+                x=df_bullish['timestamp'],
+                y=df_bullish['ema_fast'],
+                mode='lines',
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo='skip'
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df_bullish['timestamp'],
+                y=df_bullish['ema_slow'],
+                mode='lines',
+                line=dict(width=0),
+                fill='tonexty',
+                fillcolor='rgba(144, 238, 144, 0.2)',  # Verde claro con alpha 0.2
+                name='Zona Alcista (LONG)',
+                hoverinfo='skip'
+            )
+        )
+
+    # Segmentos bajistas (EMA < EMA_SLOW) - Relleno rojo
+    df_bearish = base_resampled[base_resampled['ema_diff'] < 0].copy()
+    if len(df_bearish) > 0:
+        fig.add_trace(
+            go.Scatter(
+                x=df_bearish['timestamp'],
+                y=df_bearish['ema_fast'],
+                mode='lines',
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo='skip'
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df_bearish['timestamp'],
+                y=df_bearish['ema_slow'],
+                mode='lines',
+                line=dict(width=0),
+                fill='tonexty',
+                fillcolor='rgba(255, 182, 193, 0.2)',  # Rojo pálido con alpha 0.2
+                name='Zona Bajista (SHORT)',
+                hoverinfo='skip'
+            )
+        )
+
+    # Mostrar TODAS las señales d_shape / p_shape como puntos (como en plot_shapes_simple.py)
+    df_d = sig_win[sig_win["shape"].eq("d_shape")]
+    df_p = sig_win[sig_win["shape"].eq("p_shape")]
+
+    # d_shape: Puntos rojos pequeños
+    if len(df_d) > 0:
+        fig.add_trace(
+            go.Scatter(
+                x=df_d['timestamp'],
+                y=df_d['close_price'],
+                mode='markers',
+                marker=dict(
+                    color='red',
+                    size=6,
+                    symbol='circle',
+                    line=dict(color='white', width=0.5)
+                ),
+                name='d_shape (señal)',
+                hovertemplate='<b>d_shape</b><br>%{x}<br>Precio: %{y:.2f}<extra></extra>',
+            )
+        )
+
+    # p_shape: Puntos verdes pequeños
+    if len(df_p) > 0:
+        fig.add_trace(
+            go.Scatter(
+                x=df_p['timestamp'],
+                y=df_p['close_price'],
+                mode='markers',
+                marker=dict(
+                    color='forestgreen',
+                    size=6,
+                    symbol='circle',
+                    line=dict(color='white', width=0.5)
+                ),
+                name='p_shape (señal)',
+                hovertemplate='<b>p_shape</b><br>%{x}<br>Precio: %{y:.2f}<extra></extra>',
+            )
+        )
 
     # Entradas/salidas con REGLA: cierre = triángulo opuesto a la dirección de entrada
     for _, tr in df_trades.iterrows():

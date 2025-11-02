@@ -39,20 +39,24 @@ TNS_FILE = DATA_DIR / "time_and_sales_20251031_074530.csv"  # Archivo T&S comple
 SIGNALS_FILE = OUTPUTS_DIR / "db_shapes_dom_20251101_150013.csv"
 # SIGNALS_FILE = OUTPUTS_DIR / "db_shapes.csv"  # Alternativa: señales genéricas
 
-# Archivos de salida
-TRACKING_RECORD_FILE = OUTPUTS_DIR / "tracking_record_absortion_shape_all_day.csv"
-TRADES_CHART_FILE = CHARTS_DIR / "trades_visualization_absortion_shape_all_day.html"
-BACKTEST_CHART_FILE = CHARTS_DIR / "backtest_results_absortion_shape_all_day.html"
-SUMMARY_REPORT_FILE = CHARTS_DIR / "summary_report_absortion_shape_all_day.html"
+# Archivos de salida (INVERTIDA)
+TRACKING_RECORD_FILE = OUTPUTS_DIR / "tracking_record_absortion_shape_INV_all_day.csv"
+TRADES_CHART_FILE = CHARTS_DIR / "trades_visualization_absortion_shape_INV_all_day.html"
+BACKTEST_CHART_FILE = CHARTS_DIR / "backtest_results_absortion_shape_INV_all_day.html"
+SUMMARY_REPORT_FILE = CHARTS_DIR / "summary_report_absortion_shape_INV_all_day.html"
 
 # ========= PARÁMETROS DE ESTRATEGIA =========
 SYMBOL = "NQ"
-TP_POINTS = 4                 # Take Profit en puntos
-SL_POINTS = 4                   # Stop Loss en puntos
-POINT_VALUE = 20.0                  # Valor del punto en dólares
+TP_POINTS = 30                 # Take Profit en puntos
+SL_POINTS = 20                   # Stop Loss en puntos
+POINT_VALUE = 20.0                  # Valor del punto en dólares ($20 por punto para NQ)
 CONTRACTS = 1                       # Número de contratos por trade
 BREAK_EVEN_POINTS = 25.0         # Avance necesario para mover el stop a precio de entrada
-NUM_MAX_OPEN_CONTRACTS = 3         # Máximo de posiciones abiertas simultáneamente
+NUM_MAX_OPEN_CONTRACTS = 5         # Máximo de posiciones abiertas simultáneamente
+
+# ========= PARÁMETROS EMA =========
+EMA_FAST_PERIOD = 20            # Período de la EMA rápida (en minutos)
+EMA_SLOW_PERIOD = 100           # Período de la EMA lenta (en minutos)
 
 # ========= PARÁMETROS DE VISUALIZACIÓN =========
 # Filtros para plot_trades_chart.py
@@ -96,6 +100,8 @@ def run_backtest():
     strat_absortion_shape.BREAK_EVEN_POINTS = BREAK_EVEN_POINTS
     strat_absortion_shape.CONTRACTS = CONTRACTS
     strat_absortion_shape.NUM_MAX_OPEN_CONTRACTS = NUM_MAX_OPEN_CONTRACTS
+    strat_absortion_shape.EMA_FAST_PERIOD = EMA_FAST_PERIOD
+    strat_absortion_shape.EMA_SLOW_PERIOD = EMA_SLOW_PERIOD
 
     # Ejecutar backtest
     trades_df = strat_absortion_shape.main()
@@ -165,6 +171,9 @@ def main():
     print(f"  Contratos: {CONTRACTS}")
     print(f"  Max posiciones abiertas: {NUM_MAX_OPEN_CONTRACTS}")
     print(f"  Break-even a favor: {BREAK_EVEN_POINTS} puntos")
+    print(f"  EMA Rápida: {EMA_FAST_PERIOD} minutos")
+    print(f"  EMA Lenta: {EMA_SLOW_PERIOD} minutos")
+    print(f"  Estrategia: EMA{EMA_FAST_PERIOD} < EMA{EMA_SLOW_PERIOD} -> SHORT | EMA{EMA_FAST_PERIOD} > EMA{EMA_SLOW_PERIOD} -> LONG")
     print(f"\n  Datos T&S: {TNS_FILE.name}")
     print(f"  Señales: {SIGNALS_FILE.name}")
     print(f"  Salida: {TRACKING_RECORD_FILE.name}")

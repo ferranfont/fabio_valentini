@@ -18,12 +18,12 @@ _ENV_CSV = os.getenv("ABSORTION_SOURCE_CSV")
 csv_path = (
     Path(_ENV_CSV).expanduser()
     if _ENV_CSV
-    else (_DATA_DIR / "historic/time_and_sales_nq_20250917.csv")
+    else (_DATA_DIR / "time_and_sales_20251031_074530.csv")
 )
 csv_path = csv_path.resolve()
 
 # Profile shape detection configuration (modified from plot_deep.py)
-EXTREME_VOLUME_MULTIPLIER = 3  # Extreme bar must be N times the second-largest overall
+EXTREME_VOLUME_MULTIPLIER = 2  # Extreme bar must be N times the second-largest overall
 MIN_PRICE_LEVELS = 10  # Minimum number of active price levels
 MIN_BID_ASK_SIZE = 30  # Minimum absolute size of largest BID/ASK bar
 PRICE_POSITION_THRESHOLD = 0.3  # Price must be in lower/upper 25% of the profile range
@@ -32,10 +32,10 @@ MIN_VOLUME = 10  # Minimum total volume (BID + ASK) in the profile
 
 
 # Configuration: Set to True to filter for NY hours only
-FILTER_NY_HOURS = True  # Set to False to process all data
+FILTER_NY_HOURS = False # set to False to process all data
 
 # Configuration: Set to True to filter for European hours only
-FILTER_EUROPEAN_HOURS = True  # Set to False to process all data
+FILTER_EUROPEAN_HOURS = False  # Set to False to process all data
 
 
 plt.rcParams.update(

@@ -302,17 +302,44 @@ fig.add_trace(go.Scatter(
 df_high_cluster = df_price[df_price['cluster_p'] > 2].copy()
 
 if len(df_high_cluster) > 0:
-    # Para cada segmento continuo, dibujar una línea horizontal al precio actual
-    for idx, row in df_high_cluster.iterrows():
-        fig.add_shape(
-            type='line',
-            x0=row['Timestamp'],
-            x1=row['Timestamp'] + pd.Timedelta(minutes=1),  # 1 minuto de ancho
-            y0=row['Precio'],
-            y1=row['Precio'],
-            line=dict(color='green', width=3),
-            row=1, col=1
-        )
+    print(f"[OK] Agregando {len(df_high_cluster)} líneas verdes de alta densidad en gráfico de precio...")
+
+    # Agrupar puntos consecutivos para crear líneas más largas
+    # Crear grupos de timestamps consecutivos
+    timestamps = df_high_cluster['Timestamp'].values
+    prices = df_high_cluster['Precio'].values
+
+    # Crear una línea continua para cada segmento
+    i = 0
+    while i < len(timestamps):
+        # Inicio del segmento
+        start_time = timestamps[i]
+        start_price = prices[i]
+
+        # Buscar final del segmento (mientras sean consecutivos)
+        j = i
+        while j < len(timestamps) - 1:
+            # Si la diferencia es mayor a 2 minutos, no es consecutivo
+            if (timestamps[j+1] - timestamps[j]) > pd.Timedelta(minutes=2):
+                break
+            j += 1
+
+        end_time = timestamps[j]
+        end_price = prices[j]
+
+        # Dibujar línea horizontal desde start_time hasta end_time al precio promedio
+        avg_price = (start_price + end_price) / 2
+
+        fig.add_trace(go.Scatter(
+            x=[start_time, end_time],
+            y=[avg_price, avg_price],
+            mode='lines',
+            line=dict(color='green', width=4),
+            showlegend=False,
+            hoverinfo='skip'
+        ), row=1, col=1)
+
+        i = j + 1
 
 # Configuración del layout
 fig.update_layout(

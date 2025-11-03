@@ -272,11 +272,19 @@ def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> 
                 market_context = "range" if is_ranging else "trend"
                 cluster_suffix = "cluster" if has_clustering else "single"
 
+                # ESTRATEGIA CORREGIDA: SOLO OPERA A FAVOR DE LA TENDENCIA
+                # Tendencia BAJISTA: Solo SHORT
+                # Tendencia ALCISTA: Solo LONG
+
                 if ema_fast < ema_slow:
-                    # BEARISH ZONE: EMA20 < EMA100
+                    # ============================================
+                    # ZONA BAJISTA: EMA20 < EMA100 → SOLO SHORT
+                    # ============================================
+
                     if shape == "d_shape" and signal_price < ema_fast:
-                        # d_shape below orange EMA: SHORT (but weak in ranging)
-                        if not is_ranging:  # Only in trending markets
+                        # d_shape por debajo de EMA20: SHORT
+                        # (precio cayendo, BID absorbiendo en zona baja)
+                        if not is_ranging:  # Solo en tendencia, no en rango
                             tp_price = signal_price - TP_POINTS
                             new_pos = OpenPosition(
                                 side="SHORT",
@@ -287,10 +295,12 @@ def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> 
                                 sl_price=signal_price + SL_POINTS,
                                 signal_category=f"{market_context}_{cluster_suffix}_d_below_red"
                             )
+
                     elif shape == "p_shape" and ema_fast < signal_price < ema_slow:
-                        # p_shape between EMAs: SHORT
+                        # p_shape ENTRE las EMAs (zona roja): SHORT
+                        # (compradores siendo absorbidos en zona de resistencia)
                         if is_ranging:
-                            # In ranging: target is range center
+                            # En rango: target al centro del rango
                             tp_price = range_center if signal_price > range_center else signal_price - TP_POINTS
                         else:
                             tp_price = signal_price - TP_POINTS
@@ -304,12 +314,21 @@ def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> 
                             signal_category=f"{market_context}_{cluster_suffix}_p_inside_red"
                         )
 
+                    # IMPORTANTE: Si p_shape está por DEBAJO de ambas EMAs en bajista
+                    # NO operamos (precio ya cayó demasiado, no perseguir)
+                    # Si d_shape está DENTRO o ARRIBA de EMAs en bajista
+                    # NO operamos (contra-tendencia, compraría en bajista)
+
                 elif ema_fast > ema_slow:
-                    # BULLISH ZONE: EMA20 > EMA100
+                    # ============================================
+                    # ZONA ALCISTA: EMA20 > EMA100 → SOLO LONG
+                    # ============================================
+
                     if shape == "d_shape" and ema_slow < signal_price < ema_fast:
-                        # d_shape between EMAs: LONG
+                        # d_shape ENTRE las EMAs (zona verde): LONG
+                        # (vendedores siendo absorbidos en zona de soporte)
                         if is_ranging:
-                            # In ranging: target is range center
+                            # En rango: target al centro del rango
                             tp_price = range_center if signal_price < range_center else signal_price + TP_POINTS
                         else:
                             tp_price = signal_price + TP_POINTS
@@ -322,9 +341,11 @@ def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> 
                             sl_price=signal_price - SL_POINTS,
                             signal_category=f"{market_context}_{cluster_suffix}_d_inside_green"
                         )
+
                     elif shape == "p_shape" and signal_price > ema_fast:
-                        # p_shape above orange EMA: LONG (but weak in ranging)
-                        if not is_ranging:  # Only in trending markets
+                        # p_shape por ENCIMA de EMA20: LONG
+                        # (precio subiendo, ASK absorbiendo en zona alta)
+                        if not is_ranging:  # Solo en tendencia, no en rango
                             tp_price = signal_price + TP_POINTS
                             new_pos = OpenPosition(
                                 side="LONG",
@@ -335,6 +356,11 @@ def run_backtest_tickdriven(df_signals: pd.DataFrame, df_base: pd.DataFrame) -> 
                                 sl_price=signal_price - SL_POINTS,
                                 signal_category=f"{market_context}_{cluster_suffix}_p_above_green"
                             )
+
+                    # IMPORTANTE: Si d_shape está por ARRIBA de ambas EMAs en alcista
+                    # NO operamos (precio ya subió demasiado, no perseguir)
+                    # Si p_shape está DENTRO o DEBAJO de EMAs en alcista
+                    # NO operamos (contra-tendencia, vendería en alcista)
 
                 if new_pos:
                     open_positions.append(new_pos)

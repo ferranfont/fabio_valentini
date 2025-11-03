@@ -297,12 +297,22 @@ fig.add_trace(go.Scatter(
     hovertemplate='%{x}<br>Señales P-Shape: %{y}<extra></extra>'
 ), row=2, col=1)
 
-# Agregar línea horizontal verde donde cluster_p > 2
-fig.add_hline(
-    y=2,
-    line=dict(color='green', width=2, dash='dash'),
-    row=2, col=1
-)
+# Agregar líneas horizontales verdes en subplot de PRECIO donde cluster_p > 2
+# Identificar segmentos donde densidad > 2
+df_high_cluster = df_price[df_price['cluster_p'] > 2].copy()
+
+if len(df_high_cluster) > 0:
+    # Para cada segmento continuo, dibujar una línea horizontal al precio actual
+    for idx, row in df_high_cluster.iterrows():
+        fig.add_shape(
+            type='line',
+            x0=row['Timestamp'],
+            x1=row['Timestamp'] + pd.Timedelta(minutes=1),  # 1 minuto de ancho
+            y0=row['Precio'],
+            y1=row['Precio'],
+            line=dict(color='green', width=3),
+            row=1, col=1
+        )
 
 # Configuración del layout
 fig.update_layout(

@@ -137,7 +137,7 @@ fig = make_subplots(
     shared_xaxes=True,
     vertical_spacing=0.05,
     row_heights=[0.7, 0.3],
-    subplot_titles=('Precio con Detecciones de Market Profile', 'Densidad de Clustering P-Shape')
+    subplot_titles=('Precio con Detecciones de Market Profile', '')  # Sin título en subplot inferior
 )
 
 # Añadir líneas verticales para cambios de día
@@ -297,11 +297,18 @@ fig.add_trace(go.Scatter(
     hovertemplate='%{x}<br>Señales P-Shape: %{y}<extra></extra>'
 ), row=2, col=1)
 
+# Agregar línea horizontal verde donde cluster_p > 2
+fig.add_hline(
+    y=2,
+    line=dict(color='green', width=2, dash='dash'),
+    row=2, col=1
+)
+
 # Configuración del layout
 fig.update_layout(
     title=f'Precio NQ con Detecciones de Market Profile y Clustering<br><sub>{len(df_d_shape)} d_shapes (rojo) | {len(df_p_shape)} p_shapes (verde) | Ventana clustering: {CLUSTER_TIME} min</sub>',
     width=1600,
-    height=1000,  # Increased height for 2 subplots
+    height=850,  # Reduced from 1000
     hovermode='x unified',
     plot_bgcolor='white',
     paper_bgcolor='white',

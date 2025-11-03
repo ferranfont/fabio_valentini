@@ -12,14 +12,32 @@ import sys
 from pathlib import Path
 
 # Add strategies folder to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+STRATEGY_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = STRATEGY_DIR.parents[2]
+sys.path.insert(0, str(PROJECT_ROOT / "strategies"))
 from path_helper import get_output_path, get_charts_path
+
+# Import strategy configuration from same folder
+sys.path.insert(0, str(STRATEGY_DIR))
+try:
+    from config_strategy import STRATEGY_MODE, get_strategy_name
+except ImportError:
+    STRATEGY_MODE = None
+    get_strategy_name = lambda: "Unknown"
 
 # ==============================================================================
 # CONFIGURACIÓN
 # ==============================================================================
-TRADES_FILE = get_output_path('tracking_record_absortion_shape_INV_all_day.csv')
-OUTPUT_HTML = get_charts_path('summary_report_absortion_shape_INV_all_day.html')
+# Get strategy-specific file names
+if STRATEGY_MODE:
+    from config_strategy import get_output_suffix
+    suffix = get_output_suffix()
+    TRADES_FILE = get_output_path(f'tracking_record_{suffix}_all_day.csv')
+    OUTPUT_HTML = get_charts_path(f'summary_report_{suffix}_all_day.html')
+else:
+    # Fallback to hybrid names
+    TRADES_FILE = get_output_path('tracking_record_hybrid_all_day.csv')
+    OUTPUT_HTML = get_charts_path('summary_report_hybrid_all_day.html')
 
 
 def calculate_metrics(df):
@@ -158,11 +176,17 @@ def generate_html_report(metrics):
     Returns:
         str con HTML
     """
+    # Get strategy title
+    if STRATEGY_MODE:
+        strategy_title = f"Estrategia #{STRATEGY_MODE}: {get_strategy_name()}"
+    else:
+        strategy_title = "d-Shape & p-Shape Absorption Strategy"
+
     html = f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Backtest Summary - d-Shape & p-Shape Strategy</title>
+        <title>Backtest Summary - {strategy_title}</title>
         <style>
             body {{
                 font-family: Arial, sans-serif;
@@ -242,7 +266,7 @@ def generate_html_report(metrics):
     <body>
         <div class="container">
             <h1>Backtest Summary Report</h1>
-            <h2 style="text-align: center; color: #666;">d-Shape & p-Shape Absorption Strategy</h2>
+            <h2 style="text-align: center; color: #666;">{strategy_title}</h2>
 
             <table>
                 <tr class="section-title">

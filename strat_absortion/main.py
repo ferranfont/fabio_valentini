@@ -18,7 +18,7 @@ _ENV_CSV = os.getenv("ABSORTION_SOURCE_CSV")
 csv_path = (
     Path(_ENV_CSV).expanduser()
     if _ENV_CSV
-    else (_DATA_DIR / "time_and_sales_20251031_074530.csv")
+    else (_DATA_DIR / "historic/time_and_sales_nq_20250917_all.csv")
 )
 csv_path = csv_path.resolve()
 
@@ -33,7 +33,7 @@ MIN_VOLUME = 10  # Minimum total volume (BID + ASK) in the profile
 
 
 # Configuration: Set to True to filter for NY hours only
-FILTER_NY_HOURS = False # set to False to process all data
+FILTER_NY_HOURS = False  # set to False to process all data
 
 # Configuration: Set to True to filter for European hours only
 FILTER_EUROPEAN_HOURS = False  # Set to False to process all data
@@ -89,9 +89,20 @@ def plot_detection(
     current_price,
     PROFILE_WINDOW,
 ):
-    """Create a 4-panel plot showing market profiles at detection, +1x window, +2x window, and price movement."""
+    """Create a 5-panel plot showing market profiles at detection, +1x window, +2x window, price movement, and Bid/Ask lines."""
 
-    fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(24, 6))
+    fig = plt.figure(figsize=(24, 12))
+    gs = fig.add_gridspec(2, 4, hspace=0.3, wspace=0.3)
+
+    # First row: 4 panels for market profiles and price movement
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax2 = fig.add_subplot(gs[0, 1])
+    ax3 = fig.add_subplot(gs[0, 2])
+    ax4 = fig.add_subplot(gs[0, 3])
+
+    # Second row: Bid/Ask chart spanning all columns
+    ax5 = fig.add_subplot(gs[1, :])
+
     tooltip_specs = []
 
     # Helper function to plot market profile
@@ -389,7 +400,184 @@ def plot_detection(
         uniq_labels.append(label)
     ax4.legend(uniq_handles, uniq_labels, loc="best", fontsize=11)
 
-    # Synchronize y-axis scales across all 4 panels
+    # Panel 5: Bid/Ask price bubbles over time (bubble size = volume)
+    start_time_bidask = detection_time - timedelta(seconds=PROFILE_WINDOW)
+    end_time_bidask = detection_time + timedelta(seconds=4 * PROFILE_WINDOW)
+    bidask_data = df_all[
+        (df_all["Timestamp"] >= start_time_bidask)
+        & (df_all["Timestamp"] <= end_time_bidask)
+    ].copy()
+
+    if len(bidask_data) > 0:
+        # Aggregate volume by millisecond - group by timestamp and side only
+        # This creates one bubble per millisecond per side
+        bidask_data = bidask_data.groupby(["Timestamp", "Lado"], as_index=False).agg(
+            {
+                "Volumen": "sum",
+                "Precio": "mean",  # Average price for that millisecond
+                "Bid": "first",  # Representative Bid/Ask values
+                "Ask": "first",
+            }
+        )
+
+        # Get timestamps and convert to seconds relative to detection
+        import numpy as np
+
+        timestamps = bidask_data["Timestamp"].values
+        # Convert to seconds relative to detection (0 = detection time)
+        times_rel_seconds = np.array(
+            [(t - detection_time).total_seconds() for t in timestamps]
+        )
+
+        # Use actual trade price (Precio) instead of Bid/Ask
+        # Separate by side (Lado)
+        bid_mask = bidask_data["Lado"].str.upper() == "BID"
+        ask_mask = bidask_data["Lado"].str.upper() == "ASK"
+
+        # Get prices and volumes for each side
+        bid_times = times_rel_seconds[bid_mask]
+        bid_prices = bidask_data.loc[bid_mask, "Precio"].values
+        bid_volumes = bidask_data.loc[bid_mask, "Volumen"].values
+
+        ask_times = times_rel_seconds[ask_mask]
+        ask_prices = bidask_data.loc[ask_mask, "Precio"].values
+        ask_volumes = bidask_data.loc[ask_mask, "Volumen"].values
+
+        volumes = bidask_data["Volumen"].values
+        all_prices = bidask_data["Precio"].values
+
+        # Scale bubble sizes based on volume (min 10, max 200)
+        # Use square root scaling to make size differences more visible
+        bid_volume_sizes = np.sqrt(bid_volumes) * 10
+        bid_volume_sizes = np.clip(bid_volume_sizes, 10, 200)
+
+        ask_volume_sizes = np.sqrt(ask_volumes) * 10
+        ask_volume_sizes = np.clip(ask_volume_sizes, 10, 200)
+
+        # Plot Bid bubbles in red and Ask bubbles in green (with tooltips)
+        bid_scatter = ax5.scatter(
+            bid_times,
+            bid_prices,
+            s=bid_volume_sizes,
+            color="red",
+            alpha=0.6,
+            edgecolors="darkred",
+            linewidth=0.5,
+            label="Bid",
+        )
+        ask_scatter = ax5.scatter(
+            ask_times,
+            ask_prices,
+            s=ask_volume_sizes,
+            color="green",
+            alpha=0.6,
+            edgecolors="darkgreen",
+            linewidth=0.5,
+            label="Ask",
+        )
+
+        # Create tooltips for bid and ask bubbles separately
+        bid_tooltips = []
+        ask_tooltips = []
+
+        # Tooltips for BID trades
+        for idx in bidask_data[bid_mask].index:
+            row = bidask_data.loc[idx]
+            time_str = pd.Timestamp(row["Timestamp"]).strftime("%H:%M:%S.%f")[:-3]
+            bid_tooltip = (
+                f"<div style='background:#fff; padding:8px; border:1px solid #ccc;'>"
+                f"<strong>BID TRADE</strong><br>"
+                f"Time: {time_str}<br>"
+                f"Price: {row['Precio']:.2f}<br>"
+                f"Bid: {row['Bid']:.2f}<br>"
+                f"Ask: {row['Ask']:.2f}<br>"
+                f"Volume: {row['Volumen']:.0f}"
+                f"</div>"
+            )
+            bid_tooltips.append(bid_tooltip)
+
+        # Tooltips for ASK trades
+        for idx in bidask_data[ask_mask].index:
+            row = bidask_data.loc[idx]
+            time_str = pd.Timestamp(row["Timestamp"]).strftime("%H:%M:%S.%f")[:-3]
+            ask_tooltip = (
+                f"<div style='background:#fff; padding:8px; border:1px solid #ccc;'>"
+                f"<strong>ASK TRADE</strong><br>"
+                f"Time: {time_str}<br>"
+                f"Price: {row['Precio']:.2f}<br>"
+                f"Bid: {row['Bid']:.2f}<br>"
+                f"Ask: {row['Ask']:.2f}<br>"
+                f"Volume: {row['Volumen']:.0f}"
+                f"</div>"
+            )
+            ask_tooltips.append(ask_tooltip)
+
+        # Add to tooltip specs for mpld3
+        tooltip_css = (
+            ".mpld3-tooltip {background: rgba(255,255,255,0.95);"
+            "border: 1px solid #555;border-radius: 4px;padding: 8px 10px;"
+            "font-size: 14px;color: #222;box-shadow: 0 2px 6px rgba(0,0,0,0.3);}"
+        )
+        tooltip_specs.append((bid_scatter, bid_tooltips, tooltip_css))
+        tooltip_specs.append((ask_scatter, ask_tooltips, tooltip_css))
+
+        ax5.set_xlabel("Seconds relative to detection (0 = detection)", fontsize=12)
+        ax5.set_ylabel("Price", fontsize=12)
+        ax5.set_title(
+            f"Bid/Ask Bubbles (size=volume)\n(-{PROFILE_WINDOW}s to +{4*PROFILE_WINDOW}s)",
+            fontsize=14,
+            fontweight="bold",
+        )
+        ax5.grid(True, alpha=0.3)
+
+        # Add reference lines at detection, +PROFILE_WINDOW, +2*PROFILE_WINDOW, +3*PROFILE_WINDOW, +4*PROFILE_WINDOW
+        ax5.axvline(
+            x=0,
+            color="blue",
+            linewidth=2,
+            linestyle="--",
+            alpha=0.8,
+            label="Detection (0s)",
+        )
+        ax5.axvline(
+            x=PROFILE_WINDOW,
+            color="orange",
+            linewidth=2,
+            linestyle="--",
+            alpha=0.8,
+            label=f"+{PROFILE_WINDOW}s",
+        )
+        ax5.axvline(
+            x=2 * PROFILE_WINDOW,
+            color="purple",
+            linewidth=2,
+            linestyle="--",
+            alpha=0.8,
+            label=f"+{2*PROFILE_WINDOW}s",
+        )
+        ax5.axvline(
+            x=3 * PROFILE_WINDOW,
+            color="brown",
+            linewidth=2,
+            linestyle="--",
+            alpha=0.8,
+            label=f"+{3*PROFILE_WINDOW}s",
+        )
+        ax5.axvline(
+            x=4 * PROFILE_WINDOW,
+            color="pink",
+            linewidth=2,
+            linestyle="--",
+            alpha=0.8,
+            label=f"+{4*PROFILE_WINDOW}s",
+        )
+
+        ax5.legend(loc="best", fontsize=11)
+    else:
+        ax5.text(0.5, 0.5, "No Bid/Ask data available", ha="center", va="center")
+        ax5.set_title("Bid/Ask Bubbles", fontsize=14, fontweight="bold")
+
+    # Synchronize y-axis scales across all 5 panels
     all_prices = []
 
     # Collect prices from all three market profiles
@@ -403,6 +591,10 @@ def plot_detection(
     # Also include prices from price movement chart
     if len(price_data) > 0:
         all_prices.extend(price_data["Precio"].values)
+
+    # Also include trade prices (Precio) from panel 5
+    if len(bidask_data) > 0:
+        all_prices.extend(bidask_data["Precio"].values)
 
     # Find global min and max
     if all_prices:
@@ -420,6 +612,7 @@ def plot_detection(
         ax2.set_ylim(y_min, y_max)
         ax3.set_ylim(y_min, y_max)
         ax4.set_ylim(y_min, y_max)
+        ax5.set_ylim(y_min, y_max)
 
     # Main title
     fig.suptitle(

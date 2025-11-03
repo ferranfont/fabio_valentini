@@ -10,6 +10,7 @@ import sys
 import webbrowser
 import pandas as pd
 import plotly.graph_objs as go
+from plotly.subplots import make_subplots
 from pathlib import Path
 
 # Add parent directory to path
@@ -28,6 +29,9 @@ SIGNALS_FILE = "db_shapes_dom_20251101_150013.csv"
 EMA_PERIOD = 30  # Período de la EMA rápida en minutos
 EMA_SLOW_PERIOD = 200  # Período de la EMA lenta en minutos
 VWAP_PERIOD = 100  # Período del VWAP rolling en minutos
+
+# Parámetros de clustering
+CLUSTER_TIME = 30  # Ventana de tiempo en minutos para medir densidad de señales
 
 # Rutas completas
 DATA_PATH = Path(__file__).parent.parent / "data" / DATA_FILE
@@ -95,13 +99,46 @@ print(f"  - d_shape (rojo): {len(df_d_shape)}")
 print(f"  - p_shape (verde): {len(df_p_shape)}")
 
 # ====================================================
+# CALCULAR INDICADOR DE CLUSTERING
+# ====================================================
+print(f"\n[OK] Calculando densidad de clustering con ventana de {CLUSTER_TIME} minutos...")
+
+# Crear series de tiempo de 1 minuto con conteo de señales p_shape
+# Para cada timestamp en df_price, contar cuántas p_shape hay en ventana de CLUSTER_TIME minutos
+cluster_p_density = []
+
+for timestamp in df_price['Timestamp']:
+    # Ventana de tiempo: desde (timestamp - CLUSTER_TIME) hasta timestamp
+    window_start = timestamp - pd.Timedelta(minutes=CLUSTER_TIME)
+    window_end = timestamp
+
+    # Contar p_shapes en esta ventana
+    p_count = len(df_p_shape[
+        (df_p_shape['timestamp'] >= window_start) &
+        (df_p_shape['timestamp'] <= window_end)
+    ])
+
+    cluster_p_density.append(p_count)
+
+df_price['cluster_p'] = cluster_p_density
+
+print(f"[OK] Densidad cluster_p calculada (max: {df_price['cluster_p'].max()}, promedio: {df_price['cluster_p'].mean():.2f})")
+
+# ====================================================
 # CREAR GRÁFICO
 # ====================================================
 print("\n" + "=" * 80)
 print("GENERANDO GRÁFICO")
 print("=" * 80)
 
-fig = go.Figure()
+# Crear figura con 2 subplots: Precio arriba, Clustering abajo
+fig = make_subplots(
+    rows=2, cols=1,
+    shared_xaxes=True,
+    vertical_spacing=0.05,
+    row_heights=[0.7, 0.3],
+    subplot_titles=('Precio con Detecciones de Market Profile', 'Densidad de Clustering P-Shape')
+)
 
 # Añadir líneas verticales para cambios de día
 # Obtener todos los días únicos en los datos
@@ -119,6 +156,10 @@ for i, date in enumerate(unique_dates[1:], 1):
         layer='below'
     )
 
+# ====================================================
+# SUBPLOT 1: PRECIO Y SEÑALES
+# ====================================================
+
 # 1. Línea azul de precio
 fig.add_trace(go.Scatter(
     x=df_price['Timestamp'],
@@ -128,7 +169,7 @@ fig.add_trace(go.Scatter(
     name='Precio',
     showlegend=False,
     hovertemplate='%{x}<br>Precio: %{y:.2f}<extra></extra>'
-))
+), row=1, col=1)
 
 # 1b. VWAP en magenta
 fig.add_trace(go.Scatter(
@@ -138,7 +179,7 @@ fig.add_trace(go.Scatter(
     line=dict(color='magenta', width=1.5, dash='dash'),
     name='VWAP',
     hovertemplate='%{x}<br>VWAP: %{y:.2f}<extra></extra>'
-))
+), row=1, col=1)
 
 # 1c. EMA rápida en naranja
 fig.add_trace(go.Scatter(
@@ -148,7 +189,7 @@ fig.add_trace(go.Scatter(
     line=dict(color='orange', width=1.5),
     name=f'EMA({EMA_PERIOD})',
     hovertemplate='%{x}<br>EMA: %{y:.2f}<extra></extra>'
-))
+), row=1, col=1)
 
 # 1d. EMA lenta en verde
 fig.add_trace(go.Scatter(
@@ -158,7 +199,7 @@ fig.add_trace(go.Scatter(
     line=dict(color='green', width=1.5),
     name=f'EMA({EMA_SLOW_PERIOD})',
     hovertemplate='%{x}<br>EMA Lenta: %{y:.2f}<extra></extra>'
-))
+), row=1, col=1)
 
 # 1e. Relleno entre EMAs (azul si EMA rápida > EMA lenta, rojo si no)
 # Crear segmentos donde EMA > EMA_SLOW (azul) y EMA < EMA_SLOW (rojo)
@@ -174,7 +215,7 @@ if len(df_bullish) > 0:
         line=dict(width=0),
         showlegend=False,
         hoverinfo='skip'
-    ))
+    ), row=1, col=1)
     fig.add_trace(go.Scatter(
         x=df_bullish['Timestamp'],
         y=df_bullish['EMA_SLOW'],
@@ -184,7 +225,7 @@ if len(df_bullish) > 0:
         fillcolor='rgba(144, 238, 144, 0.2)',  # Verde claro con alpha 0.2
         name='Zona Alcista (EMA30>EMA100)',
         hoverinfo='skip'
-    ))
+    ), row=1, col=1)
 
 # Segmentos bajistas (EMA < EMA_SLOW) - Relleno rojo
 df_bearish = df_price[df_price['ema_diff'] < 0].copy()
@@ -196,7 +237,7 @@ if len(df_bearish) > 0:
         line=dict(width=0),
         showlegend=False,
         hoverinfo='skip'
-    ))
+    ), row=1, col=1)
     fig.add_trace(go.Scatter(
         x=df_bearish['Timestamp'],
         y=df_bearish['EMA_SLOW'],
@@ -206,7 +247,7 @@ if len(df_bearish) > 0:
         fillcolor='rgba(255, 182, 193, 0.2)',  # Rojo pálido con alpha 0.2
         name='Zona Bajista (EMA30<EMA100)',
         hoverinfo='skip'
-    ))
+    ), row=1, col=1)
 
 # 2. Puntos rojos para d_shape
 if len(df_d_shape) > 0:
@@ -222,7 +263,7 @@ if len(df_d_shape) > 0:
         ),
         name='d_shape',
         hovertemplate='<b>d_shape</b><br>%{x}<br>Precio: %{y:.2f}<extra></extra>'
-    ))
+    ), row=1, col=1)
 
 # 3. Puntos verdes para p_shape
 if len(df_p_shape) > 0:
@@ -238,34 +279,38 @@ if len(df_p_shape) > 0:
         ),
         name='p_shape',
         hovertemplate='<b>p_shape</b><br>%{x}<br>Precio: %{y:.2f}<extra></extra>'
-    ))
+    ), row=1, col=1)
+
+# ====================================================
+# SUBPLOT 2: INDICADOR DE CLUSTERING P-SHAPE
+# ====================================================
+
+# Línea verde de densidad de clustering
+fig.add_trace(go.Scatter(
+    x=df_price['Timestamp'],
+    y=df_price['cluster_p'],
+    mode='lines',
+    line=dict(color='green', width=2),
+    name=f'Cluster P ({CLUSTER_TIME}min)',
+    fill='tozeroy',
+    fillcolor='rgba(0, 255, 0, 0.1)',
+    hovertemplate='%{x}<br>Señales P-Shape: %{y}<extra></extra>'
+), row=2, col=1)
 
 # Configuración del layout
 fig.update_layout(
-    title=f'Precio NQ con Detecciones de Market Profile<br><sub>{len(df_d_shape)} d_shapes (rojo) | {len(df_p_shape)} p_shapes (verde)</sub>',
-    xaxis_title='',
-    yaxis_title='',
+    title=f'Precio NQ con Detecciones de Market Profile y Clustering<br><sub>{len(df_d_shape)} d_shapes (rojo) | {len(df_p_shape)} p_shapes (verde) | Ventana clustering: {CLUSTER_TIME} min</sub>',
     width=1600,
-    height=800,
-    hovermode='closest',
+    height=1000,  # Increased height for 2 subplots
+    hovermode='x unified',
     plot_bgcolor='white',
     paper_bgcolor='white',
     font=dict(size=12, color='black'),
-    xaxis=dict(
-        showgrid=False,
-        linecolor='black',
-        linewidth=1
-    ),
-    yaxis=dict(
-        showgrid=True,
-        gridcolor='rgba(128,128,128,0.2)',
-        linecolor='black',
-        linewidth=1
-    ),
+    showlegend=True,
     legend=dict(
         orientation='h',
         x=0.5,
-        y=-0.1,
+        y=-0.05,
         xanchor='center',
         yanchor='top',
         bgcolor='rgba(255,255,255,0.9)',
@@ -273,6 +318,39 @@ fig.update_layout(
         borderwidth=1,
         font=dict(color='grey')
     )
+)
+
+# Update axes for subplot 1 (Price)
+fig.update_xaxes(
+    showgrid=False,
+    linecolor='black',
+    linewidth=1,
+    row=1, col=1
+)
+fig.update_yaxes(
+    title_text='Precio',
+    showgrid=True,
+    gridcolor='rgba(128,128,128,0.2)',
+    linecolor='black',
+    linewidth=1,
+    row=1, col=1
+)
+
+# Update axes for subplot 2 (Clustering)
+fig.update_xaxes(
+    title_text='Tiempo',
+    showgrid=False,
+    linecolor='black',
+    linewidth=1,
+    row=2, col=1
+)
+fig.update_yaxes(
+    title_text='Densidad P-Shape',
+    showgrid=True,
+    gridcolor='rgba(128,128,128,0.2)',
+    linecolor='black',
+    linewidth=1,
+    row=2, col=1
 )
 
 # Guardar HTML

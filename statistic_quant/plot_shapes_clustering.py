@@ -26,12 +26,16 @@ DATA_FILE = "time_and_sales_20251031_074530.csv"
 SIGNALS_FILE = "db_shapes_dom_20251101_150013.csv"
 
 # Parámetros de indicadores
-EMA_PERIOD = 30  # Período de la EMA rápida en minutos
+EMA_PERIOD = 20  # Período de la EMA rápida en minutos
 EMA_SLOW_PERIOD = 200  # Período de la EMA lenta en minutos
 VWAP_PERIOD = 100  # Período del VWAP rolling en minutos
 
 # Parámetros de clustering
 CLUSTER_TIME = 30  # Ventana de tiempo en minutos para medir densidad de señales
+# Extensión de 8 horas para las líneas horizontales
+LINE_EXTENSION_HOURS = 0.25  # Parámetros de ineficiencia
+INEFFICIENCY_THRESHOLD = 20  # Puntos de precio mínimos esperados
+INEFFICIENCY_TIME = 15  # Minutos para evaluar el movimiento del precio
 
 # Rutas completas
 DATA_PATH = Path(__file__).parent.parent / "data" / DATA_FILE
@@ -103,9 +107,9 @@ print(f"  - p_shape (verde): {len(df_p_shape)}")
 # ====================================================
 print(f"\n[OK] Calculando densidad de clustering con ventana de {CLUSTER_TIME} minutos...")
 
-# Crear series de tiempo de 1 minuto con conteo de señales p_shape
-# Para cada timestamp en df_price, contar cuántas p_shape hay en ventana de CLUSTER_TIME minutos
+# Crear series de tiempo de 1 minuto con conteo de señales p_shape y d_shape
 cluster_p_density = []
+cluster_d_density = []
 
 for timestamp in df_price['Timestamp']:
     # Ventana de tiempo: desde (timestamp - CLUSTER_TIME) hasta timestamp
@@ -118,11 +122,20 @@ for timestamp in df_price['Timestamp']:
         (df_p_shape['timestamp'] <= window_end)
     ])
 
+    # Contar d_shapes en esta ventana
+    d_count = len(df_d_shape[
+        (df_d_shape['timestamp'] >= window_start) &
+        (df_d_shape['timestamp'] <= window_end)
+    ])
+
     cluster_p_density.append(p_count)
+    cluster_d_density.append(d_count)
 
 df_price['cluster_p'] = cluster_p_density
+df_price['cluster_d'] = cluster_d_density
 
 print(f"[OK] Densidad cluster_p calculada (max: {df_price['cluster_p'].max()}, promedio: {df_price['cluster_p'].mean():.2f})")
+print(f"[OK] Densidad cluster_d calculada (max: {df_price['cluster_d'].max()}, promedio: {df_price['cluster_d'].mean():.2f})")
 
 # ====================================================
 # CREAR GRÁFICO
@@ -137,7 +150,7 @@ fig = make_subplots(
     shared_xaxes=True,
     vertical_spacing=0.05,
     row_heights=[0.7, 0.3],
-    subplot_titles=('Precio con Detecciones de Market Profile', '')  # Sin título en subplot inferior
+    subplot_titles=(None, None)  # Sin títulos en los subplots
 )
 
 # Añadir líneas verticales para cambios de día
@@ -285,7 +298,7 @@ if len(df_p_shape) > 0:
 # SUBPLOT 2: INDICADOR DE CLUSTERING P-SHAPE
 # ====================================================
 
-# Línea verde de densidad de clustering
+# Línea verde de densidad de clustering p_shape
 fig.add_trace(go.Scatter(
     x=df_price['Timestamp'],
     y=df_price['cluster_p'],
@@ -297,56 +310,211 @@ fig.add_trace(go.Scatter(
     hovertemplate='%{x}<br>Señales P-Shape: %{y}<extra></extra>'
 ), row=2, col=1)
 
-# Agregar líneas horizontales verdes en subplot de PRECIO donde cluster_p > 2
-# Identificar segmentos donde densidad > 2
-df_high_cluster = df_price[df_price['cluster_p'] > 2].copy()
+# Línea roja de densidad de clustering d_shape
+fig.add_trace(go.Scatter(
+    x=df_price['Timestamp'],
+    y=df_price['cluster_d'],
+    mode='lines',
+    line=dict(color='red', width=2),
+    name=f'Cluster D ({CLUSTER_TIME}min)',
+    fill='tozeroy',
+    fillcolor='rgba(255, 0, 0, 0.1)',
+    hovertemplate='%{x}<br>Señales D-Shape: %{y}<extra></extra>'
+), row=2, col=1)
 
-if len(df_high_cluster) > 0:
-    print(f"[OK] Agregando {len(df_high_cluster)} líneas verdes de alta densidad en gráfico de precio...")
+# ====================================================
+# DETECTAR Y DIBUJAR CLUSTERS
+# ====================================================
 
-    # Agrupar puntos consecutivos para crear líneas más largas
-    # Crear grupos de timestamps consecutivos
-    timestamps = df_high_cluster['Timestamp'].values
-    prices = df_high_cluster['Precio'].values
+def detect_clusters(df, column, threshold=2):
+    """
+    Detecta clusters consecutivos donde densidad > threshold
+    Retorna lista de diccionarios con info de cada cluster
+    """
+    clusters = []
+    in_cluster = False
+    cluster_start_idx = None
 
-    # Crear una línea continua para cada segmento
-    i = 0
-    while i < len(timestamps):
-        # Inicio del segmento
-        start_time = timestamps[i]
-        start_price = prices[i]
+    for idx, row in df.iterrows():
+        if row[column] > threshold:
+            if not in_cluster:
+                # Inicio de nuevo cluster
+                in_cluster = True
+                cluster_start_idx = idx
+        else:
+            if in_cluster:
+                # Fin de cluster
+                cluster_data = df.loc[cluster_start_idx:idx-1]
+                clusters.append({
+                    'start_time': cluster_data['Timestamp'].iloc[0],
+                    'end_time': cluster_data['Timestamp'].iloc[-1],
+                    'weighted_price': (cluster_data['Precio'] * cluster_data[column]).sum() / cluster_data[column].sum(),
+                    'max_density': cluster_data[column].max()
+                })
+                in_cluster = False
 
-        # Buscar final del segmento (mientras sean consecutivos)
-        j = i
-        while j < len(timestamps) - 1:
-            # Si la diferencia es mayor a 2 minutos, no es consecutivo
-            if (timestamps[j+1] - timestamps[j]) > pd.Timedelta(minutes=2):
-                break
-            j += 1
+    # Si termina en cluster
+    if in_cluster:
+        cluster_data = df.loc[cluster_start_idx:]
+        clusters.append({
+            'start_time': cluster_data['Timestamp'].iloc[0],
+            'end_time': cluster_data['Timestamp'].iloc[-1],
+            'weighted_price': (cluster_data['Precio'] * cluster_data[column]).sum() / cluster_data[column].sum(),
+            'max_density': cluster_data[column].max()
+        })
 
-        end_time = timestamps[j]
-        end_price = prices[j]
+    return clusters
 
-        # Dibujar línea horizontal desde start_time hasta end_time al precio promedio
-        avg_price = (start_price + end_price) / 2
+# Detectar clusters de p_shape
+print(f"\n[OK] Detectando clusters de p_shape (densidad > 2)...")
+p_clusters = detect_clusters(df_price, 'cluster_p', threshold=2)
+print(f"[OK] Encontrados {len(p_clusters)} clusters de p_shape")
 
-        fig.add_trace(go.Scatter(
-            x=[start_time, end_time],
-            y=[avg_price, avg_price],
-            mode='lines',
-            line=dict(color='green', width=4),
-            showlegend=False,
-            hoverinfo='skip'
-        ), row=1, col=1)
+# Detectar clusters de d_shape
+print(f"[OK] Detectando clusters de d_shape (densidad > 2)...")
+d_clusters = detect_clusters(df_price, 'cluster_d', threshold=2)
+print(f"[OK] Encontrados {len(d_clusters)} clusters de d_shape")
 
-        i = j + 1
+
+
+# Dibujar líneas horizontales verdes para clusters de p_shape
+for cluster in p_clusters:
+    # Calcular tiempo final: inicio del cluster + 8 horas
+    line_end_time = cluster['start_time'] + pd.Timedelta(hours=LINE_EXTENSION_HOURS)
+
+    fig.add_trace(go.Scatter(
+        x=[cluster['start_time'], line_end_time],
+        y=[cluster['weighted_price'], cluster['weighted_price']],
+        mode='lines',
+        line=dict(color='green', width=1),
+        name='Cluster P',
+        showlegend=False,
+        hoverinfo='skip'
+    ), row=1, col=1)
+
+# Dibujar líneas horizontales rojas para clusters de d_shape
+for cluster in d_clusters:
+    # Calcular tiempo final: inicio del cluster + 8 horas
+    line_end_time = cluster['start_time'] + pd.Timedelta(hours=LINE_EXTENSION_HOURS)
+
+    fig.add_trace(go.Scatter(
+        x=[cluster['start_time'], line_end_time],
+        y=[cluster['weighted_price'], cluster['weighted_price']],
+        mode='lines',
+        line=dict(color='red', width=1),
+        name='Cluster D',
+        showlegend=False,
+        hoverinfo='skip'
+    ), row=1, col=1)
+
+# ====================================================
+# DETECTAR INEFICIENCIAS
+# ====================================================
+
+def detect_inefficiency(cluster, cluster_type, df_price, threshold, time_minutes):
+    """
+    Detecta si el precio NO se movió suficiente en la dirección esperada
+
+    cluster_type: 'p_shape' (esperamos bajada) o 'd_shape' (esperamos subida)
+    threshold: puntos de movimiento mínimo esperado
+    time_minutes: ventana de tiempo en minutos para evaluar el movimiento
+
+    Returns: True si hay ineficiencia (precio NO se movió lo esperado)
+    """
+    # Obtener datos de precio durante la ventana de tiempo
+    end_time = cluster['start_time'] + pd.Timedelta(minutes=time_minutes)
+
+    # Filtrar precios en el periodo
+    window_data = df_price[
+        (df_price['Timestamp'] >= cluster['start_time']) &
+        (df_price['Timestamp'] <= end_time)
+    ]
+
+    if len(window_data) == 0:
+        return False  # No hay datos suficientes
+
+    cluster_price = cluster['weighted_price']
+
+    if cluster_type == 'p_shape':
+        # P-shape: esperamos que el precio BAJE al menos threshold puntos
+        min_price = window_data['Precio'].min()
+        price_move = cluster_price - min_price
+
+        # Ineficiencia = precio NO bajó lo suficiente
+        return price_move < threshold
+
+    elif cluster_type == 'd_shape':
+        # D-shape: esperamos que el precio SUBA al menos threshold puntos
+        max_price = window_data['Precio'].max()
+        price_move = max_price - cluster_price
+
+        # Ineficiencia = precio NO subió lo suficiente
+        return price_move < threshold
+
+    return False
+
+# Detectar ineficiencias para clusters de p_shape
+print(f"\n[OK] Detectando ineficiencias en clusters de p_shape (ventana: {INEFFICIENCY_TIME} min, umbral: {INEFFICIENCY_THRESHOLD} puntos)...")
+p_inefficiencies = []
+for cluster in p_clusters:
+    if detect_inefficiency(cluster, 'p_shape', df_price, INEFFICIENCY_THRESHOLD, INEFFICIENCY_TIME):
+        p_inefficiencies.append(cluster)
+
+print(f"[OK] Encontradas {len(p_inefficiencies)} ineficiencias en p_shape (de {len(p_clusters)} clusters)")
+
+# Detectar ineficiencias para clusters de d_shape
+print(f"[OK] Detectando ineficiencias en clusters de d_shape (ventana: {INEFFICIENCY_TIME} min, umbral: {INEFFICIENCY_THRESHOLD} puntos)...")
+d_inefficiencies = []
+for cluster in d_clusters:
+    if detect_inefficiency(cluster, 'd_shape', df_price, INEFFICIENCY_THRESHOLD, INEFFICIENCY_TIME):
+        d_inefficiencies.append(cluster)
+
+print(f"[OK] Encontradas {len(d_inefficiencies)} ineficiencias en d_shape (de {len(d_clusters)} clusters)")
+
+# Dibujar líneas verticales verdes para ineficiencias de p_shape
+for cluster in p_inefficiencies:
+    # Línea vertical al final del periodo de evaluación de ineficiencia
+    inefficiency_time = cluster['start_time'] + pd.Timedelta(minutes=INEFFICIENCY_TIME)
+
+    # Obtener rango de precios para la línea vertical
+    y_min = df_price['Precio'].min()
+    y_max = df_price['Precio'].max()
+
+    fig.add_trace(go.Scatter(
+        x=[inefficiency_time, inefficiency_time],
+        y=[y_min, y_max],
+        mode='lines',
+        line=dict(color='green', width=2, dash='dash'),
+        name='Inef P',
+        showlegend=False,
+        hoverinfo='skip'
+    ), row=1, col=1)
+
+# Dibujar líneas verticales rojas para ineficiencias de d_shape
+for cluster in d_inefficiencies:
+    # Línea vertical al final del periodo de evaluación de ineficiencia
+    inefficiency_time = cluster['start_time'] + pd.Timedelta(minutes=INEFFICIENCY_TIME)
+
+    # Obtener rango de precios para la línea vertical
+    y_min = df_price['Precio'].min()
+    y_max = df_price['Precio'].max()
+
+    fig.add_trace(go.Scatter(
+        x=[inefficiency_time, inefficiency_time],
+        y=[y_min, y_max],
+        mode='lines',
+        line=dict(color='red', width=2, dash='dash'),
+        name='Inef D',
+        showlegend=False,
+        hoverinfo='skip'
+    ), row=1, col=1)
 
 # Configuración del layout
 fig.update_layout(
-    title=f'Precio NQ con Detecciones de Market Profile y Clustering<br><sub>{len(df_d_shape)} d_shapes (rojo) | {len(df_p_shape)} p_shapes (verde) | Ventana clustering: {CLUSTER_TIME} min</sub>',
+    title=None,  # Sin título principal
     width=1600,
     height=850,  # Reduced from 1000
-    hovermode='x unified',
+    hovermode=False,  # Tooltips desactivados
     plot_bgcolor='white',
     paper_bgcolor='white',
     font=dict(size=12, color='black'),
@@ -366,13 +534,14 @@ fig.update_layout(
 
 # Update axes for subplot 1 (Price)
 fig.update_xaxes(
+    title_text=None,  # Sin título en eje X
     showgrid=False,
     linecolor='black',
     linewidth=1,
     row=1, col=1
 )
 fig.update_yaxes(
-    title_text='Precio',
+    title_text=None,  # Sin título en eje Y
     showgrid=True,
     gridcolor='rgba(128,128,128,0.2)',
     linecolor='black',
@@ -382,14 +551,14 @@ fig.update_yaxes(
 
 # Update axes for subplot 2 (Clustering)
 fig.update_xaxes(
-    title_text='Tiempo',
+    title_text=None,  # Sin título en eje X
     showgrid=False,
     linecolor='black',
     linewidth=1,
     row=2, col=1
 )
 fig.update_yaxes(
-    title_text='Densidad P-Shape',
+    title_text=None,  # Sin título en eje Y
     showgrid=True,
     gridcolor='rgba(128,128,128,0.2)',
     linecolor='black',

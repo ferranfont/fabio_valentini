@@ -12,7 +12,7 @@ Selecciona qué estrategia ejecutar cambiando STRATEGY_MODE
 # 3 = Mean Reversion (Rangos)
 # 4 = Hybrid (RECOMENDADA)
 
-STRATEGY_MODE = 2  # ← CAMBIAR AQUÍ PARA ELEGIR ESTRATEGIA
+STRATEGY_MODE = 1  # ← CAMBIAR AQUÍ PARA ELEGIR ESTRATEGIA
 
 # ============================================================================
 # NOMBRES Y DESCRIPCIONES POR ESTRATEGIA

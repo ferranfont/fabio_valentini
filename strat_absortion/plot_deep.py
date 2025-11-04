@@ -31,9 +31,9 @@ DIFF_DISTANCE = 0  # Minimum absolute price difference between current and previ
 MIN_VOLUME = 10  # Minimum total volume (BID + ASK) in the profile (default = 10)
 # =======================================
 
-# Load data
-csv_path = "data/time_and_sales_nq_30min.csv"
-#csv_path = "data/time_and_sales_nq.csv"
+# Load dataq_30min.csv"
+#csv_path = "data/time_and_sales_nq
+csv_path = "data/time_and_sales.csv"
 
 print("Loading data...")
 df = pd.read_csv(csv_path, sep=";", decimal=",")

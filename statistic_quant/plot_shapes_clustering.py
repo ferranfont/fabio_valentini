@@ -31,11 +31,12 @@ EMA_SLOW_PERIOD = 200  # Período de la EMA lenta en minutos
 VWAP_PERIOD = 100  # Período del VWAP rolling en minutos
 
 # Parámetros de clustering
-CLUSTER_TIME = 30  # Ventana de tiempo en minutos para medir densidad de señales
+CLUSTER_TIME = 40  # Ventana de tiempo en minutos para medir densidad de señales
 # Extensión de 8 horas para las líneas horizontales
-LINE_EXTENSION_HOURS = 0.25  # Parámetros de ineficiencia
-INEFFICIENCY_THRESHOLD = 20  # Puntos de precio mínimos esperados
-INEFFICIENCY_TIME = 15  # Minutos para evaluar el movimiento del precio
+LINE_EXTENSION_HOURS = 0.50
+# Parámetros de eficiencia
+EFFICIENCY_THRESHOLD = 30  # Puntos de precio mínimos esperados para considerar eficiencia
+EFFICIENCY_TIME = 30  # Minutos para evaluar el movimiento del precio
 
 # Rutas completas
 DATA_PATH = Path(__file__).parent.parent / "data" / DATA_FILE
@@ -408,18 +409,18 @@ for cluster in d_clusters:
     ), row=1, col=1)
 
 # ====================================================
-# DETECTAR INEFICIENCIAS
+# DETECTAR EFICIENCIAS
 # ====================================================
 
-def detect_inefficiency(cluster, cluster_type, df_price, threshold, time_minutes):
+def detect_efficiency(cluster, cluster_type, df_price, threshold, time_minutes):
     """
-    Detecta si el precio NO se movió suficiente en la dirección esperada
+    Detecta si el precio SÍ se movió suficiente en la dirección esperada (EFICIENCIA)
 
     cluster_type: 'p_shape' (esperamos bajada) o 'd_shape' (esperamos subida)
     threshold: puntos de movimiento mínimo esperado
     time_minutes: ventana de tiempo en minutos para evaluar el movimiento
 
-    Returns: True si hay ineficiencia (precio NO se movió lo esperado)
+    Returns: True si hay eficiencia (precio SÍ se movió lo esperado)
     """
     # Obtener datos de precio durante la ventana de tiempo
     end_time = cluster['start_time'] + pd.Timedelta(minutes=time_minutes)
@@ -440,71 +441,71 @@ def detect_inefficiency(cluster, cluster_type, df_price, threshold, time_minutes
         min_price = window_data['Precio'].min()
         price_move = cluster_price - min_price
 
-        # Ineficiencia = precio NO bajó lo suficiente
-        return price_move < threshold
+        # EFICIENCIA = precio SÍ bajó lo suficiente
+        return price_move >= threshold
 
     elif cluster_type == 'd_shape':
         # D-shape: esperamos que el precio SUBA al menos threshold puntos
         max_price = window_data['Precio'].max()
         price_move = max_price - cluster_price
 
-        # Ineficiencia = precio NO subió lo suficiente
-        return price_move < threshold
+        # EFICIENCIA = precio SÍ subió lo suficiente
+        return price_move >= threshold
 
     return False
 
-# Detectar ineficiencias para clusters de p_shape
-print(f"\n[OK] Detectando ineficiencias en clusters de p_shape (ventana: {INEFFICIENCY_TIME} min, umbral: {INEFFICIENCY_THRESHOLD} puntos)...")
-p_inefficiencies = []
+# Detectar eficiencias para clusters de p_shape
+print(f"\n[OK] Detectando eficiencias en clusters de p_shape (ventana: {EFFICIENCY_TIME} min, umbral: {EFFICIENCY_THRESHOLD} puntos)...")
+p_efficiencies = []
 for cluster in p_clusters:
-    if detect_inefficiency(cluster, 'p_shape', df_price, INEFFICIENCY_THRESHOLD, INEFFICIENCY_TIME):
-        p_inefficiencies.append(cluster)
+    if detect_efficiency(cluster, 'p_shape', df_price, EFFICIENCY_THRESHOLD, EFFICIENCY_TIME):
+        p_efficiencies.append(cluster)
 
-print(f"[OK] Encontradas {len(p_inefficiencies)} ineficiencias en p_shape (de {len(p_clusters)} clusters)")
+print(f"[OK] Encontradas {len(p_efficiencies)} eficiencias en p_shape (de {len(p_clusters)} clusters)")
 
-# Detectar ineficiencias para clusters de d_shape
-print(f"[OK] Detectando ineficiencias en clusters de d_shape (ventana: {INEFFICIENCY_TIME} min, umbral: {INEFFICIENCY_THRESHOLD} puntos)...")
-d_inefficiencies = []
+# Detectar eficiencias para clusters de d_shape
+print(f"[OK] Detectando eficiencias en clusters de d_shape (ventana: {EFFICIENCY_TIME} min, umbral: {EFFICIENCY_THRESHOLD} puntos)...")
+d_efficiencies = []
 for cluster in d_clusters:
-    if detect_inefficiency(cluster, 'd_shape', df_price, INEFFICIENCY_THRESHOLD, INEFFICIENCY_TIME):
-        d_inefficiencies.append(cluster)
+    if detect_efficiency(cluster, 'd_shape', df_price, EFFICIENCY_THRESHOLD, EFFICIENCY_TIME):
+        d_efficiencies.append(cluster)
 
-print(f"[OK] Encontradas {len(d_inefficiencies)} ineficiencias en d_shape (de {len(d_clusters)} clusters)")
+print(f"[OK] Encontradas {len(d_efficiencies)} eficiencias en d_shape (de {len(d_clusters)} clusters)")
 
-# Dibujar líneas verticales verdes para ineficiencias de p_shape
-for cluster in p_inefficiencies:
-    # Línea vertical al final del periodo de evaluación de ineficiencia
-    inefficiency_time = cluster['start_time'] + pd.Timedelta(minutes=INEFFICIENCY_TIME)
+# Dibujar líneas verticales verdes SÓLIDAS para eficiencias de p_shape
+for cluster in p_efficiencies:
+    # Línea vertical al final del periodo de evaluación de eficiencia
+    efficiency_time = cluster['start_time'] + pd.Timedelta(minutes=EFFICIENCY_TIME)
 
     # Obtener rango de precios para la línea vertical
     y_min = df_price['Precio'].min()
     y_max = df_price['Precio'].max()
 
     fig.add_trace(go.Scatter(
-        x=[inefficiency_time, inefficiency_time],
+        x=[efficiency_time, efficiency_time],
         y=[y_min, y_max],
         mode='lines',
-        line=dict(color='green', width=2, dash='dash'),
-        name='Inef P',
+        line=dict(color='green', width=1),  # SÓLIDA width=1
+        name='Eficiencia P',
         showlegend=False,
         hoverinfo='skip'
     ), row=1, col=1)
 
-# Dibujar líneas verticales rojas para ineficiencias de d_shape
-for cluster in d_inefficiencies:
-    # Línea vertical al final del periodo de evaluación de ineficiencia
-    inefficiency_time = cluster['start_time'] + pd.Timedelta(minutes=INEFFICIENCY_TIME)
+# Dibujar líneas verticales rojas SÓLIDAS para eficiencias de d_shape
+for cluster in d_efficiencies:
+    # Línea vertical al final del periodo de evaluación de eficiencia
+    efficiency_time = cluster['start_time'] + pd.Timedelta(minutes=EFFICIENCY_TIME)
 
     # Obtener rango de precios para la línea vertical
     y_min = df_price['Precio'].min()
     y_max = df_price['Precio'].max()
 
     fig.add_trace(go.Scatter(
-        x=[inefficiency_time, inefficiency_time],
+        x=[efficiency_time, efficiency_time],
         y=[y_min, y_max],
         mode='lines',
-        line=dict(color='red', width=2, dash='dash'),
-        name='Inef D',
+        line=dict(color='red', width=1),  # SÓLIDA width=1
+        name='Eficiencia D',
         showlegend=False,
         hoverinfo='skip'
     ), row=1, col=1)
@@ -586,9 +587,40 @@ webbrowser.open('file://' + str(OUTPUT_HTML.resolve()))
 print("\n" + "=" * 80)
 print("COMPLETADO")
 print("=" * 80)
-print(f"\nResumen:")
+
+# Calcular tasas de eficiencia
+p_efficiency_rate = (len(p_efficiencies) / len(p_clusters) * 100) if len(p_clusters) > 0 else 0
+d_efficiency_rate = (len(d_efficiencies) / len(d_clusters) * 100) if len(d_clusters) > 0 else 0
+total_efficiencies = len(p_efficiencies) + len(d_efficiencies)
+total_clusters = len(p_clusters) + len(d_clusters)
+overall_efficiency_rate = (total_efficiencies / total_clusters * 100) if total_clusters > 0 else 0
+
+print(f"\nResumen de Datos:")
 print(f"  - Puntos de precio: {len(df_price):,}")
 print(f"  - Detecciones d_shape: {len(df_d_shape)}")
 print(f"  - Detecciones p_shape: {len(df_p_shape)}")
 print(f"  - Total detecciones: {len(df_signals)}")
+
+print(f"\nResumen de Clusters:")
+print(f"  - Clusters P-Shape: {len(p_clusters)}")
+print(f"  - Clusters D-Shape: {len(d_clusters)}")
+print(f"  - Total Clusters: {total_clusters}")
+
+print(f"\n{'=' * 80}")
+print(f"RESUMEN DE EFICIENCIAS (Umbral: {EFFICIENCY_THRESHOLD} pts en {EFFICIENCY_TIME} min)")
+print(f"{'=' * 80}")
+print(f"\nP-Shape (Clusters Verdes - Esperamos BAJADA):")
+print(f"  - Clusters totales: {len(p_clusters)}")
+print(f"  - Eficiencias (precio bajo >={EFFICIENCY_THRESHOLD} pts): {len(p_efficiencies)}")
+print(f"  - Tasa de eficiencia: {p_efficiency_rate:.1f}%")
+
+print(f"\nD-Shape (Clusters Rojos - Esperamos SUBIDA):")
+print(f"  - Clusters totales: {len(d_clusters)}")
+print(f"  - Eficiencias (precio subio >={EFFICIENCY_THRESHOLD} pts): {len(d_efficiencies)}")
+print(f"  - Tasa de eficiencia: {d_efficiency_rate:.1f}%")
+
+print(f"\nEFICIENCIA GLOBAL:")
+print(f"  - Total eventos eficientes: {total_efficiencies} de {total_clusters}")
+print(f"  - Tasa global de eficiencia: {overall_efficiency_rate:.1f}%")
+print(f"{'=' * 80}")
 print()

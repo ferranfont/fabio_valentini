@@ -12,15 +12,16 @@ from enum import Enum
 
 
 # =============================================================================
-# CONFIGURATION
+# CONFIGURATION - ARCHIVOS DE INPUT
 # =============================================================================
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
-# Input file
-INPUT_FILE = "ts_and_dom_24_oct.csv"  # Use time_and_sales_nq.csv or ts_and_dom_24_oct.csv
+# Archivo de datos tick completo (todas las líneas de precio)
+# Mes de septiembre 2025: 29 agosto - 30 septiembre
+INPUT_FILE = "time_and_sales_20251031_074530.csv"
 
 # Zigzag parameters for MINOR structure (smaller fractals)
 MIN_CHANGE_PCT_MINOR = 0.02 # 0.008% minimum change for minor pivot detection

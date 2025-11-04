@@ -49,6 +49,8 @@ def calculate_metrics(df):
     # Profit metrics
     total_profit = df['profit_dollars'].sum()
     avg_profit = df['profit_dollars'].mean()
+    median_profit = df['profit_dollars'].median()
+    std_profit = df['profit_dollars'].std()
 
     gross_profit = winners['profit_dollars'].sum() if len(winners) > 0 else 0
     gross_loss = abs(losers['profit_dollars'].sum()) if len(losers) > 0 else 0
@@ -70,12 +72,24 @@ def calculate_metrics(df):
     drawdown = df['cumulative_profit'] - max_equity
     max_drawdown = drawdown.min()
 
+    # Ulcer Index: sqrt(mean(drawdown^2))
+    ulcer_index = np.sqrt((drawdown ** 2).mean())
+
     # Recovery factor
     recovery_factor = (total_profit / abs(max_drawdown)) if max_drawdown != 0 else float('inf')
 
     # Sharpe ratio (simplificado - asumiendo risk-free rate = 0)
     returns = df['profit_dollars']
     sharpe_ratio = (returns.mean() / returns.std()) if returns.std() > 0 else 0
+
+    # Sortino ratio (usando solo downside deviation)
+    downside_returns = returns[returns < 0]
+    downside_std = downside_returns.std() if len(downside_returns) > 0 and downside_returns.std() > 0 else returns.std()
+    sortino_ratio = (returns.mean() / downside_std) if downside_std > 0 else 0
+
+    # Skewness and Kurtosis
+    skewness = returns.skew()
+    kurtosis = returns.kurtosis()
 
     # Consecutive wins/losses
     df['win'] = df['profit_dollars'] > 0
@@ -95,9 +109,18 @@ def calculate_metrics(df):
     d_shape_trades = df[df['entry_signal'] == 'd_shape']
     p_shape_trades = df[df['entry_signal'] == 'p_shape']
 
-    # Duración promedio
+    # Duración
     df['duration_minutes'] = (pd.to_datetime(df['exit_time']) - pd.to_datetime(df['entry_time'])).dt.total_seconds() / 60
     avg_duration = df['duration_minutes'].mean()
+    median_duration = df['duration_minutes'].median()
+
+    # Exposure days
+    df['entry_time_dt'] = pd.to_datetime(df['entry_time'])
+    df['exit_time_dt'] = pd.to_datetime(df['exit_time'])
+    exposure_days = (df['exit_time_dt'].max() - df['entry_time_dt'].min()).days
+
+    # Trades per day
+    trades_per_day = total_trades / exposure_days if exposure_days > 0 else 0
 
     return {
         'total_trades': total_trades,
@@ -107,6 +130,8 @@ def calculate_metrics(df):
         'win_rate': win_rate,
         'total_profit': total_profit,
         'avg_profit': avg_profit,
+        'median_profit': median_profit,
+        'std_profit': std_profit,
         'gross_profit': gross_profit,
         'gross_loss': gross_loss,
         'profit_factor': profit_factor,
@@ -116,8 +141,12 @@ def calculate_metrics(df):
         'largest_loser': largest_loser,
         'expectancy': expectancy,
         'max_drawdown': max_drawdown,
+        'ulcer_index': ulcer_index,
         'recovery_factor': recovery_factor,
         'sharpe_ratio': sharpe_ratio,
+        'sortino_ratio': sortino_ratio,
+        'skewness': skewness,
+        'kurtosis': kurtosis,
         'max_winning_streak': max_winning_streak,
         'max_losing_streak': max_losing_streak,
         'targets': targets,
@@ -128,6 +157,9 @@ def calculate_metrics(df):
         'p_shape_count': len(p_shape_trades),
         'p_shape_profit': p_shape_trades['profit_dollars'].sum() if len(p_shape_trades) > 0 else 0,
         'avg_duration': avg_duration,
+        'median_duration': median_duration,
+        'exposure_days': exposure_days,
+        'trades_per_day': trades_per_day,
         'start_time': df['entry_time'].min(),
         'end_time': df['exit_time'].max()
     }
@@ -135,7 +167,7 @@ def calculate_metrics(df):
 
 def generate_html_report(metrics):
     """
-    Genera reporte HTML con las métricas.
+    Genera reporte HTML con las métricas en layout de 2 columnas.
 
     Args:
         metrics: dict con métricas calculadas
@@ -165,17 +197,26 @@ def generate_html_report(metrics):
                 margin-top: 0;
             }}
             .container {{
-                max-width: 700px;
+                max-width: 1200px;
                 margin: 0 auto;
                 background-color: white;
                 padding: 20px;
                 border-radius: 10px;
                 box-shadow: 0 0 10px rgba(0,0,0,0.1);
             }}
+            .two-column-layout {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 15px;
+                margin: 10px 0;
+            }}
+            .column {{
+                background-color: white;
+            }}
             table {{
                 width: 100%;
                 border-collapse: collapse;
-                margin: 10px 0;
+                margin: 0;
             }}
             th, td {{
                 padding: 6px 10px;
@@ -222,6 +263,9 @@ def generate_html_report(metrics):
                 color: #666;
                 font-size: 11px;
             }}
+            .full-width-section {{
+                grid-column: 1 / -1;
+            }}
         </style>
     </head>
     <body>
@@ -229,139 +273,189 @@ def generate_html_report(metrics):
             <h1>Backtest Summary Report</h1>
             <h2 style="text-align: center; color: #666;">d-Shape & p-Shape Absorption Strategy</h2>
 
-            <table>
-                <tr class="section-title">
-                    <td colspan="2">GENERAL</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Total Trades</td>
-                    <td class="metric-value">{metrics['total_trades']:,}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Periodo</td>
-                    <td class="metric-value">{metrics['start_time']} - {metrics['end_time']}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Duración Promedio</td>
-                    <td class="metric-value">{metrics['avg_duration']:.1f} minutos</td>
-                </tr>
+            <div class="two-column-layout">
+                <!-- LEFT COLUMN -->
+                <div class="column">
+                    <table>
+                        <tr class="section-title">
+                            <td colspan="2">GENERAL</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Total Trades</td>
+                            <td class="metric-value">{metrics['total_trades']:,}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Periodo</td>
+                            <td class="metric-value" style="font-size: 11px;">{metrics['start_time']}<br>{metrics['end_time']}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Exposure Days</td>
+                            <td class="metric-value">{metrics['exposure_days']}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Trades per Day</td>
+                            <td class="metric-value">{metrics['trades_per_day']:.1f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Avg Duration</td>
+                            <td class="metric-value">{metrics['avg_duration']:.1f} min</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Median Duration</td>
+                            <td class="metric-value">{metrics['median_duration']:.1f} min</td>
+                        </tr>
 
-                <tr class="section-title">
-                    <td colspan="2">PERFORMANCE</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Total Profit</td>
-                    <td class="metric-value {'positive' if metrics['total_profit'] > 0 else 'negative'}">${metrics['total_profit']:,.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Avg Profit per Trade</td>
-                    <td class="metric-value {'positive' if metrics['avg_profit'] > 0 else 'negative'}">${metrics['avg_profit']:,.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Profit Factor</td>
-                    <td class="metric-value">{metrics['profit_factor']:.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Expectancy</td>
-                    <td class="metric-value {'positive' if metrics['expectancy'] > 0 else 'negative'}">${metrics['expectancy']:,.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Sharpe Ratio</td>
-                    <td class="metric-value">{metrics['sharpe_ratio']:.2f}</td>
-                </tr>
+                        <tr class="section-title">
+                            <td colspan="2">PERFORMANCE</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Total Profit</td>
+                            <td class="metric-value {'positive' if metrics['total_profit'] > 0 else 'negative'}">${metrics['total_profit']:,.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Avg Profit</td>
+                            <td class="metric-value {'positive' if metrics['avg_profit'] > 0 else 'negative'}">${metrics['avg_profit']:,.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Median Profit</td>
+                            <td class="metric-value {'positive' if metrics['median_profit'] > 0 else 'negative'}">${metrics['median_profit']:,.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Std Profit</td>
+                            <td class="metric-value">${metrics['std_profit']:,.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Profit Factor</td>
+                            <td class="metric-value">{metrics['profit_factor']:.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Expectancy</td>
+                            <td class="metric-value {'positive' if metrics['expectancy'] > 0 else 'negative'}">${metrics['expectancy']:,.2f}</td>
+                        </tr>
 
-                <tr class="section-title">
-                    <td colspan="2">WIN/LOSS</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Win Rate</td>
-                    <td class="metric-value">{metrics['win_rate']:.1f}%</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Winners / Losers / Breakeven</td>
-                    <td class="metric-value">{metrics['win_count']} / {metrics['loss_count']} / {metrics['breakeven_count']}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Gross Profit</td>
-                    <td class="metric-value positive">${metrics['gross_profit']:,.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Gross Loss</td>
-                    <td class="metric-value negative">${metrics['gross_loss']:,.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Avg Winner</td>
-                    <td class="metric-value positive">${metrics['avg_winner']:,.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Avg Loser</td>
-                    <td class="metric-value negative">${metrics['avg_loser']:,.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Largest Winner</td>
-                    <td class="metric-value positive">${metrics['largest_winner']:,.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Largest Loser</td>
-                    <td class="metric-value negative">${metrics['largest_loser']:,.2f}</td>
-                </tr>
+                        <tr class="section-title">
+                            <td colspan="2">WIN/LOSS</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Win Rate</td>
+                            <td class="metric-value">{metrics['win_rate']:.1f}%</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Winners / Losers</td>
+                            <td class="metric-value">{metrics['win_count']} / {metrics['loss_count']}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Gross Profit</td>
+                            <td class="metric-value positive">${metrics['gross_profit']:,.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Gross Loss</td>
+                            <td class="metric-value negative">${metrics['gross_loss']:,.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Avg Winner</td>
+                            <td class="metric-value positive">${metrics['avg_winner']:,.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Avg Loser</td>
+                            <td class="metric-value negative">${metrics['avg_loser']:,.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Largest Winner</td>
+                            <td class="metric-value positive">${metrics['largest_winner']:,.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Largest Loser</td>
+                            <td class="metric-value negative">${metrics['largest_loser']:,.2f}</td>
+                        </tr>
+                    </table>
+                </div>
 
-                <tr class="section-title">
-                    <td colspan="2">RISK METRICS</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Max Drawdown</td>
-                    <td class="metric-value negative">${metrics['max_drawdown']:,.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Recovery Factor</td>
-                    <td class="metric-value">{metrics['recovery_factor']:.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Max Winning Streak</td>
-                    <td class="metric-value">{metrics['max_winning_streak']}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">Max Losing Streak</td>
-                    <td class="metric-value">{metrics['max_losing_streak']}</td>
-                </tr>
+                <!-- RIGHT COLUMN -->
+                <div class="column">
+                    <table>
+                        <tr class="section-title">
+                            <td colspan="2">RISK METRICS</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Max Drawdown</td>
+                            <td class="metric-value negative">${metrics['max_drawdown']:,.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Ulcer Index</td>
+                            <td class="metric-value">{metrics['ulcer_index']:.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Recovery Factor</td>
+                            <td class="metric-value">{metrics['recovery_factor']:.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Sharpe Ratio</td>
+                            <td class="metric-value">{metrics['sharpe_ratio']:.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Sortino Ratio</td>
+                            <td class="metric-value">{metrics['sortino_ratio']:.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Max Winning Streak</td>
+                            <td class="metric-value">{metrics['max_winning_streak']}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Max Losing Streak</td>
+                            <td class="metric-value">{metrics['max_losing_streak']}</td>
+                        </tr>
 
-                <tr class="section-title">
-                    <td colspan="2">EXIT REASONS</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">TARGET exits</td>
-                    <td class="metric-value">{metrics['targets']} ({metrics['targets']/metrics['total_trades']*100:.1f}%)</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">STOP exits</td>
-                    <td class="metric-value">{metrics['stops']} ({metrics['stops']/metrics['total_trades']*100:.1f}%)</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">EOD exits</td>
-                    <td class="metric-value">{metrics['eods']} ({metrics['eods']/metrics['total_trades']*100:.1f}%)</td>
-                </tr>
+                        <tr class="section-title">
+                            <td colspan="2">DISTRIBUTION</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Skewness</td>
+                            <td class="metric-value">{metrics['skewness']:.3f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">Kurtosis</td>
+                            <td class="metric-value">{metrics['kurtosis']:.3f}</td>
+                        </tr>
 
-                <tr class="section-title">
-                    <td colspan="2">SIGNAL BREAKDOWN</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">d-Shape (LONG) Trades</td>
-                    <td class="metric-value">{metrics['d_shape_count']} ({metrics['d_shape_count']/metrics['total_trades']*100:.1f}%)</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">d-Shape Profit</td>
-                    <td class="metric-value {'positive' if metrics['d_shape_profit'] > 0 else 'negative'}">${metrics['d_shape_profit']:,.2f}</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">p-Shape (SHORT) Trades</td>
-                    <td class="metric-value">{metrics['p_shape_count']} ({metrics['p_shape_count']/metrics['total_trades']*100:.1f}%)</td>
-                </tr>
-                <tr>
-                    <td class="metric-label">p-Shape Profit</td>
-                    <td class="metric-value {'positive' if metrics['p_shape_profit'] > 0 else 'negative'}">${metrics['p_shape_profit']:,.2f}</td>
-                </tr>
-            </table>
+                        <tr class="section-title">
+                            <td colspan="2">EXIT REASONS</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">TARGET exits</td>
+                            <td class="metric-value">{metrics['targets']} ({metrics['targets']/metrics['total_trades']*100:.1f}%)</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">STOP exits</td>
+                            <td class="metric-value">{metrics['stops']} ({metrics['stops']/metrics['total_trades']*100:.1f}%)</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">EOD exits</td>
+                            <td class="metric-value">{metrics['eods']} ({metrics['eods']/metrics['total_trades']*100:.1f}%)</td>
+                        </tr>
+
+                        <tr class="section-title">
+                            <td colspan="2">SIGNAL BREAKDOWN</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">d-Shape (LONG)</td>
+                            <td class="metric-value">{metrics['d_shape_count']} ({metrics['d_shape_count']/metrics['total_trades']*100:.1f}%)</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">d-Shape Profit</td>
+                            <td class="metric-value {'positive' if metrics['d_shape_profit'] > 0 else 'negative'}">${metrics['d_shape_profit']:,.2f}</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">p-Shape (SHORT)</td>
+                            <td class="metric-value">{metrics['p_shape_count']} ({metrics['p_shape_count']/metrics['total_trades']*100:.1f}%)</td>
+                        </tr>
+                        <tr>
+                            <td class="metric-label">p-Shape Profit</td>
+                            <td class="metric-value {'positive' if metrics['p_shape_profit'] > 0 else 'negative'}">${metrics['p_shape_profit']:,.2f}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
 
             <div class="footer">
                 Generated by d-Shape & p-Shape Absorption Strategy | {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}

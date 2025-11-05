@@ -18,14 +18,14 @@ _ENV_CSV = os.getenv("ABSORTION_SOURCE_CSV")
 csv_path = (
     Path(_ENV_CSV).expanduser()
     if _ENV_CSV
-    else (_DATA_DIR / "historic/time_and_sales_nq_20250917_all.csv")
+    else (_DATA_DIR / "historic/time_and_sales_nq_20250917.csv")
 )
 csv_path = csv_path.resolve()
 
 # Profile shape detection configuration (modified from plot_deep.py)
 PROFILE_WINDOW = 20  # Rolling window size in seconds
 EXTREME_VOLUME_MULTIPLIER = 2  # Extreme bar must be N times the second-largest overall
-MIN_PRICE_LEVELS = 10  # Minimum number of active price levels
+MIN_PRICE_LEVELS = 20  # Minimum number of active price levels
 MIN_BID_ASK_SIZE = 30  # Minimum absolute size of largest BID/ASK bar
 PRICE_POSITION_THRESHOLD = 0.3  # Price must be in lower/upper 25% of the profile range
 DIFF_DISTANCE = 0  # Minimum absolute price difference between current and previous close (0 = no filter)

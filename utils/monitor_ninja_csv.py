@@ -79,46 +79,24 @@ class DynamicChart:
         self.max_points = max_points
         self.data_buffer = {
             'timestamp': [],
-            'last': [],
-            'bid': [],
-            'ask': []
+            'close': []
         }
         self.fig = None
         self.html_file = None
         self._create_figure()
 
     def _create_figure(self):
-        """Crea la figura de Plotly con 3 trazas (last, bid, ask)."""
+        """Crea la figura de Plotly con 1 traza (Close)."""
         self.fig = go.Figure()
 
-        # Traza para LAST (precio de ejecución)
+        # Traza para CLOSE (precio de ejecución)
         self.fig.add_trace(go.Scatter(
             x=[],
             y=[],
             mode='lines+markers',
-            name='Last',
+            name='Close',
             line=dict(color='blue', width=2),
             marker=dict(size=4)
-        ))
-
-        # Traza para BID
-        self.fig.add_trace(go.Scatter(
-            x=[],
-            y=[],
-            mode='lines',
-            name='Bid',
-            line=dict(color='green', width=1, dash='dot'),
-            opacity=0.6
-        ))
-
-        # Traza para ASK
-        self.fig.add_trace(go.Scatter(
-            x=[],
-            y=[],
-            mode='lines',
-            name='Ask',
-            line=dict(color='red', width=1, dash='dot'),
-            opacity=0.6
         ))
 
         # Layout
@@ -185,24 +163,16 @@ class DynamicChart:
                     return None
 
             self.data_buffer['timestamp'].append(timestamp_str)
-            self.data_buffer['last'].append(safe_float(row.get('last', None)))
-            self.data_buffer['bid'].append(safe_float(row.get('bid', None)))
-            self.data_buffer['ask'].append(safe_float(row.get('ask', None)))
+            self.data_buffer['close'].append(safe_float(row.get('last', None)))
 
         # Aplicar ventana deslizante (solo últimos MAX_POINTS)
         if len(self.data_buffer['timestamp']) > self.max_points:
             for key in self.data_buffer:
                 self.data_buffer[key] = self.data_buffer[key][-self.max_points:]
 
-        # Actualizar trazas en la figura
+        # Actualizar traza en la figura
         self.fig.data[0].x = self.data_buffer['timestamp']
-        self.fig.data[0].y = self.data_buffer['last']
-
-        self.fig.data[1].x = self.data_buffer['timestamp']
-        self.fig.data[1].y = self.data_buffer['bid']
-
-        self.fig.data[2].x = self.data_buffer['timestamp']
-        self.fig.data[2].y = self.data_buffer['ask']
+        self.fig.data[0].y = self.data_buffer['close']
 
         # Guardar HTML actualizado con auto-refresh
         html_string = self.fig.to_html(include_plotlyjs='cdn')

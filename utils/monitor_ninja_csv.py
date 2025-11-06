@@ -51,7 +51,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ============================================================
 # Cambiar a True para habilitar el gráfico dinámico con Plotly
 ENABLE_DYNAMIC_CHART = True  # False = solo terminal, True = gráfico + terminal
-MAX_CHART_POINTS = 100       # Máximo de puntos en el gráfico (ventana deslizante)
+MAX_CHART_POINTS = 5000      # Máximo de puntos en el gráfico (ventana deslizante)
+VISIBLE_TIME_WINDOW = 120    # Segundos visibles en el eje X (ventana deslizante temporal)
+PADDING_RIGHT_SECONDS = 5    # Padding en blanco a la derecha (segundos)
 
 # ============================================================
 # FUNCIONES
@@ -79,35 +81,61 @@ class DynamicChart:
         self.max_points = max_points
         self.data_buffer = {
             'timestamp': [],
-            'close': []
+            'close': [],
+            'volume': [],
+            'color': []
         }
         self.fig = None
         self.html_file = None
         self._create_figure()
 
     def _create_figure(self):
-        """Crea la figura de Plotly con 1 traza (Close)."""
+        """Crea la figura de Plotly con 2 trazas (Scatter + EMA)."""
         self.fig = go.Figure()
 
-        # Traza para CLOSE (precio de ejecución)
+        # Traza 1: Scatter con volumen y color
         self.fig.add_trace(go.Scatter(
             x=[],
             y=[],
-            mode='lines+markers',
-            name='Close',
-            line=dict(color='blue', width=2),
-            marker=dict(size=4)
+            mode='markers',
+            name='Last',
+            marker=dict(
+                size=[],
+                color=[],
+                opacity=[],
+                line=dict(width=0)
+            ),
+            hovertemplate='<b>Time:</b> %{x}<br><b>Price:</b> %{y}<br><b>Vol:</b> %{text}<extra></extra>',
+            text=[]
+        ))
+
+        # Traza 2: Media Exponencial
+        self.fig.add_trace(go.Scatter(
+            x=[],
+            y=[],
+            mode='lines',
+            name='EMA',
+            line=dict(color='blue', width=1)
         ))
 
         # Layout
         self.fig.update_layout(
-            title='NinjaTrader Real-Time Monitor',
+            title='NinjaTrader Real-Time Monitor (EMA + Volume-Weighted Points)',
             xaxis_title='Time',
             yaxis_title='Price',
-            hovermode='x unified',
+            hovermode='closest',
             height=600,
             template='plotly_white',
-            showlegend=True
+            showlegend=False,  # Sin leyenda
+            xaxis=dict(
+                showgrid=False,  # Sin grid vertical
+                tickformat='%H:%M',  # Solo hora:minutos
+                nticks=10  # Máximo 10 ticks en el eje X
+            ),
+            yaxis=dict(
+                showgrid=True,  # Grid horizontal activado
+                gridcolor='lightgray'
+            )
         )
 
         # Crear archivo HTML temporal con auto-refresh
@@ -140,39 +168,149 @@ class DynamicChart:
         if df_clean.empty:
             return
 
+        # Convertir valores a float (pueden venir como strings con formato europeo)
+        def safe_float(val):
+            if pd.isna(val) or val is None:
+                return None
+            try:
+                # Si es string, reemplazar coma por punto
+                if isinstance(val, str):
+                    val = val.replace(',', '.')
+                return float(val)
+            except (ValueError, TypeError):
+                return None
+
         # Extraer datos relevantes
         for _, row in df_clean.iterrows():
             # Combinar date y time para el timestamp
             if 'date' in row and 'time' in row:
-                timestamp_str = f"{row['date']} {row['time']}"
-            elif 'time' in row:
-                timestamp_str = str(row['time'])
-            else:
-                timestamp_str = datetime.now().strftime("%Y%m%d %H%M%S.%f")
+                # Formato: date=YYYYMMDD, time=HHMMSS.f
+                date_str = str(row['date'])
+                time_str = str(row['time'])
 
-            # Convertir valores a float (pueden venir como strings con formato europeo)
-            def safe_float(val):
-                if pd.isna(val) or val is None:
-                    return None
+                # Parsear y convertir a objeto datetime para Plotly
                 try:
-                    # Si es string, reemplazar coma por punto
-                    if isinstance(val, str):
-                        val = val.replace(',', '.')
-                    return float(val)
-                except (ValueError, TypeError):
-                    return None
+                    # Extraer componentes de fecha
+                    year = int(date_str[:4])
+                    month = int(date_str[4:6])
+                    day = int(date_str[6:8])
 
-            self.data_buffer['timestamp'].append(timestamp_str)
+                    # Time puede tener formato HHMMSS.f o HH:MM:SS
+                    if ':' in time_str:
+                        time_parts = time_str.split(':')
+                        hour = int(time_parts[0])
+                        minute = int(time_parts[1])
+                        second = int(float(time_parts[2])) if len(time_parts) > 2 else 0
+                    else:
+                        hour = int(time_str[:2]) if len(time_str) >= 2 else 0
+                        minute = int(time_str[2:4]) if len(time_str) >= 4 else 0
+                        second = int(time_str[4:6]) if len(time_str) >= 6 else 0
+
+                    # Crear objeto datetime
+                    timestamp_obj = datetime(year, month, day, hour, minute, second)
+                except:
+                    timestamp_obj = datetime.now()
+
+            elif 'time' in row:
+                try:
+                    timestamp_obj = datetime.strptime(str(row['time']), "%Y%m%d %H%M%S.%f")
+                except:
+                    timestamp_obj = datetime.now()
+            else:
+                timestamp_obj = datetime.now()
+
+            self.data_buffer['timestamp'].append(timestamp_obj)
             self.data_buffer['close'].append(safe_float(row.get('last', None)))
+            self.data_buffer['volume'].append(safe_float(row.get('volume', 1)))
+            self.data_buffer['color'].append(row.get('color', None))
 
         # Aplicar ventana deslizante (solo últimos MAX_POINTS)
         if len(self.data_buffer['timestamp']) > self.max_points:
             for key in self.data_buffer:
                 self.data_buffer[key] = self.data_buffer[key][-self.max_points:]
 
-        # Actualizar traza en la figura
+        # Calcular EMA (span=20 por defecto)
+        close_series = pd.Series([c for c in self.data_buffer['close'] if c is not None])
+        if len(close_series) > 0:
+            ema_series = close_series.ewm(span=20, adjust=False).mean()
+            ema_values = ema_series.tolist()
+        else:
+            ema_values = []
+
+        # Normalizar volúmenes para tamaño de puntos (rango 4-20)
+        volumes = [v if v is not None else 1 for v in self.data_buffer['volume']]
+        if len(volumes) > 0 and max(volumes) > 0:
+            min_vol = min(volumes)
+            max_vol = max(volumes)
+            if max_vol > min_vol:
+                sizes = [4 + (v - min_vol) / (max_vol - min_vol) * 16 for v in volumes]
+            else:
+                sizes = [10] * len(volumes)
+        else:
+            sizes = [10] * len(volumes)
+
+        # Calcular opacidades (inversamente proporcional al volumen: más volumen = más transparente)
+        if len(volumes) > 0 and max(volumes) > 0:
+            min_vol = min(volumes)
+            max_vol = max(volumes)
+            if max_vol > min_vol:
+                # Rango de opacidad: 0.3 (max vol) a 1.0 (min vol)
+                opacities = [1.0 - (v - min_vol) / (max_vol - min_vol) * 0.7 for v in volumes]
+            else:
+                opacities = [0.7] * len(volumes)
+        else:
+            opacities = [0.7] * len(volumes)
+
+        # Convertir colores según columna 'color'
+        colors = []
+        for c in self.data_buffer['color']:
+            if pd.isna(c) or c is None:
+                colors.append('gray')
+            elif str(c).lower() == 'g':
+                colors.append('green')
+            elif str(c).lower() == 'o':
+                colors.append('red')
+            else:
+                colors.append('gray')
+
+        # Actualizar traza 0 (scatter con puntos)
         self.fig.data[0].x = self.data_buffer['timestamp']
         self.fig.data[0].y = self.data_buffer['close']
+        self.fig.data[0].marker.size = sizes
+        self.fig.data[0].marker.color = colors
+        self.fig.data[0].marker.opacity = opacities
+        self.fig.data[0].text = [f"{v}" for v in volumes]
+
+        # Actualizar traza 1 (EMA)
+        # Ajustar x para que coincida con los valores no-None de close
+        valid_indices = [i for i, c in enumerate(self.data_buffer['close']) if c is not None]
+        ema_timestamps = [self.data_buffer['timestamp'][i] for i in valid_indices]
+        self.fig.data[1].x = ema_timestamps
+        self.fig.data[1].y = ema_values
+
+        # Ajustar rango del eje X para ventana deslizante temporal
+        if len(self.data_buffer['timestamp']) > 0:
+            from datetime import timedelta
+
+            # Obtener el último timestamp real de los datos
+            last_timestamp = self.data_buffer['timestamp'][-1]
+            first_timestamp = self.data_buffer['timestamp'][0]
+
+            # Calcular cuánto tiempo de historia tenemos
+            time_span = (last_timestamp - first_timestamp).total_seconds()
+
+            # Si tenemos menos historia que VISIBLE_TIME_WINDOW, mostrar desde el inicio
+            if time_span < VISIBLE_TIME_WINDOW:
+                # Mostrar desde el primer dato con padding a la derecha
+                time_window_start = first_timestamp
+                time_window_end = last_timestamp + timedelta(seconds=PADDING_RIGHT_SECONDS)
+            else:
+                # Ventana deslizante: mostrar últimos VISIBLE_TIME_WINDOW segundos
+                time_window_start = last_timestamp - timedelta(seconds=VISIBLE_TIME_WINDOW)
+                time_window_end = last_timestamp + timedelta(seconds=PADDING_RIGHT_SECONDS)
+
+            # Actualizar el rango del eje X
+            self.fig.update_xaxes(range=[time_window_start, time_window_end])
 
         # Guardar HTML actualizado con auto-refresh
         html_string = self.fig.to_html(include_plotlyjs='cdn')

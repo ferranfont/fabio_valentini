@@ -10,22 +10,24 @@ import matplotlib
 matplotlib.use("Agg")  # Use non-interactive backend
 import matplotlib.pyplot as plt
 
+FICHERO_ORIGEN = "time_and_sales_nq_20250929"
+
 _BASE_DIR = Path(__file__).resolve().parent
 _DATA_DIR = _BASE_DIR.parent / "data"
-_OUTPUT_DIR = _BASE_DIR.parent / "outputs"
+_OUTPUT_DIR = _BASE_DIR.parent / "outputs/absortion_shape"
 _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 _ENV_CSV = os.getenv("ABSORTION_SOURCE_CSV")
 csv_path = (
     Path(_ENV_CSV).expanduser()
     if _ENV_CSV
-    else (_DATA_DIR / "historic/time_and_sales_nq_20250917_all.csv")
+    else (_DATA_DIR / f"historic/{FICHERO_ORIGEN}.csv")
 )
 csv_path = csv_path.resolve()
 
 # Profile shape detection configuration (modified from plot_deep.py)
 PROFILE_WINDOW = 20  # Rolling window size in seconds
 EXTREME_VOLUME_MULTIPLIER = 2  # Extreme bar must be N times the second-largest overall
-MIN_PRICE_LEVELS = 10  # Minimum number of active price levels
+MIN_PRICE_LEVELS = 20  # Minimum number of active price levels
 MIN_BID_ASK_SIZE = 30  # Minimum absolute size of largest BID/ASK bar
 PRICE_POSITION_THRESHOLD = 0.3  # Price must be in lower/upper 25% of the profile range
 DIFF_DISTANCE = 0  # Minimum absolute price difference between current and previous close (0 = no filter)
@@ -53,21 +55,15 @@ import pandas as pd
 
 from rolling_profile import RollingMarketProfile
 
-try:
-    import mpld3
-    from mpld3 import plugins
-except ImportError:  # pragma: no cover - optional dependency for interactive HTML
-    mpld3 = None
-    plugins = None
-
-if mpld3 is None or plugins is None:
-    print(
-        "mpld3 not available; falling back to static HTML export without interactivity."
-    )
+# Disable mpld3 due to compatibility issues with matplotlib
+mpld3 = None
+plugins = None
+print("mpld3 disabled; using static HTML export without interactivity.")
 
 
 # Create output directory for plots
-os.makedirs("charts/detections", exist_ok=True)
+_CHARTS_DIR = _BASE_DIR.parent / "charts" / "detections"
+_CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_HTML = None
 OUTPUT_SIGNALS_CSV: Optional[Path] = None
@@ -799,7 +795,7 @@ else:
     date_slug = f"{start_label}_{end_label}"
     title_suffix = f"{start_ts.strftime('%Y-%m-%d')} – {end_ts.strftime('%Y-%m-%d')}"
 
-OUTPUT_HTML = f"charts/detections/absorption_report_{date_slug}.html"
+OUTPUT_HTML = _BASE_DIR.parent / "charts" / "detections" / f"absorption_report_{date_slug}.html"
 
 with open(OUTPUT_HTML, "w", encoding="utf-8") as report:
     report.write(
@@ -1328,8 +1324,9 @@ with open(OUTPUT_HTML, "a", encoding="utf-8") as report:
 
 if _signal_records:
     signals_df = pd.DataFrame(_signal_records)
-    timestamp_slug = datetime.now().strftime("%Y%m%d_%H%M%S")
-    OUTPUT_SIGNALS_CSV = _OUTPUT_DIR / f"db_shapes_dom_{timestamp_slug}.csv"
+    # Use the date from the actual data instead of current timestamp
+    data_date = df['Timestamp'].min().strftime("%Y%m%d")
+    OUTPUT_SIGNALS_CSV = _OUTPUT_DIR / f"db_shapes_dom_{data_date}.csv"
     signals_df.to_csv(OUTPUT_SIGNALS_CSV, index=False, sep=";", decimal=",")
     print(f"Signals CSV: {OUTPUT_SIGNALS_CSV}")
 else:

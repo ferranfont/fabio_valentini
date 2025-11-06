@@ -12,6 +12,7 @@ Configuración centralizada de todos los parámetros.
 """
 
 from pathlib import Path
+import re
 import sys
 import time
 
@@ -32,26 +33,45 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 CHARTS_DIR = PROJECT_ROOT / "charts"
 
 # Archivos de entrada
-TNS_FILE = DATA_DIR / "time_and_sales_20251031_074530.csv"  # Archivo T&S completo del 31/10/2025
+TNS_FILE = DATA_DIR / "historic" / "time_and_sales_nq_20250918.csv"  # Archivo T&S completo del 17/09/2025
 # TNS_FILE = DATA_DIR / "time_and_sales_nq_30min.csv"  # Alternativa: 30 minutos
 
 # PLASE HERE THE db_shapes FILE YOU WANT TO USE
-SIGNALS_FILE = OUTPUTS_DIR / "db_shapes_dom_20251101_150013.csv"
-# SIGNALS_FILE = OUTPUTS_DIR / "db_shapes.csv"  # Alternativa: señales genéricas
+tns_date_match = re.search(r"\d{8}", TNS_FILE.name)
+if not tns_date_match:
+    raise ValueError(f"No se pudo extraer una fecha (YYYYMMDD) del archivo T&S: {TNS_FILE.name}")
+SIGNALS_DATE = tns_date_match.group(0)
+_signals_filename = f"db_shapes_dom_{SIGNALS_DATE}.csv"
+_signals_default = OUTPUTS_DIR / _signals_filename
+_signals_absortion = OUTPUTS_DIR / "absortion_shape" / _signals_filename
+if _signals_default.exists():
+    SIGNALS_FILE = _signals_default
+elif _signals_absortion.exists():
+    SIGNALS_FILE = _signals_absortion
+else:
+    raise FileNotFoundError(
+        f"No se encontro el archivo de senales {_signals_filename} ni en {OUTPUTS_DIR} ni en {OUTPUTS_DIR / 'absortion_shape'}"
+    )
+# SIGNALS_FILE = OUTPUTS_DIR / "db_shapes.csv"  # Alternativa: senales genericas
 
 # Archivos de salida
-TRACKING_RECORD_FILE = OUTPUTS_DIR / "tracking_record_absortion_shape_all_day.csv"
-TRADES_CHART_FILE = CHARTS_DIR / "trades_visualization_absortion_shape_all_day.html"
-BACKTEST_CHART_FILE = CHARTS_DIR / "backtest_results_absortion_shape_all_day.html"
-SUMMARY_REPORT_FILE = CHARTS_DIR / "summary_report_absortion_shape_all_day.html"
+# Extract date from signals file name for output naming
+_absortion_shape_dir = OUTPUTS_DIR / "absortion_shape"
+_absortion_shape_dir.mkdir(parents=True, exist_ok=True)
+
+TRACKING_RECORD_FILE = _absortion_shape_dir / f"dbshapes_TR_{SIGNALS_DATE}.csv"
+TRADES_CHART_FILE = CHARTS_DIR / f"trades_visualization_absortion_shape_{SIGNALS_DATE}.html"
+BACKTEST_CHART_FILE = CHARTS_DIR / f"backtest_results_absortion_shape_{SIGNALS_DATE}.html"
+SUMMARY_REPORT_FILE = CHARTS_DIR / f"summary_report_absortion_shape_{SIGNALS_DATE}.html"
 
 # ========= PARÁMETROS DE ESTRATEGIA =========
 SYMBOL = "NQ"
-TP_POINTS = 4                 # Take Profit en puntos
-SL_POINTS = 4                   # Stop Loss en puntos
-POINT_VALUE = 20.0                  # Valor del punto en dólares
+TP_POINTS = 2               # Take Profit en puntos
+SL_POINTS = 1.75              # Stop Loss en puntos
+POINT_VALUE = 20.0            # Valor del punto en dolares ($20 por punto para NQ)
+THRESHOLD_EXTRA = 0.25                # margen de seguridad adicional
 CONTRACTS = 1                       # Número de contratos por trade
-BREAK_EVEN_POINTS = 25.0         # Avance necesario para mover el stop a precio de entrada
+BREAK_EVEN_POINTS = 50.0         # Avance necesario para mover el stop a precio de entrada
 NUM_MAX_OPEN_CONTRACTS = 3         # Máximo de posiciones abiertas simultáneamente
 
 # ========= PARÁMETROS DE VISUALIZACIÓN =========
@@ -93,6 +113,7 @@ def run_backtest():
     strat_absortion_shape.TP_POINTS = TP_POINTS
     strat_absortion_shape.SL_POINTS = SL_POINTS
     strat_absortion_shape.POINT_VALUE = POINT_VALUE
+    strat_absortion_shape.THRESHOLD_EXTRA = THRESHOLD_EXTRA
     strat_absortion_shape.BREAK_EVEN_POINTS = BREAK_EVEN_POINTS
     strat_absortion_shape.CONTRACTS = CONTRACTS
     strat_absortion_shape.NUM_MAX_OPEN_CONTRACTS = NUM_MAX_OPEN_CONTRACTS

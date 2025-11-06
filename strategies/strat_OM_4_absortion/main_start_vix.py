@@ -36,7 +36,7 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 CHARTS_DIR = PROJECT_ROOT / "charts"
 
 # Archivos de entrada
-TNS_FILE = DATA_DIR / "historic" / "time_and_sales_nq_20250918.csv"  # Archivo T&S
+TNS_FILE = DATA_DIR / "historic" / "time_and_sales_nq_20250919.csv"  # Archivo T&S
 
 # PLASE HERE THE db_shapes FILE YOU WANT TO USE
 tns_date_match = re.search(r"\d{8}", TNS_FILE.name)
@@ -67,12 +67,12 @@ SUMMARY_REPORT_FILE = CHARTS_DIR / f"summary_report_absortion_shape_vix_{SIGNALS
 # ========= PARÁMETROS ATR Y TRAILING STOP =========
 SYMBOL = "NQ"
 ATR_PERIOD = 14                 # Periodo para calcular ATR (en minutos)
-ATR_MULTIPLIER_SL = 1.5         # Multiplicador ATR para Stop Loss (1.5 x ATR)
+ATR_MULTIPLIER_SL = 1.0         # Multiplicador ATR para Stop Loss (1.5 x ATR)
 ATR_MULTIPLIER_TP = 2.5         # Multiplicador ATR para Take Profit (2.5 x ATR)
 TRAILING_STOP_ATR_MULT = 0.75   # Multiplicador ATR para trailing stop distance (0.75 x ATR)
 USE_TRAILING_STOP = True        # Activar/desactivar trailing stop
 POINT_VALUE = 20.0              # Valor del punto en dólares ($20 por punto para NQ)
-THRESHOLD_EXTRA = 0.0           # Margen de seguridad adicional
+THRESHOLD_EXTRA = 0.25          # Margen de seguridad adicional
 CONTRACTS = 1                   # Número de contratos por trade
 NUM_MAX_OPEN_CONTRACTS = 3      # Máximo de posiciones abiertas simultáneamente
 

@@ -13,8 +13,8 @@ from pathlib import Path
 from datetime import datetime
 
 # Configuration
-INPUT_FILE = Path(__file__).parent.parent / "data" / "time_and_sales_20251031_074530.csv"
-OUTPUT_DIR = Path(__file__).parent.parent / "data"
+INPUT_FILE = Path(__file__).parent.parent / "data" / "time_and_sales_20251104_233409.csv"
+OUTPUT_DIR = Path(__file__).parent.parent / "data" / "historic"
 
 def split_by_date(input_file, output_dir):
     """

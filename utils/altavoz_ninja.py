@@ -1,7 +1,19 @@
 import socket
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+import pandas as pd
+import threading
+import time
+
+# Importaciones para gráfico dinámico
+try:
+    import plotly.graph_objects as go
+    import webbrowser
+    import tempfile
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
 
 HOST = '0.0.0.0'  # Escucha en todas las interfaces
 PORT = 5559  # CAMBIO: Flask usa 5555, este usa 5556
@@ -9,6 +21,15 @@ PORT = 5559  # CAMBIO: Flask usa 5555, este usa 5556
 # CSV de salida
 OUTPUT_DIR = Path(__file__).parent.parent / "data" / "monitor_ninja"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# ============================================================
+# CONFIGURACIÓN GRÁFICO DINÁMICO
+# ============================================================
+ENABLE_CHART = True                  # True para activar gráfico
+MAX_CHART_POINTS = 5000              # Máximo de puntos en memoria
+VISIBLE_TIME_WINDOW = 120            # Segundos visibles (ventana deslizante)
+PADDING_RIGHT_SECONDS = 5            # Padding derecho en segundos
+CHART_UPDATE_INTERVAL = 2.0          # Actualizar HTML cada N segundos
 
 SECTION_LAYOUTS = {
     'TS': {
@@ -23,6 +44,194 @@ SECTION_LAYOUTS = {
 
 TICK_HEADERS = ['date', 'time', 'bid', 'ask', 'last', 'volume']
 
+# ============================================================
+# CLASE GRÁFICO DINÁMICO
+# ============================================================
+class DynamicChart:
+    """Gestor de gráfico dinámico con ventana temporal deslizante."""
+
+    def __init__(self, max_points=5000):
+        """Inicializa el gráfico dinámico."""
+        if not PLOTLY_AVAILABLE:
+            raise ImportError("Plotly no disponible. Instalar: pip install plotly")
+
+        self.max_points = max_points
+        self.data_buffer = {
+            'timestamp': [],
+            'close': [],
+            'volume': [],
+            'type': []  # 'Ask' o 'Bid'
+        }
+        self.fig = None
+        self.html_file = None
+        self.last_update = 0
+        self._create_figure()
+
+    def _create_figure(self):
+        """Crea la figura de Plotly con precio + EMA."""
+        self.fig = go.Figure()
+
+        # Traza 1: Scatter con volumen y color
+        self.fig.add_trace(go.Scatter(
+            x=[],
+            y=[],
+            mode='markers',
+            name='Close',
+            marker=dict(
+                size=[],
+                color=[],
+                opacity=[],
+                line=dict(width=0)
+            ),
+            hovertemplate='<b>Time:</b> %{x}<br><b>Price:</b> %{y}<br><b>Vol:</b> %{text}<extra></extra>',
+            text=[]
+        ))
+
+        # Traza 2: Media Exponencial (EMA)
+        self.fig.add_trace(go.Scatter(
+            x=[],
+            y=[],
+            mode='lines',
+            name='EMA(20)',
+            line=dict(color='blue', width=1.5)
+        ))
+
+        # Layout
+        self.fig.update_layout(
+            title='NinjaTrader Real-Time Monitor - Ventana Deslizante (120s)',
+            xaxis_title='Time',
+            yaxis_title='Price',
+            hovermode='closest',
+            height=700,
+            template='plotly_white',
+            showlegend=False,
+            xaxis=dict(
+                showgrid=False,
+                tickformat='%H:%M',
+                nticks=12
+            ),
+            yaxis=dict(
+                showgrid=True,
+                gridcolor='lightgray'
+            )
+        )
+
+        # Archivo HTML temporal
+        temp_dir = tempfile.gettempdir()
+        self.html_file = Path(temp_dir) / "ninja_monitor_realtime.html"
+        self._save_html()
+        webbrowser.open(f'file:///{self.html_file}')
+        print(f"[CHART] Gráfico abierto: {self.html_file}")
+
+    def _save_html(self):
+        """Guarda el HTML con auto-refresh."""
+        html_string = self.fig.to_html(include_plotlyjs='cdn')
+        html_with_refresh = html_string.replace(
+            '<head>',
+            '<head><meta http-equiv="refresh" content="2">'
+        )
+        with open(self.html_file, 'w', encoding='utf-8') as f:
+            f.write(html_with_refresh)
+
+    def add_point(self, timestamp_obj, last_price, volume, trade_type):
+        """
+        Añade un punto al buffer.
+
+        Args:
+            timestamp_obj: datetime object
+            last_price: float
+            volume: float
+            trade_type: 'Ask' o 'Bid'
+        """
+        self.data_buffer['timestamp'].append(timestamp_obj)
+        self.data_buffer['close'].append(last_price)
+        self.data_buffer['volume'].append(volume)
+        self.data_buffer['type'].append(trade_type)
+
+        # Limitar buffer a MAX_CHART_POINTS
+        if len(self.data_buffer['timestamp']) > self.max_points:
+            for key in self.data_buffer:
+                self.data_buffer[key] = self.data_buffer[key][-self.max_points:]
+
+    def should_update(self):
+        """Verifica si ha pasado suficiente tiempo para actualizar."""
+        current_time = time.time()
+        if current_time - self.last_update >= CHART_UPDATE_INTERVAL:
+            self.last_update = current_time
+            return True
+        return False
+
+    def update_chart(self):
+        """Actualiza el gráfico completo."""
+        if len(self.data_buffer['timestamp']) == 0:
+            return
+
+        # Calcular EMA (span=20)
+        close_series = pd.Series(self.data_buffer['close'])
+        ema_series = close_series.ewm(span=20, adjust=False).mean()
+        ema_values = ema_series.tolist()
+
+        # Normalizar volúmenes para tamaño (4-20 px)
+        volumes = self.data_buffer['volume']
+        min_vol = min(volumes)
+        max_vol = max(volumes)
+
+        if max_vol > min_vol:
+            sizes = [4 + (v - min_vol) / (max_vol - min_vol) * 16 for v in volumes]
+        else:
+            sizes = [10] * len(volumes)
+
+        # Opacidades inversas al volumen
+        if max_vol > min_vol:
+            opacities = [1.0 - (v - min_vol) / (max_vol - min_vol) * 0.7 for v in volumes]
+        else:
+            opacities = [0.7] * len(volumes)
+
+        # Colores según tipo: Ask=green, Bid=red
+        colors = ['green' if t == 'Ask' else 'red' for t in self.data_buffer['type']]
+
+        # Actualizar traza 0 (scatter)
+        self.fig.data[0].x = self.data_buffer['timestamp']
+        self.fig.data[0].y = self.data_buffer['close']
+        self.fig.data[0].marker.size = sizes
+        self.fig.data[0].marker.color = colors
+        self.fig.data[0].marker.opacity = opacities
+        self.fig.data[0].text = [f"{v:.1f}" for v in volumes]
+
+        # Actualizar traza 1 (EMA)
+        self.fig.data[1].x = self.data_buffer['timestamp']
+        self.fig.data[1].y = ema_values
+
+        # Ajustar ventana temporal
+        self._update_time_window()
+
+        # Guardar HTML
+        self._save_html()
+
+    def _update_time_window(self):
+        """Ajusta ventana temporal visible (deslizante)."""
+        if len(self.data_buffer['timestamp']) == 0:
+            return
+
+        first_timestamp = self.data_buffer['timestamp'][0]
+        last_timestamp = self.data_buffer['timestamp'][-1]
+        time_span = (last_timestamp - first_timestamp).total_seconds()
+
+        # Fase inicial: mostrar desde la izquierda
+        if time_span < VISIBLE_TIME_WINDOW:
+            time_window_start = first_timestamp
+            time_window_end = last_timestamp + timedelta(seconds=PADDING_RIGHT_SECONDS)
+        else:
+            # Fase continua: ventana deslizante
+            time_window_start = last_timestamp - timedelta(seconds=VISIBLE_TIME_WINDOW)
+            time_window_end = last_timestamp + timedelta(seconds=PADDING_RIGHT_SECONDS)
+
+        self.fig.update_xaxes(range=[time_window_start, time_window_end])
+
+
+# ============================================================
+# CLASE RECEPTOR NINJATRADER
+# ============================================================
 class NinjaTraderReceiver:
     def __init__(self, host=HOST, port=PORT):
         self.host = host
@@ -43,6 +252,17 @@ class NinjaTraderReceiver:
         self.csv_handle = None
         self.tick_csv_writer = None
         self.tick_csv_handle = None
+
+        # Gráfico dinámico
+        self.chart = None
+        if ENABLE_CHART and PLOTLY_AVAILABLE:
+            try:
+                self.chart = DynamicChart(max_points=MAX_CHART_POINTS)
+                print(f"[CHART] Gráfico dinámico activado (ventana {VISIBLE_TIME_WINDOW}s)")
+            except Exception as e:
+                print(f"[WARN] No se pudo inicializar gráfico: {e}")
+        elif ENABLE_CHART and not PLOTLY_AVAILABLE:
+            print("[WARN] Plotly no disponible. Instalar: pip install plotly")
     
     def iniciar_csv(self):
         """Inicializa el archivo CSV con headers"""
@@ -157,6 +377,37 @@ class NinjaTraderReceiver:
                 # Imprimir en formato DataFrame
                 self._ensure_section_header('TS')
                 print(f"{date_part:<10} {time_part:<12} {bid_str:<10} {ask_str:<10} {last_str:<10} {type_value:<6} {datos[6]:<8}")
+
+                # Actualizar gráfico dinámico
+                if self.chart is not None:
+                    # Construir timestamp completo
+                    try:
+                        year = int(date_part[:4])
+                        month = int(date_part[4:6])
+                        day = int(date_part[6:8])
+
+                        # Parsear time_part (puede ser HHMMSS.fff)
+                        if '.' in time_part:
+                            time_base, millis = time_part.split('.')
+                        else:
+                            time_base = time_part
+                            millis = '0'
+
+                        hour = int(time_base[:2]) if len(time_base) >= 2 else 0
+                        minute = int(time_base[2:4]) if len(time_base) >= 4 else 0
+                        second = int(time_base[4:6]) if len(time_base) >= 6 else 0
+
+                        timestamp_obj = datetime(year, month, day, hour, minute, second)
+
+                        # Añadir punto al gráfico
+                        volume_val = float(datos[6]) if datos[6] else 1.0
+                        self.chart.add_point(timestamp_obj, last_val, volume_val, type_value)
+
+                        # Actualizar gráfico si ha pasado el intervalo
+                        if self.chart.should_update():
+                            self.chart.update_chart()
+                    except Exception as e:
+                        pass  # Silenciar errores de gráfico para no interrumpir recepción
             else:
                 print(f"[{timestamp}] [WARN] T&S incompleto: {linea}")
             return

@@ -284,6 +284,247 @@ class AbsorptionStrategyStreaming:
 
         return "balanced"
 
+    def _generate_comprehensive_chart(self, profile: Dict, timestamp: datetime, price: float, shape: str) -> str:
+        """
+        Generate comprehensive 5-panel chart matching non-streaming version layout.
+
+        Args:
+            profile: Market profile data at detection
+            timestamp: Detection timestamp
+            price: Current price
+            shape: Pattern shape
+
+        Returns:
+            Base64 encoded image string
+        """
+        try:
+            # Create figure with 5 panels (2 rows, 4 columns) - same as non-streaming version
+            fig = plt.figure(figsize=(24, 12))
+            gs = fig.add_gridspec(2, 4, hspace=0.3, wspace=0.3)
+
+            ax1 = fig.add_subplot(gs[0, 0])  # Profile at detection
+            ax2 = fig.add_subplot(gs[0, 1])  # Profile -20s (historical)
+            ax3 = fig.add_subplot(gs[0, 2])  # Profile -40s (historical)
+            ax4 = fig.add_subplot(gs[0, 3])  # Price movement
+            ax5 = fig.add_subplot(gs[1, :])  # Bid/Ask bubbles (bottom row)
+
+            # Helper function to plot market profile
+            def plot_market_profile(ax, prof, title, closing_price=None):
+                if not prof:
+                    ax.text(0.5, 0.5, "No data", ha="center", va="center")
+                    ax.set_title(title, fontsize=14, fontweight="bold")
+                    return
+
+                prof_prices = sorted(prof.keys())
+                prof_bid_volumes = [prof[p].get("BID", 0) for p in prof_prices]
+                prof_ask_volumes = [prof[p].get("ASK", 0) for p in prof_prices]
+
+                bar_height = (min(prof_prices[i+1] - prof_prices[i] for i in range(len(prof_prices)-1)) * 0.8
+                             if len(prof_prices) > 1 else 0.25 * 0.8)
+
+                ax.barh(prof_prices, [-v for v in prof_bid_volumes], height=bar_height,
+                        color=(0.8, 0, 0, 0.8), label="BID",
+                        edgecolor="darkred", linewidth=0.5)
+                ax.barh(prof_prices, prof_ask_volumes, height=bar_height,
+                        color=(0, 0.7, 0, 0.8), label="ASK",
+                        edgecolor="darkgreen", linewidth=0.5)
+
+                ax.axvline(x=0, color="black", linewidth=1.5, linestyle="-", alpha=0.7)
+
+                if closing_price is not None and closing_price in prof_prices:
+                    ax.plot(0, closing_price, "o", color="blue", markersize=10, zorder=5,
+                           markeredgecolor="darkblue", markeredgewidth=2)
+
+                max_x = max(max(prof_bid_volumes) if prof_bid_volumes else 1,
+                           max(prof_ask_volumes) if prof_ask_volumes else 1) * 1.1
+                ax.set_xlim(-max_x, max_x)
+                ax.set_xlabel("Volume (BID ← | → ASK)", fontsize=12)
+                ax.set_ylabel("Price Level", fontsize=12)
+                ax.set_title(title, fontsize=14, fontweight="bold")
+                ax.grid(True, alpha=0.3, axis="x")
+                ax.legend(loc="upper right", fontsize=11)
+
+            # Calculate closing prices for each panel
+            closing_price_now = price
+
+            # Historical profiles (since we can't show future in streaming)
+            time_before_1x = timestamp - timedelta(seconds=self.profile_window)
+            time_before_2x = timestamp - timedelta(seconds=self.profile_window * 2)
+
+            # Build historical profiles from tick buffer
+            profile_before_1x = {}
+            profile_before_2x = {}
+            closing_price_before_1x = None
+            closing_price_before_2x = None
+
+            for tick in self.tick_buffer:
+                t_time = tick['timestamp']
+                t_price = tick['price']
+                t_volume = tick['volume']
+                t_side = tick['side'].upper()
+
+                # Profile at -20s
+                if time_before_1x <= t_time <= timestamp - timedelta(seconds=self.profile_window // 2):
+                    if t_price not in profile_before_1x:
+                        profile_before_1x[t_price] = {"BID": 0, "ASK": 0}
+                    profile_before_1x[t_price][t_side] += t_volume
+                    closing_price_before_1x = t_price
+
+                # Profile at -40s
+                if time_before_2x <= t_time <= time_before_1x:
+                    if t_price not in profile_before_2x:
+                        profile_before_2x[t_price] = {"BID": 0, "ASK": 0}
+                    profile_before_2x[t_price][t_side] += t_volume
+                    closing_price_before_2x = t_price
+
+            # Panel 1-3: Market profiles
+            plot_market_profile(ax1, profile,
+                               f"At Detection\n{timestamp.strftime('%H:%M:%S')}",
+                               closing_price_now)
+            plot_market_profile(ax2, profile_before_1x,
+                               f"Before {self.profile_window}s\n{time_before_1x.strftime('%H:%M:%S')}",
+                               closing_price_before_1x)
+            plot_market_profile(ax3, profile_before_2x,
+                               f"Before {self.profile_window*2}s\n{time_before_2x.strftime('%H:%M:%S')}",
+                               closing_price_before_2x)
+
+            # Panel 4: Price Movement
+            lookback_seconds = 10
+            lookforward_seconds = 60
+            start_time = timestamp - timedelta(seconds=lookback_seconds)
+            end_time = timestamp + timedelta(seconds=lookforward_seconds)
+
+            # Filter tick buffer for this time range
+            price_ticks = [t for t in self.tick_buffer
+                          if start_time <= t['timestamp'] <= end_time]
+
+            if price_ticks:
+                times_rel = [(t['timestamp'] - timestamp).total_seconds() for t in price_ticks]
+                prices_plot = [t['price'] for t in price_ticks]
+
+                bid_mask = [t['side'].upper() == 'BID' for t in price_ticks]
+                ask_mask = [t['side'].upper() == 'ASK' for t in price_ticks]
+
+                bid_times = [t for i, t in enumerate(times_rel) if bid_mask[i]]
+                bid_prices = [p for i, p in enumerate(prices_plot) if bid_mask[i]]
+                ask_times = [t for i, t in enumerate(times_rel) if ask_mask[i]]
+                ask_prices = [p for i, p in enumerate(prices_plot) if ask_mask[i]]
+
+                ax4.scatter(bid_times, bid_prices, c="red", s=10, alpha=0.6, label="BID")
+                ax4.scatter(ask_times, ask_prices, c="green", s=10, alpha=0.6, label="ASK")
+
+                # Add vertical lines
+                for x_pos, color, label in [(0, "blue", "Detection"),
+                                            (self.profile_window, "orange", f"+{self.profile_window}s"),
+                                            (self.profile_window*2, "purple", f"+{self.profile_window*2}s")]:
+                    if -lookback_seconds <= x_pos <= lookforward_seconds:
+                        ax4.axvline(x=x_pos, color=color, linewidth=2, linestyle="--",
+                                  alpha=0.8, label=label, zorder=5)
+
+                ax4.set_xlabel("Time (seconds relative to detection)", fontsize=12)
+                ax4.set_ylabel("Price", fontsize=12)
+                ax4.set_title(f"Price Movement\n(-{lookback_seconds}s to +{lookforward_seconds}s)",
+                            fontsize=14, fontweight="bold")
+                ax4.grid(True, alpha=0.3)
+                ax4.legend(loc="best", fontsize=11)
+
+            # Panel 5: Bid/Ask Bubble Chart (bottom row spanning all columns)
+            bubble_lookback = self.profile_window
+            bubble_lookforward = self.profile_window * 4
+            bubble_start = timestamp - timedelta(seconds=bubble_lookback)
+            bubble_end = timestamp + timedelta(seconds=bubble_lookforward)
+
+            bubble_ticks = [t for t in self.tick_buffer
+                           if bubble_start <= t['timestamp'] <= bubble_end]
+
+            if bubble_ticks:
+                # Aggregate by timestamp and side
+                df_bubble = pd.DataFrame(bubble_ticks)
+                df_bubble['time_rel'] = df_bubble['timestamp'].apply(lambda t: (t - timestamp).total_seconds())
+
+                agg_data = df_bubble.groupby(['timestamp', 'side'], as_index=False).agg({
+                    'volume': 'sum',
+                    'price': 'mean',
+                    'time_rel': 'first'
+                })
+
+                bid_data = agg_data[agg_data['side'].str.upper() == 'BID']
+                ask_data = agg_data[agg_data['side'].str.upper() == 'ASK']
+
+                if len(bid_data) > 0:
+                    bid_sizes = np.clip(np.sqrt(bid_data['volume'].values) * 10, 10, 200)
+                    ax5.scatter(bid_data['time_rel'].values, bid_data['price'].values,
+                              s=bid_sizes, color="red", alpha=0.6,
+                              edgecolors="darkred", linewidth=0.5, label="Bid")
+
+                if len(ask_data) > 0:
+                    ask_sizes = np.clip(np.sqrt(ask_data['volume'].values) * 10, 10, 200)
+                    ax5.scatter(ask_data['time_rel'].values, ask_data['price'].values,
+                              s=ask_sizes, color="green", alpha=0.6,
+                              edgecolors="darkgreen", linewidth=0.5, label="Ask")
+
+                # Add vertical lines
+                for i, (x_pos, color) in enumerate([(0, "blue"),
+                                                     (self.profile_window, "orange"),
+                                                     (2*self.profile_window, "purple"),
+                                                     (3*self.profile_window, "brown"),
+                                                     (4*self.profile_window, "pink")]):
+                    label = "Detection (0s)" if i == 0 else f"+{x_pos}s"
+                    if -bubble_lookback <= x_pos <= bubble_lookforward:
+                        ax5.axvline(x=x_pos, color=color, linewidth=2, linestyle="--",
+                                  alpha=0.8, label=label)
+
+                ax5.set_xlabel("Seconds relative to detection (0 = detection)", fontsize=12)
+                ax5.set_ylabel("Price", fontsize=12)
+                ax5.set_title(f"Bid/Ask Bubbles (size=volume)\n(-{bubble_lookback}s to +{bubble_lookforward}s)",
+                            fontsize=14, fontweight="bold")
+                ax5.grid(True, alpha=0.3)
+                ax5.legend(loc="best", fontsize=11)
+
+            # Synchronize y-axis scales across all panels
+            all_prices = []
+            if profile:
+                all_prices.extend(list(profile.keys()))
+            if profile_before_1x:
+                all_prices.extend(list(profile_before_1x.keys()))
+            if profile_before_2x:
+                all_prices.extend(list(profile_before_2x.keys()))
+            if price_ticks:
+                all_prices.extend([t['price'] for t in price_ticks])
+            if bubble_ticks:
+                all_prices.extend([t['price'] for t in bubble_ticks])
+
+            if all_prices:
+                global_min = min(all_prices)
+                global_max = max(all_prices)
+                padding = (global_max - global_min) * 0.02
+                y_min = global_min - padding
+                y_max = global_max + padding
+
+                for ax in [ax1, ax2, ax3, ax4, ax5]:
+                    ax.set_ylim(y_min, y_max)
+
+            # Title
+            fig.suptitle(f"Detection #{self.detection_count} - Pattern: {shape.upper()}",
+                        fontsize=16, fontweight="bold", y=0.98)
+            fig.tight_layout()
+
+            # Convert to base64
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', dpi=100, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
+            buf.seek(0)
+            img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+            plt.close(fig)
+
+            return img_base64
+
+        except Exception as e:
+            print(f"[WARNING] Failed to generate comprehensive chart: {e}")
+            import traceback
+            traceback.print_exc()
+            return ""
+
     def _create_detection(self, timestamp: datetime, price: float, profile: Dict, shape: str) -> Dict:
         """Create detection data and generate report."""
         self.detection_count += 1
@@ -314,14 +555,18 @@ class AbsorptionStrategyStreaming:
         }
         self.signal_records.append(signal_record)
 
-        # Generate simple chart (no future profiles in streaming mode)
+        # Generate comprehensive chart
         print(f"\n{'=' * 80}")
         print(f"DETECTION #{self.detection_count} at {timestamp}")
         print(f"Pattern: {shape}")
         print(f"Price: {price:.2f} | Range: {lowest_price:.2f} - {highest_price:.2f}")
+        print(f"Generating comprehensive chart (3 panels)...")
         print(f"{'=' * 80}")
 
-        # Create simplified detection data
+        # Generate comprehensive chart
+        chart_base64 = self._generate_comprehensive_chart(profile, timestamp, price, shape)
+
+        # Create detection data
         detection_data = {
             'detection_num': self.detection_count,
             'timestamp': timestamp,
@@ -332,14 +577,19 @@ class AbsorptionStrategyStreaming:
             'html_path': self.output_html,
         }
 
-        # Update HTML report
+        # Update HTML report with chart
         if self.output_html:
+            chart_img = ""
+            if chart_base64:
+                chart_img = f"<div class='detection-figure'><img src='data:image/png;base64,{chart_base64}' style='max-width: 100%; height: auto;'/></div>"
+
             section_html = (
                 "<section class='detection-block'>"
                 f"<h2>Detection #{self.detection_count} — {shape.upper()} ({timestamp.strftime('%H:%M:%S')})</h2>"
                 f"<div class='detection-meta'>Timestamp: {timestamp} | Price: {price:.2f}</div>"
                 f"<pre class='detection-text'>Shape: {shape}\nPrice: {price:.2f}\n"
                 f"Bid: {total_bid:.0f} | Ask: {total_ask:.0f}\nLevels: {len(active_prices)}</pre>"
+                f"{chart_img}"
                 "</section>\n"
             )
 

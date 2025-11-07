@@ -123,7 +123,10 @@ Time: 2025-09-15 14:30:22.142000
 
 **Outputs Created:**
 1. `recordings/detection_1_d_shape_20250915_143022.mp4` - 10-second screen recording
-2. `charts/detections/absorption_report_streaming_20250915.html` - HTML report (updated)
+2. `charts/detections/absorption_report_streaming_20250915.html` - HTML report with comprehensive charts:
+   - Market Profile at detection (BID/ASK volume distribution)
+   - Price Movement scatter plot (recent history)
+   - Bid/Ask Bubble chart (volume-sized bubbles over time)
 3. `outputs/absortion_shape/db_shapes_streaming_20250915_143022.csv` - Signal data (on completion)
 
 ## File Structure
@@ -320,6 +323,167 @@ SCREEN_RECORD_DURATION = 15  # 15 seconds instead of 10
 
 💡 **Press Ctrl+C to stop** - Both client and server can be interrupted safely
 
+## Real-Time Mode: Using NinjaTrader
+
+Instead of streaming historical CSV data with `tick_client.py`, you can stream **live market data** directly from NinjaTrader!
+
+### Setup Steps
+
+**1. Copy the Indicator to NinjaTrader**
+
+Copy `ninja/AASender.cs` to your NinjaTrader indicators folder:
+```
+C:\Users\[YourUser]\Documents\NinjaTrader 8\bin\Custom\Indicators\
+```
+
+**2. Compile in NinjaTrader**
+
+1. Open NinjaTrader
+2. Tools → NinjaScript Editor (F5)
+3. Right-click `Indicators` → Compile
+4. Check for errors in output window
+
+**3. Start the Python Server**
+
+```bash
+python tick_server.py
+```
+
+Wait for: `[OK] Server listening on localhost:55555`
+
+**4. Apply AASender Indicator**
+
+1. Open a chart for your instrument (e.g., NQ)
+2. Right-click chart → Indicators → AASender
+3. Configure properties:
+   - **Server Host:** 127.0.0.1
+   - **Server Port:** 55555
+   - **Max Connection Attempts:** 10
+   - **Reconnect Delay:** 5 seconds
+4. Click OK
+
+**5. Indicator Status**
+
+On the chart you'll see:
+```
+[AASender] Connected to 127.0.0.1:55555
+Ticks sent: 15,234
+```
+
+The counter updates every 1,000 ticks.
+
+### How It Works
+
+```
+NinjaTrader Chart
+    ↓
+AASender Indicator (C#)
+    ├─ OnMarketData() captures every tick
+    ├─ Formats as JSON: {timestamp, price, volume, side}
+    └─ Sends via TCP socket
+        ↓
+tick_server.py (Python)
+    ├─ Receives tick stream
+    ├─ Processes through streaming strategy
+    └─ On detection:
+        ├─ Console alert + beep
+        ├─ Records screen 10s
+        └─ Updates HTML report
+```
+
+### JSON Format Sent
+
+The indicator sends each tick as:
+```json
+{
+  "timestamp": "2025-11-07T09:30:15.234",
+  "price": 20125.50,
+  "volume": 2,
+  "side": "ASK"
+}
+```
+
+Side determination:
+- **ASK**: Price >= Ask price (buyer aggressive)
+- **BID**: Price <= Bid price (seller aggressive)
+- **BETWEEN**: Price between bid/ask (rare)
+
+### Reconnection Handling
+
+If server disconnects:
+1. Indicator detects broken connection
+2. Automatically attempts reconnection (up to 10 times)
+3. Waits 5 seconds between attempts
+4. Continues sending once reconnected
+
+### Stopping the Stream
+
+**Option 1:** Remove indicator from chart
+- Right-click indicator → Remove
+
+**Option 2:** Stop NinjaTrader
+- Indicator sends `{command: "COMPLETE"}` on shutdown
+- Server saves final report and CSV
+
+### Output Files (Real-Time Mode)
+
+Same as CSV streaming mode:
+- **Recordings:** `recordings/detection_N_shape_YYYYMMDD_HHMMSS.mp4`
+- **HTML Report:** `charts/detections/absorption_report_streaming_YYYYMMDD.html`
+- **CSV Signals:** `outputs/absortion_shape/db_shapes_streaming_YYYYMMDD_HHMMSS.csv`
+
+### Troubleshooting
+
+**Indicator won't compile:**
+→ Check for syntax errors in NinjaScript Editor output window
+→ Ensure you're using NinjaTrader 8 (not version 7)
+
+**Connection failed:**
+→ Start `tick_server.py` BEFORE applying indicator to chart
+→ Check firewall isn't blocking port 55555
+→ Verify server shows "Waiting for client connection..."
+
+**No data received by server:**
+→ Ensure chart is in **Realtime** state (not Historical)
+→ Check indicator status on chart shows "Connected"
+→ Verify market is open (no ticks = no data)
+
+**Ticks sent counter not updating:**
+→ Market may be closed or slow
+→ Remove and re-add indicator to chart
+→ Check NinjaTrader connection status (bottom-right of platform)
+
+### Comparison: CSV vs Live NinjaTrader
+
+| Feature | tick_client.py (CSV) | AASender (NinjaTrader) |
+|---------|---------------------|------------------------|
+| Data source | Historical CSV files | Live market data |
+| Speed control | Configurable delay | Real market speed |
+| Instruments | Pre-recorded only | Any NT8 instrument |
+| Best for | Backtesting, optimization | Real-time alerts, paper trading |
+| Setup | Python script | NinjaScript indicator |
+
+### Real-Time Trading Workflow
+
+1. **Development Phase** - Use `tick_client.py` with historical CSV
+   - Fast backtesting (450k ticks in 45 seconds)
+   - Parameter optimization
+   - Strategy validation
+
+2. **Live Testing Phase** - Use `AASender` with NinjaTrader
+   - Paper trading account
+   - Real market conditions
+   - Screen recording of detections
+
+3. **Production Phase** - Extend `AASender` to execute trades
+   - Send orders on detection
+   - Position management
+   - Risk controls
+
 ## Enjoy!
 
 You now have a real-time absorption pattern detection system with automatic screen recording! 🚀
+
+**Two streaming modes:**
+- 📊 **Historical CSV** → `tick_client.py` → Fast backtesting
+- 📈 **Live NinjaTrader** → `AASender` indicator → Real-time alerts

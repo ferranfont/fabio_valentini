@@ -8,6 +8,7 @@ and records screen for 10 seconds on pattern detection.
 import socket
 import json
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -218,6 +219,8 @@ class TickServer:
         )
 
         self.tick_count = 0
+        self.last_tick = None
+        self.last_log_time = time.time()
 
     def on_pattern_detected(self, detection_data: dict):
         """
@@ -354,17 +357,36 @@ class TickServer:
             volume = int(tick_data['volume'])
             side = str(tick_data['side']).upper()
 
+            # Store last tick
+            self.last_tick = {
+                'timestamp': timestamp,
+                'price': price,
+                'volume': volume,
+                'side': side
+            }
+
             # Process through strategy
             detection = self.strategy.process_tick(timestamp, price, volume, side)
 
             self.tick_count += 1
 
-            # Log progress
+            # Log progress every 1000 ticks
             if VERBOSE and self.tick_count % LOG_INTERVAL == 0:
                 stats = self.strategy.get_stats()
                 print(f"[STATS] Ticks: {self.tick_count:,} | "
                       f"Detections: {stats['detection_count']} | "
                       f"Last: {stats['last_detection']}")
+
+            # Log last tick every 10 seconds
+            current_time = time.time()
+            if current_time - self.last_log_time >= 10.0:
+                if self.last_tick:
+                    print(f"[TICK] Last: {self.last_tick['timestamp'].strftime('%H:%M:%S.%f')[:-3]} | "
+                          f"Price: {self.last_tick['price']:.2f} | "
+                          f"Vol: {self.last_tick['volume']} | "
+                          f"Side: {self.last_tick['side']} | "
+                          f"Total: {self.tick_count:,}")
+                self.last_log_time = current_time
 
         except Exception as e:
             print(f"[ERROR] Tick processing error: {e}")

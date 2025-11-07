@@ -1,0 +1,70 @@
+================================================================
+SISTEMA DE CAPTURA DE DATOS NINJATRADER
+================================================================
+
+ARCHIVO: utils/altavoz_ninja.py
+PUERTO: 5556
+
+================================================================
+CONFIGURACIÓN NINJATRADER - AALogger.cs
+================================================================
+
+En el indicador AALogger de NinjaTrader, configurar:
+   Puerto: 5556
+   Host: 127.0.0.1
+
+================================================================
+FUNCIONAMIENTO
+================================================================
+
+1. altavoz_ninja.py escucha en puerto 5556
+2. Recibe datos T&S (Time & Sales) de NinjaTrader
+3. Guarda en CSV: data/monitor_ninja/monitor_TS_YYYYMMDD_HHMMSS.csv
+
+Formato CSV:
+   date; time; bid; ask; last; type; volume; color
+
+================================================================
+INICIAR SISTEMA
+================================================================
+
+1. Iniciar altavoz_ninja.py:
+   python utils/altavoz_ninja.py
+
+   Verás:
+   🎧 Iniciando receptor en 0.0.0.0:5556
+   ✅ Servidor escuchando... Esperando conexión de NinjaTrader
+
+2. Iniciar indicador AALogger en NinjaTrader (puerto 5556)
+
+   Verás:
+   🔗 Conectado desde ('127.0.0.1', XXXXX)
+   📝 CSV creado: monitor_TS_YYYYMMDD_HHMMSS.csv
+   [HH:MM:SS] 📊 T&S | Last:XXX Ask:XXX Bid:XXX Vol:X Color:g/o
+
+3. Para detener: Ctrl+C
+
+   Verás:
+   ⛔ Servidor detenido por el usuario
+   💾 CSV guardado: ...
+   📈 ESTADÍSTICAS
+   Time & Sales (T&S): XXX
+   Ticks: XXX
+
+================================================================
+SALIDA CSV
+================================================================
+
+Ubicación: data/monitor_ninja/monitor_TS_YYYYMMDD_HHMMSS.csv
+
+Cada línea T&S se guarda con:
+- date: YYYYMMDD
+- time: HHMMSS.mmm
+- bid: precio bid
+- ask: precio ask
+- last: último precio ejecutado
+- type: tipo de operación
+- volume: volumen
+- color: 'g' (green/bid) o 'o' (orange/ask)
+
+================================================================

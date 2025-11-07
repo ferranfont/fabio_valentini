@@ -20,9 +20,18 @@ from config import DATA_DIR
 # CONFIGURACIÓN
 # ====================================================
 # Archivo de datos tick
-DATA_FILE = "time_and_sales_20251031_074530.csv"
-# Archivo de señales (detecciones)
-SIGNALS_FILE = "db_shapes_dom_20251101_150013.csv"
+DATA_FILE = "time_and_sales_nq_20250829.csv"
+
+# Auto-extract date from DATA_FILE for SIGNALS_FILE
+import re
+date_match = re.search(r'(\d{8})', DATA_FILE)
+data_date = date_match.group(1) if date_match else "00000000"
+
+# Archivo de señales (detecciones) - Auto-generated from DATA_FILE date
+# Format: db_shapes_dom_YYYYMMDD.csv (date from the data itself)
+SIGNALS_FILE = f"db_shapes_dom_{data_date}.csv"
+print("\nCSV de data: ", DATA_FILE)
+print("CSV de señales: ", SIGNALS_FILE)
 
 # Parámetros de indicadores
 EMA_PERIOD = 30  # Período de la EMA rápida en minutos
@@ -30,8 +39,8 @@ EMA_SLOW_PERIOD = 200  # Período de la EMA lenta en minutos
 VWAP_PERIOD = 100  # Período del VWAP rolling en minutos
 
 # Rutas completas
-DATA_PATH = Path(__file__).parent.parent / "data" / DATA_FILE
-SIGNALS_PATH = Path(__file__).parent.parent / "outputs" / SIGNALS_FILE
+DATA_PATH = Path(__file__).parent.parent / "data/historic" / DATA_FILE
+SIGNALS_PATH = Path(__file__).parent.parent / "outputs/" / SIGNALS_FILE
 OUTPUT_HTML = Path(__file__).parent.parent / "charts" / "shapes_visualization.html"
 
 # ====================================================

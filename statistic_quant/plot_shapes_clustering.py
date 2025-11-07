@@ -23,7 +23,8 @@ from config import DATA_DIR
 # Archivo de datos tick
 DATA_FILE = "time_and_sales_20251031_074530.csv"
 # Archivo de señales (detecciones)
-SIGNALS_FILE = "db_shapes_dom_20251101_150013.csv"
+# Format: db_shapes_dom_YYYYMMDD.csv (date from the data itself)
+SIGNALS_FILE = "db_shapes_dom_20250829.csv"
 
 # Parámetros de indicadores
 EMA_PERIOD = 20  # Período de la EMA rápida en minutos

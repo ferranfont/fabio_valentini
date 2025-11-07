@@ -20,7 +20,8 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 CHARTS_DIR = PROJECT_ROOT / "charts"
 
 # Archivo específico de señales Market Profile (mes de septiembre)
-SIGNALS_FILE = "db_shapes_dom_20251101_150013.csv"
+# Format: db_shapes_dom_YYYYMMDD.csv (date from the data itself)
+SIGNALS_FILE = "db_shapes_dom_20250915.csv"
 
 # =============================================================================
 # CONFIGURATION - PARÁMETROS DE VISUALIZACIÓN

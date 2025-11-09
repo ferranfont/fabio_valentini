@@ -204,7 +204,12 @@ class TickServer:
         self.port = port
         self.socket = None
         self.running = False
-        self.active_client_socket = None
+        self.active_client_socket = None  # AASender connection (ticks)
+
+        # Second socket for strategy communication
+        self.strategy_port = 55556
+        self.strategy_socket = None
+        self.strategy_client_socket = None  # AAStrategyBidirect connection
 
         # Initialize screen recorder
         self.recorder = ScreenRecorder(SCREEN_RECORD_DIR)
@@ -348,7 +353,7 @@ class TickServer:
             print(f"[WARN] Failed to send message to client: {e}")
 
     def notify_client_pattern(self, detection_data: dict):
-        """Send pattern notification to Ninja output."""
+        """Send pattern notification to NinjaTrader strategy."""
         shape = detection_data.get('shape', '')
         price = detection_data.get('price')
         timestamp = detection_data.get('timestamp')
@@ -370,10 +375,19 @@ class TickServer:
             serialized = json.dumps(payload)
         except Exception as exc:
             print(f"[WARN] Failed to serialize pattern payload: {exc}")
-            serialized = payload.get("message", "")
+            return
 
-        if serialized:
-            self.send_message_to_client(serialized)
+        # Send to strategy client if connected
+        if self.strategy_client_socket:
+            try:
+                message = serialized + "\n"
+                self.strategy_client_socket.sendall(message.encode('utf-8'))
+                print(f"[BIDIRECT] -> Strategy: {shape} @ {price:.2f}")
+            except Exception as e:
+                print(f"[ERROR] Failed to send to strategy: {e}")
+                self.strategy_client_socket = None
+        else:
+            print(f"[WARN] No strategy client connected, pattern not sent")
 
     @staticmethod
     def _format_shape_message(shape: str) -> str:
@@ -464,6 +478,67 @@ class TickServer:
         )
         self.notify_client_pattern(detection_data)
 
+    def start_strategy_server(self):
+        """Start server for strategy communication (port 55556)."""
+        try:
+            self.strategy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.strategy_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.strategy_socket.bind((self.host, self.strategy_port))
+            self.strategy_socket.listen(1)
+            self.strategy_socket.settimeout(1.0)
+
+            print(f"[OK] Strategy server listening on localhost:{self.strategy_port}")
+            print(f"[OK] Waiting for strategy connection...\n")
+
+            while self.running:
+                try:
+                    client_socket, client_address = self.strategy_socket.accept()
+                    print(f"[OK] Strategy connected from {client_address}")
+                    self.strategy_client_socket = client_socket
+
+                    # Handle strategy messages (EXIT commands)
+                    self.handle_strategy_client(client_socket)
+                except socket.timeout:
+                    continue
+                except Exception as e:
+                    if self.running:
+                        print(f"[ERROR] Strategy server error: {e}")
+
+        except Exception as e:
+            print(f"[ERROR] Failed to start strategy server: {e}")
+
+    def handle_strategy_client(self, client_socket):
+        """Handle messages from strategy (EXIT commands)."""
+        buffer = ""
+        try:
+            while self.running:
+                data = client_socket.recv(4096)
+                if not data:
+                    print("[INFO] Strategy disconnected")
+                    break
+
+                buffer += data.decode('utf-8')
+
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
+                    if not line.strip():
+                        continue
+
+                    try:
+                        message = json.loads(line)
+                        if message.get('command') == 'EXIT':
+                            self.process_exit(message)
+                    except:
+                        pass  # Ignore malformed messages
+
+        except Exception as e:
+            if self.running:
+                print(f"[ERROR] Strategy client error: {e}")
+        finally:
+            if self.strategy_client_socket == client_socket:
+                self.strategy_client_socket = None
+            client_socket.close()
+
     def start(self):
         """Start the server and listen for connections."""
         try:
@@ -474,11 +549,15 @@ class TickServer:
             # Set timeout to make Ctrl+C more responsive
             self.socket.settimeout(1.0)
 
-            print(f"[OK] Server listening on localhost:{self.port}")
-            print(f"[OK] Waiting for client connection...")
-            print(f"[OK] Press Ctrl+C to stop server\n")
+            print(f"[OK] Tick server listening on localhost:{self.port}")
+            print(f"[OK] Waiting for tick client connection...")
 
             self.running = True
+
+            # Start strategy server in separate thread
+            strategy_thread = threading.Thread(target=self.start_strategy_server, daemon=True)
+            strategy_thread.start()
+            print(f"[OK] Press Ctrl+C to stop server\n")
 
             while self.running:
                 try:
@@ -693,12 +772,27 @@ class TickServer:
         # Close CSV if still open
         self.close_csv()
 
+        # Close tick server socket
         if self.socket:
             try:
                 self.socket.close()
             except:
                 pass
         self.active_client_socket = None
+
+        # Close strategy server socket
+        if self.strategy_socket:
+            try:
+                self.strategy_socket.close()
+            except:
+                pass
+        if self.strategy_client_socket:
+            try:
+                self.strategy_client_socket.close()
+            except:
+                pass
+        self.strategy_client_socket = None
+
         print("[OK] Server stopped")
 
 

@@ -215,16 +215,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                                     Print(string.Format("[AAStrategyBidirect] Received {0} signal -> {1} entry (Signal #{2})",
                                         shape, direction, signalCounter));
 
-                                    // Draw signal marker on chart
-                                    if (direction == "LONG")
+                                    // Draw pattern detection marker (DOT for d_shape/p_shape)
+                                    if (shape == "d_shape")
                                     {
-                                        Draw.TriangleUp(this, "Signal_" + signalCounter, true, 0, Low[0] - 4 * TickSize, Brushes.Lime);
-                                        Print(string.Format("[AAStrategyBidirect] Drew GREEN triangle at bar {0}, price {1}", CurrentBar, Low[0] - 4 * TickSize));
+                                        Draw.Dot(this, "Pattern_" + signalCounter, true, 0, Low[0] - 2 * TickSize, Brushes.Lime);
+                                        Print(string.Format("[AAStrategyBidirect] Drew GREEN dot (d_shape) at bar {0}, price {1}", CurrentBar, Low[0] - 2 * TickSize));
                                     }
-                                    else
+                                    else if (shape == "p_shape")
                                     {
-                                        Draw.TriangleDown(this, "Signal_" + signalCounter, true, 0, High[0] + 4 * TickSize, Brushes.Red);
-                                        Print(string.Format("[AAStrategyBidirect] Drew RED triangle at bar {0}, price {1}", CurrentBar, High[0] + 4 * TickSize));
+                                        Draw.Dot(this, "Pattern_" + signalCounter, true, 0, High[0] + 2 * TickSize, Brushes.Red);
+                                        Print(string.Format("[AAStrategyBidirect] Drew RED dot (p_shape) at bar {0}, price {1}", CurrentBar, High[0] + 2 * TickSize));
                                     }
 
                                     // Enter position
@@ -273,16 +273,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                         entryPrice = price;
                         Print(string.Format("[AAStrategyBidirect] *** ENTRY FILLED at {0}, placing TP/SL ***", price));
 
-                        // Draw entry fill marker
+                        // Draw entry fill marker (TRIANGLE for order fills)
                         if (pendingDirection == "LONG")
                         {
-                            Draw.ArrowUp(this, "EntryFill_" + signalCounter, true, 0, price - 2 * TickSize, Brushes.LimeGreen);
-                            Print(string.Format("[AAStrategyBidirect] Drew GREEN arrow at {0}", price - 2 * TickSize));
+                            Draw.TriangleUp(this, "EntryFill_" + signalCounter, true, 0, price - 3 * TickSize, Brushes.LimeGreen);
+                            Print(string.Format("[AAStrategyBidirect] Drew GREEN triangle (LONG fill) at {0}", price - 3 * TickSize));
                         }
                         else if (pendingDirection == "SHORT")
                         {
-                            Draw.ArrowDown(this, "EntryFill_" + signalCounter, true, 0, price + 2 * TickSize, Brushes.OrangeRed);
-                            Print(string.Format("[AAStrategyBidirect] Drew RED arrow at {0}", price + 2 * TickSize));
+                            Draw.TriangleDown(this, "EntryFill_" + signalCounter, true, 0, price + 3 * TickSize, Brushes.OrangeRed);
+                            Print(string.Format("[AAStrategyBidirect] Drew RED triangle (SHORT fill) at {0}", price + 3 * TickSize));
                         }
 
                         // NOW place TP and SL orders using explicit exit methods

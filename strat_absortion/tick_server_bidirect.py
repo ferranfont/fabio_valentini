@@ -566,6 +566,11 @@ class TickServer:
                             self.finalize()
                             break
 
+                        # Check for EXIT command (from NinjaTrader strategy)
+                        if tick_data.get('command') == 'EXIT':
+                            self.process_exit(tick_data)
+                            continue
+
                         # Process tick
                         self.process_tick(tick_data)
 
@@ -584,6 +589,26 @@ class TickServer:
             if self.active_client_socket is client_socket:
                 self.active_client_socket = None
             client_socket.close()
+
+    def process_exit(self, exit_data: dict):
+        """
+        Process an exit signal from NinjaTrader strategy.
+
+        Args:
+            exit_data: Exit data dictionary (timestamp, price, tag)
+        """
+        try:
+            timestamp = datetime.fromisoformat(exit_data['timestamp'])
+            price = float(exit_data['price'])
+            tag = str(exit_data['tag']).upper()  # 'TARGET' or 'STOP'
+
+            print(f"\n[EXIT] Received from NinjaTrader: {tag} @ {price:.2f}")
+
+            # Log exit to CSV
+            self.log_order_exit(timestamp, price, tag)
+
+        except Exception as e:
+            print(f"[ERROR] Exit processing error: {e}")
 
     def process_tick(self, tick_data: dict):
         """

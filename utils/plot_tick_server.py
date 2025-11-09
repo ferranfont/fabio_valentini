@@ -34,24 +34,40 @@ df = pd.read_csv(DATA_FILE, sep=';')
 # Parse timestamp from date + time columns
 # Format: date=20251107, time=211647.382 (HHMMSS.fff)
 def parse_timestamp(row):
-    date_str = str(row['date'])
-    time_str = str(row['time'])
+    try:
+        date_str = str(row['date'])
+        time_str = str(row['time'])
 
-    # Parse date: YYYYMMDD
-    year = int(date_str[:4])
-    month = int(date_str[4:6])
-    day = int(date_str[6:8])
+        # Parse date: YYYYMMDD
+        year = int(date_str[:4])
+        month = int(date_str[4:6])
+        day = int(date_str[6:8])
 
-    # Parse time: HHMMSS.fff
-    time_parts = time_str.split('.')
-    time_base = time_parts[0]
-    milliseconds = int(time_parts[1]) if len(time_parts) > 1 else 0
+        # Parse time: HHMMSS.fff (always 6 digits before decimal)
+        time_parts = time_str.split('.')
+        time_base = time_parts[0].zfill(6)  # Pad with zeros if needed
+        milliseconds = int(time_parts[1]) if len(time_parts) > 1 else 0
 
-    hour = int(time_base[:2]) if len(time_base) >= 2 else 0
-    minute = int(time_base[2:4]) if len(time_base) >= 4 else 0
-    second = int(time_base[4:6]) if len(time_base) >= 6 else 0
+        hour = int(time_base[0:2])
+        minute = int(time_base[2:4])
+        second = int(time_base[4:6])
 
-    return datetime(year, month, day, hour, minute, second, milliseconds * 1000)
+        # Validate ranges
+        if not (0 <= hour <= 23):
+            print(f"[WARNING] Invalid hour {hour} in row, setting to 0. Date: {date_str}, Time: {time_str}")
+            hour = 0
+        if not (0 <= minute <= 59):
+            print(f"[WARNING] Invalid minute {minute} in row, setting to 0")
+            minute = 0
+        if not (0 <= second <= 59):
+            print(f"[WARNING] Invalid second {second} in row, setting to 0")
+            second = 0
+
+        return datetime(year, month, day, hour, minute, second, milliseconds * 1000)
+    except Exception as e:
+        print(f"[ERROR] Failed to parse timestamp: date={row.get('date', 'N/A')}, time={row.get('time', 'N/A')}, error={e}")
+        # Return a default datetime
+        return datetime(2025, 1, 1, 0, 0, 0)
 
 df['timestamp'] = df.apply(parse_timestamp, axis=1)
 

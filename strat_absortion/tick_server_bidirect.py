@@ -239,7 +239,7 @@ class TickServer:
     def initialize_csv(self):
         """Initialize CSV file for tick logging."""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.csv_file = CSV_OUTPUT_DIR / f"tick_server_{timestamp}.csv"
+        self.csv_file = CSV_OUTPUT_DIR / f"tick_server_bidirect_{timestamp}.csv"
         self.csv_handle = open(self.csv_file, 'w', newline='', encoding='utf-8')
         self.csv_writer = csv.writer(self.csv_handle, delimiter=';')
         # Headers: date;time;bid;ask;price;volume;side;shape

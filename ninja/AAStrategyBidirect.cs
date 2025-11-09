@@ -295,9 +295,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                             Print(string.Format("[AAStrategyBidirect] Placing LONG TP/SL: TP @ {0:F2}, SL @ {1:F2}",
                                 tpPrice, slPrice));
 
-                            // Place explicit exit orders (OCO)
-                            takeProfitOrder = ExitLongLimit(0, true, Quantity, tpPrice, "TP_LONG", "LONG_ENTRY");
-                            stopLossOrder = ExitLongStopMarket(0, true, Quantity, slPrice, "SL_LONG", "LONG_ENTRY");
+                            // Place explicit exit orders (OCO) - using simpler method
+                            takeProfitOrder = ExitLongLimit(tpPrice, "TP_LONG", "LONG_ENTRY");
+                            stopLossOrder = ExitLongStopMarket(slPrice, "SL_LONG", "LONG_ENTRY");
 
                             Print(string.Format("[AAStrategyBidirect] Orders placed: TP={0}, SL={1}",
                                 takeProfitOrder != null ? "OK" : "FAIL",
@@ -311,9 +311,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                             Print(string.Format("[AAStrategyBidirect] Placing SHORT TP/SL: TP @ {0:F2}, SL @ {1:F2}",
                                 tpPrice, slPrice));
 
-                            // Place explicit exit orders (OCO)
-                            takeProfitOrder = ExitShortLimit(0, true, Quantity, tpPrice, "TP_SHORT", "SHORT_ENTRY");
-                            stopLossOrder = ExitShortStopMarket(0, true, Quantity, slPrice, "SL_SHORT", "SHORT_ENTRY");
+                            // Place explicit exit orders (OCO) - using simpler method
+                            takeProfitOrder = ExitShortLimit(tpPrice, "TP_SHORT", "SHORT_ENTRY");
+                            stopLossOrder = ExitShortStopMarket(slPrice, "SL_SHORT", "SHORT_ENTRY");
 
                             Print(string.Format("[AAStrategyBidirect] Orders placed: TP={0}, SL={1}",
                                 takeProfitOrder != null ? "OK" : "FAIL",

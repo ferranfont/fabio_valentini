@@ -236,14 +236,19 @@ class TickServer:
         self.last_detection_timestamp = None
         self.last_detection_shape = None
 
+        # Order tracking for CSV
+        self.pending_order_entry = None  # {'timestamp': dt, 'type': 'LONG/SHORT', 'price': float}
+        self.pending_order_exit = None   # {'timestamp': dt, 'price': float, 'tag': 'TARGET/STOP'}
+
     def initialize_csv(self):
         """Initialize CSV file for tick logging."""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.csv_file = CSV_OUTPUT_DIR / f"tick_server_bidirect_{timestamp}.csv"
         self.csv_handle = open(self.csv_file, 'w', newline='', encoding='utf-8')
         self.csv_writer = csv.writer(self.csv_handle, delimiter=';')
-        # Headers: date;time;bid;ask;price;volume;side;shape
-        self.csv_writer.writerow(['date', 'time', 'bid', 'ask', 'price', 'volume', 'side', 'shape'])
+        # Headers: date;time;bid;ask;price;volume;side;shape;order_type;entry_price;exit_price;exit_tag
+        self.csv_writer.writerow(['date', 'time', 'bid', 'ask', 'price', 'volume', 'side', 'shape',
+                                   'order_type', 'entry_price', 'exit_price', 'exit_tag'])
         self.csv_handle.flush()
         print(f"[CSV] Logging ticks to: {self.csv_file}")
 
@@ -285,6 +290,28 @@ class TickServer:
                 self.last_detection_timestamp = None
                 self.last_detection_shape = None
 
+        # Check for order entry
+        order_type = ""
+        entry_price = ""
+        if self.pending_order_entry:
+            time_diff = abs((timestamp - self.pending_order_entry['timestamp']).total_seconds())
+            if time_diff < 1.0:
+                order_type = self.pending_order_entry['type']
+                entry_price = f"{self.pending_order_entry['price']:.2f}"
+                # Clear after logging
+                self.pending_order_entry = None
+
+        # Check for order exit
+        exit_price = ""
+        exit_tag = ""
+        if self.pending_order_exit:
+            time_diff = abs((timestamp - self.pending_order_exit['timestamp']).total_seconds())
+            if time_diff < 1.0:
+                exit_price = f"{self.pending_order_exit['price']:.2f}"
+                exit_tag = self.pending_order_exit['tag']
+                # Clear after logging
+                self.pending_order_exit = None
+
         row = [
             date_str,
             time_str,
@@ -293,7 +320,11 @@ class TickServer:
             f"{price:.2f}",
             volume,
             side,
-            shape_value  # Will be empty string for most ticks, d_shape/p_shape for detections
+            shape_value,  # Will be empty string for most ticks, d_shape/p_shape for detections
+            order_type,   # LONG/SHORT or empty
+            entry_price,  # Entry price or empty
+            exit_price,   # Exit price or empty
+            exit_tag      # TARGET/STOP or empty
         ]
 
         self.csv_writer.writerow(row)
@@ -357,6 +388,38 @@ class TickServer:
             return "Patrón p-SHAPE detectado"
         return ""
 
+    def log_order_entry(self, timestamp: datetime, order_type: str, price: float):
+        """
+        Log an order entry for CSV recording.
+
+        Args:
+            timestamp: Entry timestamp
+            order_type: 'LONG' or 'SHORT'
+            price: Entry price
+        """
+        self.pending_order_entry = {
+            'timestamp': timestamp,
+            'type': order_type,
+            'price': price
+        }
+        print(f"[ORDER] Entry logged: {order_type} @ {price:.2f}")
+
+    def log_order_exit(self, timestamp: datetime, price: float, tag: str):
+        """
+        Log an order exit for CSV recording.
+
+        Args:
+            timestamp: Exit timestamp
+            price: Exit price
+            tag: 'TARGET' or 'STOP'
+        """
+        self.pending_order_exit = {
+            'timestamp': timestamp,
+            'price': price,
+            'tag': tag
+        }
+        print(f"[ORDER] Exit logged: {tag} @ {price:.2f}")
+
     def on_pattern_detected(self, detection_data: dict):
         """
         Callback triggered when a pattern is detected.
@@ -383,6 +446,14 @@ class TickServer:
 
         # Play double beep for detection
         play_beep(count=2, frequency=1200, duration_ms=150, pause_ms=100)
+
+        # Determine order type based on shape
+        # d_shape (BID absorption) -> expect bounce -> LONG
+        # p_shape (ASK absorption) -> expect drop -> SHORT
+        order_type = 'LONG' if shape == 'd_shape' else 'SHORT'
+
+        # Log entry order to CSV
+        self.log_order_entry(timestamp, order_type, price)
 
         # Start screen recording
         filename = f"detection_{detection_num}_{shape}_{timestamp.strftime('%Y%m%d_%H%M%S')}"

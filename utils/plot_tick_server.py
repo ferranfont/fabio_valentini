@@ -160,6 +160,139 @@ if len(detections) > 0:
             hoverinfo='none'
         ))
 
+# Add order entry and exit markers
+if 'order_type' in df.columns and 'entry_price' in df.columns:
+    # Order entries
+    entries = df[df['order_type'].notna() & (df['order_type'] != '')]
+    if len(entries) > 0:
+        print(f"[INFO] Found {len(entries)} order entries")
+
+        # LONG entries (green triangle-up)
+        long_entries = entries[entries['order_type'] == 'LONG']
+        if len(long_entries) > 0:
+            # Convert entry_price to float, handling empty strings
+            entry_prices = long_entries['entry_price'].apply(lambda x: float(str(x).replace(',', '.')) if x and x != '' else None)
+            valid_longs = long_entries[entry_prices.notna()].copy()
+            valid_longs['entry_price_float'] = entry_prices[entry_prices.notna()]
+
+            fig.add_trace(go.Scatter(
+                x=valid_longs['timestamp'],
+                y=valid_longs['entry_price_float'],
+                mode='markers',
+                name='LONG Entry',
+                showlegend=False,
+                marker=dict(
+                    symbol='triangle-up',
+                    size=14,
+                    color='green',
+                    line=dict(color='darkgreen', width=2)
+                ),
+                hoverinfo='none'
+            ))
+
+        # SHORT entries (red triangle-down)
+        short_entries = entries[entries['order_type'] == 'SHORT']
+        if len(short_entries) > 0:
+            entry_prices = short_entries['entry_price'].apply(lambda x: float(str(x).replace(',', '.')) if x and x != '' else None)
+            valid_shorts = short_entries[entry_prices.notna()].copy()
+            valid_shorts['entry_price_float'] = entry_prices[entry_prices.notna()]
+
+            fig.add_trace(go.Scatter(
+                x=valid_shorts['timestamp'],
+                y=valid_shorts['entry_price_float'],
+                mode='markers',
+                name='SHORT Entry',
+                showlegend=False,
+                marker=dict(
+                    symbol='triangle-down',
+                    size=14,
+                    color='red',
+                    line=dict(color='darkred', width=2)
+                ),
+                hoverinfo='none'
+            ))
+
+# Add order exits
+if 'exit_price' in df.columns and 'exit_tag' in df.columns:
+    exits = df[df['exit_price'].notna() & (df['exit_price'] != '')]
+    if len(exits) > 0:
+        print(f"[INFO] Found {len(exits)} order exits")
+
+        # Convert exit_price to float
+        exit_prices = exits['exit_price'].apply(lambda x: float(str(x).replace(',', '.')) if x and x != '' else None)
+        valid_exits = exits[exit_prices.notna()].copy()
+        valid_exits['exit_price_float'] = exit_prices[exit_prices.notna()]
+
+        # TARGET exits (green open square)
+        target_exits = valid_exits[valid_exits['exit_tag'] == 'TARGET']
+        if len(target_exits) > 0:
+            fig.add_trace(go.Scatter(
+                x=target_exits['timestamp'],
+                y=target_exits['exit_price_float'],
+                mode='markers',
+                name='TARGET Exit',
+                showlegend=False,
+                marker=dict(
+                    symbol='square-open',
+                    size=12,
+                    color='green',
+                    line=dict(color='darkgreen', width=2)
+                ),
+                hoverinfo='none'
+            ))
+
+        # STOP exits (red open square)
+        stop_exits = valid_exits[valid_exits['exit_tag'] == 'STOP']
+        if len(stop_exits) > 0:
+            fig.add_trace(go.Scatter(
+                x=stop_exits['timestamp'],
+                y=stop_exits['exit_price_float'],
+                mode='markers',
+                name='STOP Exit',
+                showlegend=False,
+                marker=dict(
+                    symbol='square-open',
+                    size=12,
+                    color='red',
+                    line=dict(color='darkred', width=2)
+                ),
+                hoverinfo='none'
+            ))
+
+# Add lines connecting entry and exit (TODO: implement trade pairing logic)
+# For now, just connect consecutive entries and exits
+if 'order_type' in df.columns and 'entry_price' in df.columns and 'exit_price' in df.columns:
+    entries_df = df[df['order_type'].notna() & (df['order_type'] != '')].copy()
+    exits_df = df[df['exit_price'].notna() & (df['exit_price'] != '')].copy()
+
+    if len(entries_df) > 0 and len(exits_df) > 0:
+        # Simple pairing: match each entry with next exit
+        for idx, entry_row in entries_df.iterrows():
+            # Find next exit after this entry
+            future_exits = exits_df[exits_df['timestamp'] > entry_row['timestamp']]
+            if len(future_exits) > 0:
+                exit_row = future_exits.iloc[0]
+
+                # Parse prices
+                try:
+                    entry_price = float(str(entry_row['entry_price']).replace(',', '.'))
+                    exit_price = float(str(exit_row['exit_price']).replace(',', '.'))
+
+                    # Determine line color based on exit tag
+                    line_color = 'rgba(0,128,0,0.4)' if exit_row['exit_tag'] == 'TARGET' else 'rgba(255,0,0,0.4)'
+
+                    # Add connecting line
+                    fig.add_trace(go.Scatter(
+                        x=[entry_row['timestamp'], exit_row['timestamp']],
+                        y=[entry_price, exit_price],
+                        mode='lines',
+                        line=dict(color=line_color, width=1, dash='dot'),
+                        showlegend=False,
+                        hoverinfo='none'
+                    ))
+                except:
+                    pass  # Skip if price parsing fails
+
 # Extract date from filename for title
 file_date = DATA_FILE.stem.split('_')[-1]  # e.g., "20251107_211647"
 title_date = file_date[:8]  # YYYYMMDD

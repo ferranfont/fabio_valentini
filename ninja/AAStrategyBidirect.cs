@@ -77,9 +77,16 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.Configure)
             {
             }
+            else if (State == State.DataLoaded)
+            {
+                // Connect when data is loaded (works for both Realtime and Historical)
+                ConnectToServer();
+            }
             else if (State == State.Realtime)
             {
-                ConnectToServer();
+                // Already connected in DataLoaded, but reconnect if needed
+                if (!isConnected)
+                    ConnectToServer();
             }
             else if (State == State.Terminated)
             {
@@ -235,22 +242,35 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             lock (lockObject)
             {
+                // Log all executions for debugging
+                Print(string.Format("[AAStrategyBidirect] Execution: {0} | Order: {1} | State: {2} | Price: {3}",
+                    execution.Name,
+                    execution.Order != null ? execution.Order.Name : "NULL",
+                    execution.Order != null ? execution.Order.OrderState.ToString() : "NULL",
+                    price));
+
                 // Check if this is our entry order being filled
                 if (execution.Order != null && execution.Order == entryOrder && waitingForFill)
                 {
                     if (execution.Order.OrderState == OrderState.Filled)
                     {
-                        Print(string.Format("[AAStrategyBidirect] Entry filled at {0}, placing TP/SL", price));
+                        Print(string.Format("[AAStrategyBidirect] *** ENTRY FILLED at {0}, placing TP/SL ***", price));
 
                         // NOW place TP and SL orders
                         if (pendingDirection == "LONG")
                         {
+                            Print(string.Format("[AAStrategyBidirect] Setting LONG TP/SL: TP={0} ticks, SL={1} ticks",
+                                TakeProfitTicks, StopLossTicks));
+
                             // For LONG: TP above, SL below
                             SetProfitTarget("LONG_ENTRY", CalculationMode.Ticks, TakeProfitTicks);
                             SetStopLoss("LONG_ENTRY", CalculationMode.Ticks, StopLossTicks, false);
                         }
                         else if (pendingDirection == "SHORT")
                         {
+                            Print(string.Format("[AAStrategyBidirect] Setting SHORT TP/SL: TP={0} ticks, SL={1} ticks",
+                                TakeProfitTicks, StopLossTicks));
+
                             // For SHORT: TP below, SL above
                             SetProfitTarget("SHORT_ENTRY", CalculationMode.Ticks, TakeProfitTicks);
                             SetStopLoss("SHORT_ENTRY", CalculationMode.Ticks, StopLossTicks, false);
@@ -268,7 +288,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (execution.Order.OrderState == OrderState.Filled)
                     {
                         string exitTag = execution.Order.OrderType == OrderType.Limit ? "TARGET" : "STOP";
-                        Print(string.Format("[AAStrategyBidirect] Exit filled at {0} ({1})", price, exitTag));
+                        Print(string.Format("[AAStrategyBidirect] *** EXIT FILLED at {0} ({1}) ***", price, exitTag));
 
                         // Send exit info to Python server
                         SendExitToServer(price, exitTag);

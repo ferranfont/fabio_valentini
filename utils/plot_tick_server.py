@@ -14,13 +14,19 @@ from datetime import datetime
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data" / "monitor_ninja"
 
-# Find most recent tick_server CSV
-csv_files = list(DATA_DIR.glob("tick_server_*.csv"))
-if not csv_files:
+# Find most recent tick_server CSV (prioritize bidirect version)
+bidirect_files = list(DATA_DIR.glob("tick_server_bidirect_*.csv"))
+regular_files = list(DATA_DIR.glob("tick_server_*.csv"))
+
+if bidirect_files:
+    DATA_FILE = max(bidirect_files, key=lambda p: p.stat().st_mtime)
+    print("[INFO] Using bidirectional CSV (with order tracking)")
+elif regular_files:
+    DATA_FILE = max(regular_files, key=lambda p: p.stat().st_mtime)
+    print("[INFO] Using regular CSV (no order tracking)")
+else:
     print("[ERROR] No tick_server CSV files found in data/monitor_ninja/")
     exit(1)
-
-DATA_FILE = max(csv_files, key=lambda p: p.stat().st_mtime)
 OUTPUT_FILE = PROJECT_ROOT / "charts" / f"tick_server_chart_{DATA_FILE.stem.split('_')[-1]}.html"
 
 print("="*80)

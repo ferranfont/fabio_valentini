@@ -29,7 +29,7 @@ using System.IO;
 //This namespace holds Indicators in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Indicators
 {
-	public class AASender : Indicator
+	public class AASenderBidirect : Indicator
 	{
 		private TcpClient tcpClient;
 		private NetworkStream networkStream;
@@ -46,7 +46,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 			if (State == State.SetDefaults)
 			{
 				Description							= @"Bidirectional indicator - sends ticks and draws pattern dots from Python signals";
-				Name								= "AASender";
+				Name								= "AASenderBidirect";
 				ServerHost							= "127.0.0.1";
 				ServerPort							= 55555;
 				Calculate							= Calculate.OnEachTick;
@@ -68,13 +68,13 @@ namespace NinjaTrader.NinjaScript.Indicators
 
 				if (isConnected)
 				{
-					string msg = string.Format("[AASender] Connected to {0}:{1}", ServerHost, ServerPort);
+					string msg = string.Format("[AASenderBidirect] Connected to {0}:{1}", ServerHost, ServerPort);
 					Print(msg);
 					Draw.TextFixed(this, "status", msg + "\nTicks sent: 0", TextPosition.TopLeft);
 				}
 				else
 				{
-					string msg = string.Format("[AASender] FAILED to connect to {0}:{1}", ServerHost, ServerPort);
+					string msg = string.Format("[AASenderBidirect] FAILED to connect to {0}:{1}", ServerHost, ServerPort);
 					Print(msg);
 					Draw.TextFixed(this, "status", msg, TextPosition.TopLeft);
 				}
@@ -95,7 +95,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 
 				DisconnectFromServer();
 
-				Print(string.Format("[AASender] Disconnected. Total ticks sent: {0}", ticksSent));
+				Print(string.Format("[AASenderBidirect] Disconnected. Total ticks sent: {0}", ticksSent));
 			}
 		}
 
@@ -108,7 +108,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 				try
 				{
 					connectionAttempts++;
-					Print(string.Format("[AASender] Connection attempt {0}/{1}...", connectionAttempts, MaxConnectionAttempts));
+					Print(string.Format("[AASenderBidirect] Connection attempt {0}/{1}...", connectionAttempts, MaxConnectionAttempts));
 
 					tcpClient = new TcpClient();
 					tcpClient.Connect(ServerHost, ServerPort);
@@ -116,7 +116,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 					reader = new StreamReader(networkStream, Encoding.UTF8);
 					isConnected = true;
 
-					Print("[AASender] Connection successful!");
+					Print("[AASenderBidirect] Connection successful!");
 
 					// Start listener thread for incoming signals
 					listenerThread = new Thread(ListenForSignals);
@@ -127,11 +127,11 @@ namespace NinjaTrader.NinjaScript.Indicators
 				}
 				catch (Exception ex)
 				{
-					Print(string.Format("[AASender] Connection attempt {0} failed: {1}", connectionAttempts, ex.Message));
+					Print(string.Format("[AASenderBidirect] Connection attempt {0} failed: {1}", connectionAttempts, ex.Message));
 
 					if (connectionAttempts < MaxConnectionAttempts)
 					{
-						Print(string.Format("[AASender] Waiting {0} seconds before retry...", ReconnectDelaySeconds));
+						Print(string.Format("[AASenderBidirect] Waiting {0} seconds before retry...", ReconnectDelaySeconds));
 						Thread.Sleep(ReconnectDelaySeconds * 1000);
 					}
 				}
@@ -139,7 +139,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 
 			if (!isConnected)
 			{
-				Print(string.Format("[AASender] Failed to connect after {0} attempts. Server may not be running.", MaxConnectionAttempts));
+				Print(string.Format("[AASenderBidirect] Failed to connect after {0} attempts. Server may not be running.", MaxConnectionAttempts));
 			}
 		}
 
@@ -152,7 +152,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 					string line = reader.ReadLine();
 					if (line == null)
 					{
-						Print("[AASender] Server closed connection");
+						Print("[AASenderBidirect] Server closed connection");
 						isConnected = false;
 						break;
 					}
@@ -163,7 +163,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 				{
 					if (isConnected)
 					{
-						Print(string.Format("[AASender] Error reading from server: {0}", ex.Message));
+						Print(string.Format("[AASenderBidirect] Error reading from server: {0}", ex.Message));
 					}
 					break;
 				}
@@ -187,26 +187,26 @@ namespace NinjaTrader.NinjaScript.Indicators
 					if (!string.IsNullOrEmpty(shape))
 					{
 						signalCounter++;
-						Print(string.Format("[AASender] Received {0} signal (#{1})", shape, signalCounter));
+						Print(string.Format("[AASenderBidirect] Received {0} signal (#{1})", shape, signalCounter));
 
 						// Draw pattern detection marker
 						double currentPrice = Close[0];
 						if (shape == "d_shape")
 						{
 							Draw.Dot(this, "Pattern_" + signalCounter, true, 0, currentPrice - 5 * TickSize, Brushes.Lime);
-							Print(string.Format("[AASender] Drew GREEN dot (d_shape) at price {0:F2}", currentPrice - 5 * TickSize));
+							Print(string.Format("[AASenderBidirect] Drew GREEN dot (d_shape) at price {0:F2}", currentPrice - 5 * TickSize));
 						}
 						else if (shape == "p_shape")
 						{
 							Draw.Dot(this, "Pattern_" + signalCounter, true, 0, currentPrice + 5 * TickSize, Brushes.Red);
-							Print(string.Format("[AASender] Drew RED dot (p_shape) at price {0:F2}", currentPrice + 5 * TickSize));
+							Print(string.Format("[AASenderBidirect] Drew RED dot (p_shape) at price {0:F2}", currentPrice + 5 * TickSize));
 						}
 					}
 				}
 			}
 			catch (Exception ex)
 			{
-				Print(string.Format("[AASender] Error processing signal: {0}", ex.Message));
+				Print(string.Format("[AASenderBidirect] Error processing signal: {0}", ex.Message));
 			}
 		}
 
@@ -238,7 +238,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 			}
 			catch (Exception ex)
 			{
-				Print(string.Format("[AASender] Error disconnecting: {0}", ex.Message));
+				Print(string.Format("[AASenderBidirect] Error disconnecting: {0}", ex.Message));
 			}
 		}
 
@@ -293,14 +293,14 @@ namespace NinjaTrader.NinjaScript.Indicators
 				// Update status every 1000 ticks
 				if (ticksSent % 1000 == 0)
 				{
-					string msg = string.Format("[AASender] Connected to {0}:{1}\nTicks sent: {2:N0}\nPatterns detected: {3}",
+					string msg = string.Format("[AASenderBidirect] Connected to {0}:{1}\nTicks sent: {2:N0}\nPatterns detected: {3}",
 						ServerHost, ServerPort, ticksSent, signalCounter);
 					Draw.TextFixed(this, "status", msg, TextPosition.TopLeft);
 				}
 			}
 			catch (Exception ex)
 			{
-				Print(string.Format("[AASender] Error processing tick: {0}", ex.Message));
+				Print(string.Format("[AASenderBidirect] Error processing tick: {0}", ex.Message));
 			}
 		}
 
@@ -320,12 +320,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 				}
 				catch (Exception ex)
 				{
-					Print(string.Format("[AASender] Error sending message: {0}", ex.Message));
+					Print(string.Format("[AASenderBidirect] Error sending message: {0}", ex.Message));
 					isConnected = false;
 
 					// Try to reconnect
 					DisconnectFromServer();
-					Print("[AASender] Attempting to reconnect...");
+					Print("[AASenderBidirect] Attempting to reconnect...");
 					ConnectToServer();
 				}
 			}
@@ -337,11 +337,11 @@ namespace NinjaTrader.NinjaScript.Indicators
 			{
 				string json = "{\"command\":\"COMPLETE\"}";
 				SendMessage(json);
-				Print("[AASender] Sent completion signal to server");
+				Print("[AASenderBidirect] Sent completion signal to server");
 			}
 			catch (Exception ex)
 			{
-				Print(string.Format("[AASender] Error sending completion signal: {0}", ex.Message));
+				Print(string.Format("[AASenderBidirect] Error sending completion signal: {0}", ex.Message));
 			}
 		}
 
@@ -374,19 +374,19 @@ namespace NinjaTrader.NinjaScript.Indicators
 {
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
-		private AASender[] cacheAASender;
-		public AASender AASender(string serverHost, int serverPort)
+		private AASenderBidirect[] cacheAASenderBidirect;
+		public AASenderBidirect AASenderBidirect(string serverHost, int serverPort)
 		{
-			return AASender(Input, serverHost, serverPort);
+			return AASenderBidirect(Input, serverHost, serverPort);
 		}
 
-		public AASender AASender(ISeries<double> input, string serverHost, int serverPort)
+		public AASenderBidirect AASenderBidirect(ISeries<double> input, string serverHost, int serverPort)
 		{
-			if (cacheAASender != null)
-				for (int idx = 0; idx < cacheAASender.Length; idx++)
-					if (cacheAASender[idx] != null && cacheAASender[idx].ServerHost == serverHost && cacheAASender[idx].ServerPort == serverPort && cacheAASender[idx].EqualsInput(input))
-						return cacheAASender[idx];
-			return CacheIndicator<AASender>(new AASender(){ ServerHost = serverHost, ServerPort = serverPort }, input, ref cacheAASender);
+			if (cacheAASenderBidirect != null)
+				for (int idx = 0; idx < cacheAASenderBidirect.Length; idx++)
+					if (cacheAASenderBidirect[idx] != null && cacheAASenderBidirect[idx].ServerHost == serverHost && cacheAASenderBidirect[idx].ServerPort == serverPort && cacheAASenderBidirect[idx].EqualsInput(input))
+						return cacheAASenderBidirect[idx];
+			return CacheIndicator<AASenderBidirect>(new AASenderBidirect(){ ServerHost = serverHost, ServerPort = serverPort }, input, ref cacheAASenderBidirect);
 		}
 	}
 }
@@ -395,14 +395,14 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.AASender AASender(string serverHost, int serverPort)
+		public Indicators.AASenderBidirect AASenderBidirect(string serverHost, int serverPort)
 		{
-			return indicator.AASender(Input, serverHost, serverPort);
+			return indicator.AASenderBidirect(Input, serverHost, serverPort);
 		}
 
-		public Indicators.AASender AASender(ISeries<double> input , string serverHost, int serverPort)
+		public Indicators.AASenderBidirect AASenderBidirect(ISeries<double> input , string serverHost, int serverPort)
 		{
-			return indicator.AASender(input, serverHost, serverPort);
+			return indicator.AASenderBidirect(input, serverHost, serverPort);
 		}
 	}
 }
@@ -411,14 +411,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.AASender AASender(string serverHost, int serverPort)
+		public Indicators.AASenderBidirect AASenderBidirect(string serverHost, int serverPort)
 		{
-			return indicator.AASender(Input, serverHost, serverPort);
+			return indicator.AASenderBidirect(Input, serverHost, serverPort);
 		}
 
-		public Indicators.AASender AASender(ISeries<double> input , string serverHost, int serverPort)
+		public Indicators.AASenderBidirect AASenderBidirect(ISeries<double> input , string serverHost, int serverPort)
 		{
-			return indicator.AASender(input, serverHost, serverPort);
+			return indicator.AASenderBidirect(input, serverHost, serverPort);
 		}
 	}
 }

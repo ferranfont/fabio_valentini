@@ -43,6 +43,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private Order takeProfitOrder = null;
         private bool waitingForFill = false;
         private string pendingDirection = "";  // "LONG" or "SHORT"
+        private int signalCounter = 0;  // Unique ID for drawing objects
+        private double entryPrice = 0.0;  // Track entry price for TP/SL calculation
 
         protected override void OnStateChange()
         {
@@ -50,7 +52,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 Description                                 = @"Bidirectional strategy - receives signals from Python server";
                 Name                                        = "AAStrategyBidirect";
-                Calculate                                   = Calculate.OnBarClose;
+                Calculate                                   = Calculate.OnEachTick;  // CHANGED: Need tick-by-tick for real-time signals
                 EntriesPerDirection                         = 1;
                 EntryHandling                               = EntryHandling.AllEntries;
                 IsExitOnSessionCloseStrategy                = true;
@@ -66,6 +68,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 StopTargetHandling                          = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade                         = 20;
                 IsInstantiatedOnEachOptimizationIteration   = true;
+                IsOverlay                                   = true;  // ADDED: Draw on price panel
 
                 // Parameters
                 ServerHost                                  = "127.0.0.1";
@@ -208,17 +211,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                                     pendingDirection = direction;
                                     waitingForFill = true;
 
-                                    Print(string.Format("[AAStrategyBidirect] Received {0} signal -> {1} entry",
-                                        shape, direction));
+                                    signalCounter++;
+                                    Print(string.Format("[AAStrategyBidirect] Received {0} signal -> {1} entry (Signal #{2})",
+                                        shape, direction, signalCounter));
 
                                     // Draw signal marker on chart
                                     if (direction == "LONG")
                                     {
-                                        Draw.TriangleUp(this, "Signal_" + CurrentBar, true, 0, Low[0] - 2 * TickSize, Brushes.Green);
+                                        Draw.TriangleUp(this, "Signal_" + signalCounter, true, 0, Low[0] - 4 * TickSize, Brushes.Lime);
+                                        Print(string.Format("[AAStrategyBidirect] Drew GREEN triangle at bar {0}, price {1}", CurrentBar, Low[0] - 4 * TickSize));
                                     }
                                     else
                                     {
-                                        Draw.TriangleDown(this, "Signal_" + CurrentBar, true, 0, High[0] + 2 * TickSize, Brushes.Red);
+                                        Draw.TriangleDown(this, "Signal_" + signalCounter, true, 0, High[0] + 4 * TickSize, Brushes.Red);
+                                        Print(string.Format("[AAStrategyBidirect] Drew RED triangle at bar {0}, price {1}", CurrentBar, High[0] + 4 * TickSize));
                                     }
 
                                     // Enter position
@@ -264,34 +270,41 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (execution.Order.OrderState == OrderState.Filled)
                     {
+                        entryPrice = price;
                         Print(string.Format("[AAStrategyBidirect] *** ENTRY FILLED at {0}, placing TP/SL ***", price));
 
                         // Draw entry fill marker
                         if (pendingDirection == "LONG")
                         {
-                            Draw.ArrowUp(this, "EntryFill_" + CurrentBar, true, 0, price - 1 * TickSize, Brushes.LimeGreen);
+                            Draw.ArrowUp(this, "EntryFill_" + signalCounter, true, 0, price - 2 * TickSize, Brushes.LimeGreen);
+                            Print(string.Format("[AAStrategyBidirect] Drew GREEN arrow at {0}", price - 2 * TickSize));
                         }
                         else if (pendingDirection == "SHORT")
                         {
-                            Draw.ArrowDown(this, "EntryFill_" + CurrentBar, true, 0, price + 1 * TickSize, Brushes.OrangeRed);
+                            Draw.ArrowDown(this, "EntryFill_" + signalCounter, true, 0, price + 2 * TickSize, Brushes.OrangeRed);
+                            Print(string.Format("[AAStrategyBidirect] Drew RED arrow at {0}", price + 2 * TickSize));
                         }
 
-                        // NOW place TP and SL orders
+                        // NOW place TP and SL orders using explicit exit methods
                         if (pendingDirection == "LONG")
                         {
-                            Print(string.Format("[AAStrategyBidirect] Setting LONG TP/SL: TP={0} ticks, SL={1} ticks",
-                                TakeProfitTicks, StopLossTicks));
+                            double tpPrice = price + (TakeProfitTicks * TickSize);
+                            double slPrice = price - (StopLossTicks * TickSize);
 
-                            // For LONG: TP above, SL below
+                            Print(string.Format("[AAStrategyBidirect] Setting LONG TP/SL: TP={0} @ {1:F2}, SL={2} @ {3:F2}",
+                                TakeProfitTicks, tpPrice, StopLossTicks, slPrice));
+
                             SetProfitTarget("LONG_ENTRY", CalculationMode.Ticks, TakeProfitTicks);
                             SetStopLoss("LONG_ENTRY", CalculationMode.Ticks, StopLossTicks, false);
                         }
                         else if (pendingDirection == "SHORT")
                         {
-                            Print(string.Format("[AAStrategyBidirect] Setting SHORT TP/SL: TP={0} ticks, SL={1} ticks",
-                                TakeProfitTicks, StopLossTicks));
+                            double tpPrice = price - (TakeProfitTicks * TickSize);
+                            double slPrice = price + (StopLossTicks * TickSize);
 
-                            // For SHORT: TP below, SL above
+                            Print(string.Format("[AAStrategyBidirect] Setting SHORT TP/SL: TP={0} @ {1:F2}, SL={2} @ {3:F2}",
+                                TakeProfitTicks, tpPrice, StopLossTicks, slPrice));
+
                             SetProfitTarget("SHORT_ENTRY", CalculationMode.Ticks, TakeProfitTicks);
                             SetStopLoss("SHORT_ENTRY", CalculationMode.Ticks, StopLossTicks, false);
                         }
@@ -313,11 +326,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                         // Draw exit marker
                         if (exitTag == "TARGET")
                         {
-                            Draw.Dot(this, "ExitTarget_" + CurrentBar, true, 0, price, Brushes.LimeGreen);
+                            Draw.Diamond(this, "ExitTarget_" + signalCounter, true, 0, price, Brushes.LimeGreen);
+                            Print(string.Format("[AAStrategyBidirect] Drew GREEN diamond (TARGET) at {0}", price));
                         }
                         else // STOP
                         {
-                            Draw.Dot(this, "ExitStop_" + CurrentBar, true, 0, price, Brushes.Red);
+                            Draw.Diamond(this, "ExitStop_" + signalCounter, true, 0, price, Brushes.Red);
+                            Print(string.Format("[AAStrategyBidirect] Drew RED diamond (STOP) at {0}", price));
                         }
 
                         // Send exit info to Python server

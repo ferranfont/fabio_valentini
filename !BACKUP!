@@ -1,0 +1,347 @@
+#region Using declarations
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Xml.Serialization;
+using NinjaTrader.Cbi;
+using NinjaTrader.Gui;
+using NinjaTrader.Gui.Chart;
+using NinjaTrader.Gui.SuperDom;
+using NinjaTrader.Gui.Tools;
+using NinjaTrader.Data;
+using NinjaTrader.NinjaScript;
+using NinjaTrader.Core.FloatingPoint;
+using NinjaTrader.NinjaScript.DrawingTools;
+using System.Net.Sockets;
+using System.Threading;
+#endregion
+
+namespace NinjaTrader.NinjaScript.Indicators
+{
+	public class AASender : Indicator
+	{
+		private TcpClient tcpClient;
+		private NetworkStream networkStream;
+		private bool isConnected = false;
+		private object sendLock = new object();
+		private int ticksSent = 0;
+		private int connectionAttempts = 0;
+
+		protected override void OnStateChange()
+		{
+			if (State == State.SetDefaults)
+			{
+				Description = @"Sends Time & Sales data to tick server via TCP/IP.";
+				Name = "AASender";
+				ServerHost = "127.0.0.1";
+				ServerPort = 55555;
+				Calculate = Calculate.OnEachTick;
+				IsOverlay = false;
+				DisplayInDataBox = false;
+				DrawOnPricePanel = false;
+				IsSuspendedWhileInactive = true;
+				MaxConnectionAttempts = 10;
+				ReconnectDelaySeconds = 5;
+			}
+			else if (State == State.Configure)
+			{
+				// CRÍTICO: No agregar series adicionales aquí
+			}
+			else if (State == State.DataLoaded)
+			{
+				// Conectar antes de entrar en tiempo real
+			}
+			else if (State == State.Realtime)
+			{
+				ConnectToServer();
+
+				if (isConnected)
+				{
+					string msg = string.Format("[AASender] Conectado a {0}:{1}", ServerHost, ServerPort);
+					Print(msg);
+					try
+					{
+						Draw.TextFixed(this, "status", msg + "\nTicks enviados: 0", TextPosition.TopLeft);
+					}
+					catch { }
+				}
+				else
+				{
+					string msg = string.Format("[AASender] FALLO al conectar a {0}:{1}", ServerHost, ServerPort);
+					Print(msg);
+					try
+					{
+						Draw.TextFixed(this, "status", msg, TextPosition.TopLeft);
+					}
+					catch { }
+				}
+			}
+			else if (State == State.Terminated)
+			{
+				if (isConnected)
+				{
+					SendCompletionSignal();
+					Thread.Sleep(500);
+				}
+
+				DisconnectFromServer();
+				Print(string.Format("[AASender] Desconectado. Total ticks enviados: {0}", ticksSent));
+			}
+		}
+
+		private void ConnectToServer()
+		{
+			connectionAttempts = 0;
+
+			while (connectionAttempts < MaxConnectionAttempts && !isConnected)
+			{
+				try
+				{
+					connectionAttempts++;
+					Print(string.Format("[AASender] Intento de conexión {0}/{1}...", connectionAttempts, MaxConnectionAttempts));
+
+					tcpClient = new TcpClient();
+					tcpClient.Connect(ServerHost, ServerPort);
+					networkStream = tcpClient.GetStream();
+					isConnected = true;
+
+					Print("[AASender] ¡Conexión exitosa!");
+					break;
+				}
+				catch (Exception ex)
+				{
+					Print(string.Format("[AASender] Intento {0} falló: {1}", connectionAttempts, ex.Message));
+
+					if (connectionAttempts < MaxConnectionAttempts)
+					{
+						Print(string.Format("[AASender] Esperando {0} segundos antes de reintentar...", ReconnectDelaySeconds));
+						Thread.Sleep(ReconnectDelaySeconds * 1000);
+					}
+				}
+			}
+
+			if (!isConnected)
+			{
+				Print(string.Format("[AASender] Falló después de {0} intentos. ¿El servidor Python está corriendo?", MaxConnectionAttempts));
+			}
+		}
+
+		private void DisconnectFromServer()
+		{
+			try
+			{
+				if (networkStream != null)
+				{
+					networkStream.Close();
+					networkStream.Dispose();
+					networkStream = null;
+				}
+
+				if (tcpClient != null)
+				{
+					tcpClient.Close();
+					tcpClient = null;
+				}
+
+				isConnected = false;
+			}
+			catch (Exception ex)
+			{
+				Print(string.Format("[AASender] Error al desconectar: {0}", ex.Message));
+			}
+		}
+
+		protected override void OnBarUpdate()
+		{
+			// No usado - enviamos datos en OnMarketData
+		}
+
+		protected override void OnMarketData(MarketDataEventArgs marketDataUpdate)
+		{
+			// PROTECCIONES CRÍTICAS
+			if (marketDataUpdate == null)
+				return;
+
+			if (!isConnected)
+				return;
+
+			if (State != State.Realtime)
+				return;
+
+			try
+			{
+				// Determinar lado basado en precio vs bid/ask
+				string side = "UNKNOWN";
+				
+				// Verificar que los valores no sean null
+				double price = marketDataUpdate.Price;
+				double ask = marketDataUpdate.Ask;
+				double bid = marketDataUpdate.Bid;
+				long volume = marketDataUpdate.Volume;
+
+				if (price >= ask && ask > 0)
+					side = "ASK";
+				else if (price <= bid && bid > 0)
+					side = "BID";
+				else
+					side = "BETWEEN";
+
+				// Formato timestamp ISO 8601
+				string timestamp = marketDataUpdate.Time.ToString("yyyy-MM-ddTHH:mm:ss.fff");
+
+				// Crear mensaje JSON
+				string json = string.Format(
+					"{{\"timestamp\":\"{0}\",\"price\":{1},\"volume\":{2},\"side\":\"{3}\"}}",
+					timestamp,
+					price.ToString(System.Globalization.CultureInfo.InvariantCulture),
+					volume,
+					side
+				);
+
+				SendMessage(json);
+
+				ticksSent++;
+
+				// Actualizar estado cada 100 ticks (no 1000 para ver actividad antes)
+				if (ticksSent % 100 == 0)
+				{
+					try
+					{
+						string msg = string.Format("[AASender] Conectado a {0}:{1}\nTicks enviados: {2:N0}",
+							ServerHost, ServerPort, ticksSent);
+						Draw.TextFixed(this, "status", msg, TextPosition.TopLeft);
+					}
+					catch { }
+				}
+			}
+			catch (Exception ex)
+			{
+				Print(string.Format("[AASender] Error procesando tick: {0}", ex.Message));
+			}
+		}
+
+		private void SendMessage(string message)
+		{
+			if (!isConnected || networkStream == null)
+				return;
+
+			lock (sendLock)
+			{
+				try
+				{
+					byte[] data = Encoding.UTF8.GetBytes(message + "\n");
+					networkStream.Write(data, 0, data.Length);
+					networkStream.Flush();
+				}
+				catch (Exception ex)
+				{
+					Print(string.Format("[AASender] Error enviando mensaje: {0}", ex.Message));
+					isConnected = false;
+
+					DisconnectFromServer();
+					Print("[AASender] Intentando reconectar...");
+					ConnectToServer();
+				}
+			}
+		}
+
+		private void SendCompletionSignal()
+		{
+			try
+			{
+				string json = "{\"command\":\"COMPLETE\"}";
+				SendMessage(json);
+				Print("[AASender] Señal de completado enviada al servidor");
+			}
+			catch (Exception ex)
+			{
+				Print(string.Format("[AASender] Error enviando señal de completado: {0}", ex.Message));
+			}
+		}
+
+		#region Properties
+
+		[NinjaScriptProperty]
+		[Display(Name = "Server Host", Description = "Server hostname or IP address", Order = 1, GroupName = "Connection")]
+		public string ServerHost { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(1, 65535)]
+		[Display(Name = "Server Port", Description = "Server TCP port", Order = 2, GroupName = "Connection")]
+		public int ServerPort { get; set; }
+
+		[Range(1, 100)]
+		[Display(Name = "Max Connection Attempts", Description = "Maximum number of connection attempts", Order = 3, GroupName = "Connection")]
+		public int MaxConnectionAttempts { get; set; }
+
+		[Range(1, 60)]
+		[Display(Name = "Reconnect Delay (seconds)", Description = "Delay between reconnection attempts", Order = 4, GroupName = "Connection")]
+		public int ReconnectDelaySeconds { get; set; }
+
+		#endregion
+	}
+}
+
+#region NinjaScript generated code. Neither change nor remove.
+
+namespace NinjaTrader.NinjaScript.Indicators
+{
+	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
+	{
+		private AASender[] cacheAASender;
+		public AASender AASender(string serverHost, int serverPort)
+		{
+			return AASender(Input, serverHost, serverPort);
+		}
+
+		public AASender AASender(ISeries<double> input, string serverHost, int serverPort)
+		{
+			if (cacheAASender != null)
+				for (int idx = 0; idx < cacheAASender.Length; idx++)
+					if (cacheAASender[idx] != null && cacheAASender[idx].ServerHost == serverHost && cacheAASender[idx].ServerPort == serverPort && cacheAASender[idx].EqualsInput(input))
+						return cacheAASender[idx];
+			return CacheIndicator<AASender>(new AASender(){ ServerHost = serverHost, ServerPort = serverPort }, input, ref cacheAASender);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
+{
+	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
+	{
+		public Indicators.AASender AASender(string serverHost, int serverPort)
+		{
+			return indicator.AASender(Input, serverHost, serverPort);
+		}
+
+		public Indicators.AASender AASender(ISeries<double> input , string serverHost, int serverPort)
+		{
+			return indicator.AASender(input, serverHost, serverPort);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
+	{
+		public Indicators.AASender AASender(string serverHost, int serverPort)
+		{
+			return indicator.AASender(Input, serverHost, serverPort);
+		}
+
+		public Indicators.AASender AASender(ISeries<double> input , string serverHost, int serverPort)
+		{
+			return indicator.AASender(input, serverHost, serverPort);
+		}
+	}
+}
+
+#endregion

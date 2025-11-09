@@ -148,6 +148,14 @@ class AbsorptionStrategyStreaming:
         Returns:
             Detection data dict if pattern detected, None otherwise
         """
+        # Validate price (reject 0 or negative prices)
+        if price <= 0:
+            return None
+
+        # Validate volume
+        if volume <= 0:
+            return None
+
         # Initialize start time on first tick
         if self.start_time is None:
             self.start_time = timestamp
@@ -365,6 +373,9 @@ class AbsorptionStrategyStreaming:
 
                 # Profile at -20s
                 if time_before_1x <= t_time <= timestamp - timedelta(seconds=self.profile_window // 2):
+                    # Skip BETWEEN and UNKNOWN sides
+                    if t_side not in ['BID', 'ASK']:
+                        continue
                     if t_price not in profile_before_1x:
                         profile_before_1x[t_price] = {"BID": 0, "ASK": 0}
                     profile_before_1x[t_price][t_side] += t_volume
@@ -372,6 +383,9 @@ class AbsorptionStrategyStreaming:
 
                 # Profile at -40s
                 if time_before_2x <= t_time <= time_before_1x:
+                    # Skip BETWEEN and UNKNOWN sides
+                    if t_side not in ['BID', 'ASK']:
+                        continue
                     if t_price not in profile_before_2x:
                         profile_before_2x[t_price] = {"BID": 0, "ASK": 0}
                     profile_before_2x[t_price][t_side] += t_volume

@@ -8,7 +8,7 @@ from absorption_strategy import AbsorptionStrategy
 
 
 # Configuration - modify these parameters as needed
-FICHERO_ORIGEN = "time_and_sales_nq_20250915_redux"
+FICHERO_ORIGEN = "time_and_sales_nq_20250917"
 
 # Profile shape detection configuration
 PROFILE_WINDOW = 20  # Rolling window size in seconds

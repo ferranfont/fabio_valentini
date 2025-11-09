@@ -176,6 +176,8 @@ temp/
 # Project specific
 # Large CSV files
 data/ts_and_dom_24_oct.csv
+data/time_and_sales_*.csv
+data/historic/time_and_sales_nq_all.csv
 outputs/
 
 *.mp4

@@ -167,6 +167,14 @@ namespace NinjaTrader.NinjaScript.Indicators
 
 			try
 			{
+				// Validate price (reject 0 or negative prices)
+				if (marketDataUpdate.Price <= 0)
+					return;
+
+				// Validate volume (reject 0 or negative volume)
+				if (marketDataUpdate.Volume <= 0)
+					return;
+
 				// Determine side based on price vs bid/ask
 				string side = "UNKNOWN";
 				if (marketDataUpdate.Price >= marketDataUpdate.Ask)

@@ -8,6 +8,8 @@ and records screen for 10 seconds on pattern detection.
 import socket
 import json
 import threading
+import csv
+import time
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -26,12 +28,12 @@ BUFFER_SIZE = 4096  # TCP receive buffer size in bytes
 
 # Strategy parameters (from main.py)
 PROFILE_WINDOW = 20  # Rolling window size in seconds
-EXTREME_VOLUME_MULTIPLIER = 2  # Extreme bar must be N times the second-largest
-MIN_PRICE_LEVELS = 20  # Minimum number of active price levels
-MIN_BID_ASK_SIZE = 30  # Minimum absolute size of largest BID/ASK bar
+EXTREME_VOLUME_MULTIPLIER = 0.1  # Antes 2 Extreme bar must be N times the second-largest
+MIN_PRICE_LEVELS = 3  # Antes 20 Minimum number of active price levels
+MIN_BID_ASK_SIZE = 3  # Antes 30 Minimum absolute size of largest BID/ASK bar
 PRICE_POSITION_THRESHOLD = 0.3  # Price must be in lower/upper 30% of profile range
 DIFF_DISTANCE = 0  # Minimum absolute price difference
-MIN_VOLUME = 10  # Minimum total volume (BID + ASK)
+MIN_VOLUME = 1 # Antes 10 inimum total volume (BID + ASK)
 
 # Detection timing
 COOLDOWN_PERIOD = 60  # Cooldown period in seconds between detections
@@ -42,7 +44,11 @@ BASE_DIR = Path(__file__).resolve().parent
 SCREEN_RECORD_DIR = BASE_DIR.parent / "recordings"
 SCREEN_RECORD_DIR.mkdir(parents=True, exist_ok=True)
 
-SCREEN_RECORD_DURATION = 10  # Seconds to record after detection
+# CSV logging configuration
+CSV_OUTPUT_DIR = BASE_DIR.parent / "data" / "monitor_ninja"
+CSV_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+SCREEN_RECORD_DURATION = 120  # Seconds to record after detection
 SCREEN_RECORD_FPS = 10  # Frames per second for recording
 VIDEO_CODEC = 'mp4v'  # Video codec (options: 'mp4v', 'XVID', 'MJPG')
 
@@ -218,6 +224,82 @@ class TickServer:
         )
 
         self.tick_count = 0
+        self.last_tick_data = None  # Almacenar último tick recibido
+        self.last_print_time = datetime.now()  # Control de impresión cada 10s
+        self.last_tick = None
+        self.last_log_time = time.time()
+
+        # CSV logging
+        self.csv_file = None
+        self.csv_writer = None
+        self.csv_handle = None
+
+        # Detection tracking for CSV shape column
+        self.last_detection_timestamp = None
+        self.last_detection_shape = None
+
+    def initialize_csv(self):
+        """Initialize CSV file for tick logging."""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.csv_file = CSV_OUTPUT_DIR / f"tick_server_{timestamp}.csv"
+        self.csv_handle = open(self.csv_file, 'w', newline='', encoding='utf-8')
+        self.csv_writer = csv.writer(self.csv_handle, delimiter=';')
+        # Headers: date;time;bid;ask;price;volume;side;shape
+        self.csv_writer.writerow(['date', 'time', 'bid', 'ask', 'price', 'volume', 'side', 'shape'])
+        self.csv_handle.flush()
+        print(f"[CSV] Logging ticks to: {self.csv_file}")
+
+    def close_csv(self):
+        """Close CSV file."""
+        if self.csv_handle:
+            self.csv_handle.close()
+            self.csv_handle = None
+            self.csv_writer = None
+            print(f"[CSV] Closed: {self.csv_file}")
+
+    def log_tick_to_csv(self, timestamp: datetime, price: float, volume: int, side: str, bid: float = None, ask: float = None, shape: str = None):
+        """
+        Log tick to CSV file.
+
+        Args:
+            timestamp: Tick timestamp
+            price: Trade price
+            volume: Trade volume
+            side: Trade side (BID/ASK/BETWEEN/UNKNOWN)
+            bid: Bid price (if available)
+            ask: Ask price (if available)
+            shape: Detection shape (d_shape/p_shape/None)
+        """
+        if not self.csv_writer:
+            return
+
+        date_str = timestamp.strftime('%Y%m%d')
+        time_str = timestamp.strftime('%H%M%S.%f')[:-3]  # Include milliseconds
+
+        # Check if this tick matches a detection timestamp
+        shape_value = ""
+        if self.last_detection_timestamp and self.last_detection_shape:
+            # Match detection to tick (within 1 second tolerance)
+            time_diff = abs((timestamp - self.last_detection_timestamp).total_seconds())
+            if time_diff < 1.0:
+                shape_value = self.last_detection_shape
+                # Clear detection after marking it
+                self.last_detection_timestamp = None
+                self.last_detection_shape = None
+
+        row = [
+            date_str,
+            time_str,
+            f"{bid:.2f}" if bid is not None else "",
+            f"{ask:.2f}" if ask is not None else "",
+            f"{price:.2f}",
+            volume,
+            side,
+            shape_value  # Will be empty string for most ticks, d_shape/p_shape for detections
+        ]
+
+        self.csv_writer.writerow(row)
+        self.csv_handle.flush()
 
     def on_pattern_detected(self, detection_data: dict):
         """
@@ -230,6 +312,10 @@ class TickServer:
         shape = detection_data['shape']
         price = detection_data['price']
         detection_num = detection_data['detection_num']
+
+        # Store detection info for CSV tagging
+        self.last_detection_timestamp = timestamp
+        self.last_detection_shape = shape
 
         print(f"\n{'*' * 80}")
         print(f"PATTERN DETECTED!")
@@ -271,6 +357,34 @@ class TickServer:
                     # Accept client connection
                     client_socket, client_address = self.socket.accept()
                     print(f"[OK] Client connected from {client_address}")
+
+                    # Limpiar buffer de estrategia al conectar cliente nuevo
+                    print(f"[RESET] Limpiando buffer de estrategia...")
+
+                    # Close previous CSV if exists
+                    self.close_csv()
+
+                    # Initialize new CSV for this session
+                    self.initialize_csv()
+
+                    self.strategy = AbsorptionStrategyStreaming(
+                        profile_window=PROFILE_WINDOW,
+                        extreme_volume_multiplier=EXTREME_VOLUME_MULTIPLIER,
+                        min_price_levels=MIN_PRICE_LEVELS,
+                        min_bid_ask_size=MIN_BID_ASK_SIZE,
+                        price_position_threshold=PRICE_POSITION_THRESHOLD,
+                        diff_distance=DIFF_DISTANCE,
+                        min_volume=MIN_VOLUME,
+                        cooldown_period=COOLDOWN_PERIOD,
+                        warmup_period=WARMUP_PERIOD,
+                        on_detection_callback=self.on_pattern_detected,
+                    )
+                    self.tick_count = 0
+                    self.last_tick_data = None
+                    self.last_print_time = datetime.now()
+                    self.last_detection_timestamp = None
+                    self.last_detection_shape = None
+                    print(f"[OK] Buffer limpiado, estrategia reiniciada\n")
 
                     # Handle client
                     self.handle_client(client_socket)
@@ -354,18 +468,56 @@ class TickServer:
             volume = int(tick_data['volume'])
             side = str(tick_data['side']).upper()
 
+            # Guardar último tick recibido
+            self.last_tick_data = {
+                'timestamp': timestamp,
+                'price': price,
+                'volume': volume,
+                'side': side
+            }
+
+            # Store last tick (para compatibilidad con logging mejorado)
+            self.last_tick = {
+                'timestamp': timestamp,
+                'price': price,
+                'volume': volume,
+                'side': side
+            }
+
+            # Log tick to CSV
+            # Note: NinjaTrader AASender doesn't send bid/ask separately,
+            # so we infer from side and price
+            bid_price = None
+            ask_price = None
+            if side == 'BID':
+                bid_price = price
+            elif side == 'ASK':
+                ask_price = price
+
+            self.log_tick_to_csv(timestamp, price, volume, side, bid_price, ask_price)
+
             # Process through strategy
             detection = self.strategy.process_tick(timestamp, price, volume, side)
 
             self.tick_count += 1
 
-            # Log progress
+            # Log progress every 1000 ticks
             if VERBOSE and self.tick_count % LOG_INTERVAL == 0:
                 stats = self.strategy.get_stats()
                 print(f"[STATS] Ticks: {self.tick_count:,} | "
                       f"Detections: {stats['detection_count']} | "
                       f"Last: {stats['last_detection']}")
 
+            # Log last tick every 10 seconds
+            current_time = time.time()
+            if current_time - self.last_log_time >= 10.0:
+                if self.last_tick:
+                    print(f"[TICK] Last: {self.last_tick['timestamp'].strftime('%H:%M:%S.%f')[:-3]} | "
+                          f"Price: {self.last_tick['price']:.2f} | "
+                          f"Vol: {self.last_tick['volume']} | "
+                          f"Side: {self.last_tick['side']} | "
+                          f"Total: {self.tick_count:,}")
+                self.last_log_time = current_time
         except Exception as e:
             print(f"[ERROR] Tick processing error: {e}")
 
@@ -373,6 +525,9 @@ class TickServer:
         """Finalize strategy and save results."""
         print(f"\n{'=' * 80}")
         print(f"Finalizing strategy...")
+
+        # Close CSV logging
+        self.close_csv()
 
         csv_path = self.strategy.finalize()
 
@@ -385,12 +540,18 @@ class TickServer:
             print(f"HTML report: {stats['html_path']}")
         if csv_path:
             print(f"Signals CSV: {csv_path}")
+        if self.csv_file:
+            print(f"Tick log CSV: {self.csv_file}")
         print(f"Recordings directory: {SCREEN_RECORD_DIR}")
         print(f"{'=' * 80}")
 
     def stop(self):
         """Stop the server."""
         self.running = False
+
+        # Close CSV if still open
+        self.close_csv()
+
         if self.socket:
             try:
                 self.socket.close()
@@ -415,6 +576,8 @@ def main():
     print(f"  Duration: {SCREEN_RECORD_DURATION}s")
     print(f"  FPS: {SCREEN_RECORD_FPS}")
     print(f"  Output: {SCREEN_RECORD_DIR}")
+    print(f"\nTick Logging:")
+    print(f"  CSV Output: {CSV_OUTPUT_DIR}")
     print("=" * 80 + "\n")
 
     server = TickServer(PORT)

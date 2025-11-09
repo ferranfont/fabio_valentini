@@ -216,15 +216,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                                         shape, direction, signalCounter));
 
                                     // Draw pattern detection marker (DOT for d_shape/p_shape)
+                                    double currentPrice = Close[0];
                                     if (shape == "d_shape")
                                     {
-                                        Draw.Dot(this, "Pattern_" + signalCounter, true, 0, Low[0] - 2 * TickSize, Brushes.Lime);
-                                        Print(string.Format("[AAStrategyBidirect] Drew GREEN dot (d_shape) at bar {0}, price {1}", CurrentBar, Low[0] - 2 * TickSize));
+                                        Draw.Dot(this, "Pattern_" + signalCounter, true, 0, currentPrice - 5 * TickSize, Brushes.Lime);
+                                        Print(string.Format("[AAStrategyBidirect] Drew GREEN dot (d_shape) at price {0:F2}", currentPrice - 5 * TickSize));
                                     }
                                     else if (shape == "p_shape")
                                     {
-                                        Draw.Dot(this, "Pattern_" + signalCounter, true, 0, High[0] + 2 * TickSize, Brushes.Red);
-                                        Print(string.Format("[AAStrategyBidirect] Drew RED dot (p_shape) at bar {0}, price {1}", CurrentBar, High[0] + 2 * TickSize));
+                                        Draw.Dot(this, "Pattern_" + signalCounter, true, 0, currentPrice + 5 * TickSize, Brushes.Red);
+                                        Print(string.Format("[AAStrategyBidirect] Drew RED dot (p_shape) at price {0:F2}", currentPrice + 5 * TickSize));
                                     }
 
                                     // Enter position
@@ -285,28 +286,38 @@ namespace NinjaTrader.NinjaScript.Strategies
                             Print(string.Format("[AAStrategyBidirect] Drew RED triangle (SHORT fill) at {0}", price + 3 * TickSize));
                         }
 
-                        // NOW place TP and SL orders using explicit exit methods
+                        // NOW place TP and SL orders using EXPLICIT orders (not Set methods)
                         if (pendingDirection == "LONG")
                         {
                             double tpPrice = price + (TakeProfitTicks * TickSize);
                             double slPrice = price - (StopLossTicks * TickSize);
 
-                            Print(string.Format("[AAStrategyBidirect] Setting LONG TP/SL: TP={0} @ {1:F2}, SL={2} @ {3:F2}",
-                                TakeProfitTicks, tpPrice, StopLossTicks, slPrice));
+                            Print(string.Format("[AAStrategyBidirect] Placing LONG TP/SL: TP @ {0:F2}, SL @ {1:F2}",
+                                tpPrice, slPrice));
 
-                            SetProfitTarget("LONG_ENTRY", CalculationMode.Ticks, TakeProfitTicks);
-                            SetStopLoss("LONG_ENTRY", CalculationMode.Ticks, StopLossTicks, false);
+                            // Place explicit exit orders (OCO)
+                            takeProfitOrder = ExitLongLimit(0, true, Quantity, tpPrice, "TP_LONG", "LONG_ENTRY");
+                            stopLossOrder = ExitLongStopMarket(0, true, Quantity, slPrice, "SL_LONG", "LONG_ENTRY");
+
+                            Print(string.Format("[AAStrategyBidirect] Orders placed: TP={0}, SL={1}",
+                                takeProfitOrder != null ? "OK" : "FAIL",
+                                stopLossOrder != null ? "OK" : "FAIL"));
                         }
                         else if (pendingDirection == "SHORT")
                         {
                             double tpPrice = price - (TakeProfitTicks * TickSize);
                             double slPrice = price + (StopLossTicks * TickSize);
 
-                            Print(string.Format("[AAStrategyBidirect] Setting SHORT TP/SL: TP={0} @ {1:F2}, SL={2} @ {3:F2}",
-                                TakeProfitTicks, tpPrice, StopLossTicks, slPrice));
+                            Print(string.Format("[AAStrategyBidirect] Placing SHORT TP/SL: TP @ {0:F2}, SL @ {1:F2}",
+                                tpPrice, slPrice));
 
-                            SetProfitTarget("SHORT_ENTRY", CalculationMode.Ticks, TakeProfitTicks);
-                            SetStopLoss("SHORT_ENTRY", CalculationMode.Ticks, StopLossTicks, false);
+                            // Place explicit exit orders (OCO)
+                            takeProfitOrder = ExitShortLimit(0, true, Quantity, tpPrice, "TP_SHORT", "SHORT_ENTRY");
+                            stopLossOrder = ExitShortStopMarket(0, true, Quantity, slPrice, "SL_SHORT", "SHORT_ENTRY");
+
+                            Print(string.Format("[AAStrategyBidirect] Orders placed: TP={0}, SL={1}",
+                                takeProfitOrder != null ? "OK" : "FAIL",
+                                stopLossOrder != null ? "OK" : "FAIL"));
                         }
 
                         waitingForFill = false;

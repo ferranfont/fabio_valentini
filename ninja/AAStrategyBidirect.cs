@@ -211,6 +211,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                                     Print(string.Format("[AAStrategyBidirect] Received {0} signal -> {1} entry",
                                         shape, direction));
 
+                                    // Draw signal marker on chart
+                                    if (direction == "LONG")
+                                    {
+                                        Draw.TriangleUp(this, "Signal_" + CurrentBar, true, 0, Low[0] - 2 * TickSize, Brushes.Green);
+                                    }
+                                    else
+                                    {
+                                        Draw.TriangleDown(this, "Signal_" + CurrentBar, true, 0, High[0] + 2 * TickSize, Brushes.Red);
+                                    }
+
                                     // Enter position
                                     if (direction == "LONG")
                                     {
@@ -256,6 +266,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         Print(string.Format("[AAStrategyBidirect] *** ENTRY FILLED at {0}, placing TP/SL ***", price));
 
+                        // Draw entry fill marker
+                        if (pendingDirection == "LONG")
+                        {
+                            Draw.ArrowUp(this, "EntryFill_" + CurrentBar, true, 0, price - 1 * TickSize, Brushes.LimeGreen);
+                        }
+                        else if (pendingDirection == "SHORT")
+                        {
+                            Draw.ArrowDown(this, "EntryFill_" + CurrentBar, true, 0, price + 1 * TickSize, Brushes.OrangeRed);
+                        }
+
                         // NOW place TP and SL orders
                         if (pendingDirection == "LONG")
                         {
@@ -289,6 +309,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         string exitTag = execution.Order.OrderType == OrderType.Limit ? "TARGET" : "STOP";
                         Print(string.Format("[AAStrategyBidirect] *** EXIT FILLED at {0} ({1}) ***", price, exitTag));
+
+                        // Draw exit marker
+                        if (exitTag == "TARGET")
+                        {
+                            Draw.Dot(this, "ExitTarget_" + CurrentBar, true, 0, price, Brushes.LimeGreen);
+                        }
+                        else // STOP
+                        {
+                            Draw.Dot(this, "ExitStop_" + CurrentBar, true, 0, price, Brushes.Red);
+                        }
 
                         // Send exit info to Python server
                         SendExitToServer(price, exitTag);

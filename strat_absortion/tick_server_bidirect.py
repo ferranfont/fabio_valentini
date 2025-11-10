@@ -8,6 +8,7 @@ and sends pattern signals back through the same socket.
 import socket
 import json
 import threading
+import csv
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -25,9 +26,9 @@ BUFFER_SIZE = 4096
 
 # Strategy parameters
 PROFILE_WINDOW = 20
-EXTREME_VOLUME_MULTIPLIER = 0.1
-MIN_PRICE_LEVELS = 3
-MIN_BID_ASK_SIZE = 3
+EXTREME_VOLUME_MULTIPLIER = 2
+MIN_PRICE_LEVELS = 20
+MIN_BID_ASK_SIZE = 30
 PRICE_POSITION_THRESHOLD = 0.3
 DIFF_DISTANCE = 0
 MIN_VOLUME = 1
@@ -39,6 +40,11 @@ WARMUP_PERIOD = 60
 # Logging configuration
 VERBOSE = True
 LOG_INTERVAL = 1000
+
+# CSV logging configuration
+BASE_DIR = Path(__file__).resolve().parent
+CSV_OUTPUT_DIR = BASE_DIR.parent / "data" / "monitor_ninja"
+CSV_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 
@@ -75,6 +81,78 @@ class SimpleBidirectServer:
         self.tick_count = 0
         self.detection_count = 0
 
+        # CSV logging
+        self.csv_file = None
+        self.csv_writer = None
+        self.csv_handle = None
+
+        # Detection tracking for CSV shape column
+        self.last_detection_timestamp = None
+        self.last_detection_shape = None
+
+    def initialize_csv(self):
+        """Initialize CSV file for tick logging."""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.csv_file = CSV_OUTPUT_DIR / f"tick_server_bidirect_{timestamp}.csv"
+        self.csv_handle = open(self.csv_file, 'w', newline='', encoding='utf-8')
+        self.csv_writer = csv.writer(self.csv_handle, delimiter=';')
+        # Headers: date;time;bid;ask;price;volume;side;shape
+        self.csv_writer.writerow(['date', 'time', 'bid', 'ask', 'price', 'volume', 'side', 'shape'])
+        self.csv_handle.flush()
+        print(f"[CSV] Logging ticks to: {self.csv_file}")
+
+    def close_csv(self):
+        """Close CSV file."""
+        if self.csv_handle:
+            self.csv_handle.close()
+            self.csv_handle = None
+            self.csv_writer = None
+            print(f"[CSV] Closed: {self.csv_file}")
+
+    def log_tick_to_csv(self, timestamp: datetime, price: float, volume: int, side: str, bid: float = None, ask: float = None, shape: str = None):
+        """
+        Log tick to CSV file.
+
+        Args:
+            timestamp: Tick timestamp
+            price: Trade price
+            volume: Trade volume
+            side: Trade side (BID/ASK/BETWEEN/UNKNOWN)
+            bid: Bid price (if available)
+            ask: Ask price (if available)
+            shape: Detection shape (d_shape/p_shape/None)
+        """
+        if not self.csv_writer:
+            return
+
+        date_str = timestamp.strftime('%Y%m%d')
+        time_str = timestamp.strftime('%H%M%S.%f')[:-3]  # Include milliseconds
+
+        # Check if this tick matches a detection timestamp
+        shape_value = ""
+        if self.last_detection_timestamp and self.last_detection_shape:
+            # Match detection to tick (within 1 second tolerance)
+            time_diff = abs((timestamp - self.last_detection_timestamp).total_seconds())
+            if time_diff < 1.0:
+                shape_value = self.last_detection_shape
+                # Clear detection after marking it
+                self.last_detection_timestamp = None
+                self.last_detection_shape = None
+
+        row = [
+            date_str,
+            time_str,
+            f"{bid:.2f}" if bid is not None else "",
+            f"{ask:.2f}" if ask is not None else "",
+            f"{price:.2f}",
+            volume,
+            side,
+            shape_value  # Will be empty string for most ticks, d_shape/p_shape for detections
+        ]
+
+        self.csv_writer.writerow(row)
+        self.csv_handle.flush()
+
     def on_pattern_detected(self, detection_data: dict):
         """
         Callback triggered when a pattern is detected.
@@ -89,6 +167,10 @@ class SimpleBidirectServer:
         detection_num = detection_data['detection_num']
 
         self.detection_count = detection_num
+
+        # Store detection info for CSV tagging
+        self.last_detection_timestamp = timestamp
+        self.last_detection_shape = shape
 
         print(f"\n{'*' * 80}")
         print(f"PATTERN DETECTED!")
@@ -145,6 +227,18 @@ class SimpleBidirectServer:
             volume = int(tick_data['volume'])
             side = str(tick_data['side']).upper()
 
+            # Log tick to CSV
+            # Note: NinjaTrader AASender doesn't send bid/ask separately,
+            # so we infer from side and price
+            bid_price = None
+            ask_price = None
+            if side == 'BID':
+                bid_price = price
+            elif side == 'ASK':
+                ask_price = price
+
+            self.log_tick_to_csv(timestamp, price, volume, side, bid_price, ask_price)
+
             # Process through strategy
             detection = self.strategy.process_tick(timestamp, price, volume, side)
 
@@ -196,6 +290,7 @@ class SimpleBidirectServer:
                         if "command" in message:
                             if message["command"] == "COMPLETE":
                                 print("[OK] Received completion signal from client")
+                                self.finalize()
                                 return
                         else:
                             # Regular tick data
@@ -236,6 +331,12 @@ class SimpleBidirectServer:
                     client_socket, client_address = self.socket.accept()
                     print(f"[OK] Client connected from {client_address}")
 
+                    # Close previous CSV if exists
+                    self.close_csv()
+
+                    # Initialize new CSV for this session
+                    self.initialize_csv()
+
                     # Reset strategy for new session
                     print(f"[RESET] Resetting strategy...")
                     self.strategy = AbsorptionStrategyStreaming(
@@ -252,6 +353,8 @@ class SimpleBidirectServer:
                     )
                     self.tick_count = 0
                     self.detection_count = 0
+                    self.last_detection_timestamp = None
+                    self.last_detection_shape = None
                     print(f"[OK] Strategy reset complete\n")
 
                     # Handle client
@@ -269,9 +372,36 @@ class SimpleBidirectServer:
         finally:
             self.stop()
 
+    def finalize(self):
+        """Finalize strategy and save results."""
+        print(f"\n{'=' * 80}")
+        print(f"Finalizing strategy...")
+
+        # Close CSV logging
+        self.close_csv()
+
+        # Finalize strategy (generates HTML and signals CSV)
+        csv_path = self.strategy.finalize()
+
+        stats = self.strategy.get_stats()
+        print(f"\n{'=' * 80}")
+        print(f"PROCESSING COMPLETE!")
+        print(f"Total ticks processed: {self.tick_count:,}")
+        print(f"Total detections: {stats['detection_count']}")
+        if stats.get('html_path'):
+            print(f"HTML report: {stats['html_path']}")
+        if csv_path:
+            print(f"Signals CSV: {csv_path}")
+        if self.csv_file:
+            print(f"Tick log CSV: {self.csv_file}")
+        print(f"{'=' * 80}")
+
     def stop(self):
         """Stop the server."""
         self.running = False
+
+        # Close CSV if still open
+        self.close_csv()
 
         if self.client_socket:
             try:

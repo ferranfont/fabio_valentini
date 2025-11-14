@@ -522,7 +522,16 @@ def main():
 
     # Abrir HTML en navegador
     print(f"\nAbriendo reporte en navegador...")
-    webbrowser.open(OUTPUT_HTML)
+    try:
+        import os
+        import platform
+        if platform.system() == 'Windows':
+            os.startfile(str(OUTPUT_HTML))
+        else:
+            webbrowser.open(f'file://{Path(OUTPUT_HTML).resolve()}')
+    except Exception as e:
+        print(f"  No se pudo abrir automaticamente: {e}")
+        print(f"  Abre manualmente: {OUTPUT_HTML}")
 
     print("\n" + "="*70)
     print("RESUMEN COMPLETADO")

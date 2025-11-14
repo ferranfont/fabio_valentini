@@ -255,7 +255,16 @@ def main():
     print(f"  - {dist_path}")
 
     print(f"\nAbriendo en navegador...")
-    webbrowser.open(equity_path)
+    try:
+        import os
+        import platform
+        if platform.system() == 'Windows':
+            os.startfile(str(equity_path))
+        else:
+            webbrowser.open(f'file://{Path(equity_path).resolve()}')
+    except Exception as e:
+        print(f"  No se pudo abrir automaticamente: {e}")
+        print(f"  Abre manualmente: {equity_path}")
 
     print("\nCompletado!")
 

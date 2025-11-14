@@ -20,7 +20,7 @@ from config import DATA_DIR
 # CONFIGURACIÓN
 # ====================================================
 # Archivo de datos tick
-DATA_FILE = "time_and_sales_nq_20250829.csv"
+DATA_FILE = "time_and_sales_nq_20251022.csv"
 
 # Auto-extract date from DATA_FILE for SIGNALS_FILE
 import re

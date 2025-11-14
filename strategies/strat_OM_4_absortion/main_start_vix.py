@@ -36,7 +36,7 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 CHARTS_DIR = PROJECT_ROOT / "charts"
 
 # Archivos de entrada
-TNS_FILE = DATA_DIR / "historic" / "time_and_sales_nq_20250919.csv"  # Archivo T&S
+TNS_FILE = DATA_DIR / "historic" / "time_and_sales_nq_20251023.csv"  # Archivo T&S
 
 # PLASE HERE THE db_shapes FILE YOU WANT TO USE
 tns_date_match = re.search(r"\d{8}", TNS_FILE.name)

@@ -11,8 +11,8 @@ import os
 
 # Configuration
 PROJECT_ROOT = Path(__file__).parent.parent
-DATA_FILE = PROJECT_ROOT / "data" / "historic" / "time_and_sales_nq_20250829.csv"
-OUTPUT_FILE = PROJECT_ROOT / "charts" / "price_chart_20250829.html"
+DATA_FILE = PROJECT_ROOT / "data" / "historic" / "time_and_sales_nq_20251022.csv"
+OUTPUT_FILE = PROJECT_ROOT / "charts" / "price_chart_20251022.html"
 
 print("="*80)
 print("SIMPLE PRICE CHART PLOTTER")

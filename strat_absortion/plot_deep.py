@@ -20,7 +20,8 @@ os.environ['QT_QPA_PLATFORM'] = 'windows'
 STARTING_INDEX = 0  # Change this to start at a different frame (0 = first frame)
 # You can also set a specific time like: STARTING_TIME = "2025-10-09 18:15:00"
 STARTING_TIME =  None   #"2025-10-09 18:02:25"    #None  # Set to None to use STARTING_INDEX instead
-PROFILE_FREQUENCY = 5  # Frequency for Market Profile in seconds
+PROFILE_FREQUENCY = 1  # Frequency for Market Profile in seconds
+FRAME_FREQUENCY = "1s" # Frequency for frame updates (500ms = 0.5 seconds)
 
 # Profile shape detection configuration
 DENSITY_SHAPE = 0.70  # 70% of volume must be concentrated in the zone (more strict)
@@ -31,11 +32,15 @@ DIFF_DISTANCE = 0  # Minimum absolute price difference between current and previ
 MIN_VOLUME = 10  # Minimum total volume (BID + ASK) in the profile (default = 10)
 # =======================================
 
-# Load dataq_30min.csv"
-#csv_path = "data/time_and_sales_nq
-csv_path = "data/time_and_sales.csv"
+# Load data
+from pathlib import Path as PathLib
+PROJECT_ROOT = PathLib(__file__).resolve().parent.parent
+csv_path = PROJECT_ROOT / "data" / "historic" / "time_and_sales_nq_20251022.csv"
+#csv_path = "data/time_and_sales.csv"
 
 print("Loading data...")
+print(f"File path: {csv_path}")
+print(f"File exists: {csv_path.exists()}")
 df = pd.read_csv(csv_path, sep=";", decimal=",")
 df["Timestamp"] = pd.to_datetime(df["Timestamp"])
 
@@ -47,7 +52,7 @@ profiles_data = []
 # Generate timestamps every 0.5 seconds for aggregation
 start_time = df["Timestamp"].min()
 end_time = df["Timestamp"].max()
-timestamps = pd.date_range(start=start_time, end=end_time, freq="1s")
+timestamps = pd.date_range(start=start_time, end=end_time, freq=FRAME_FREQUENCY)
 
 # Create a SINGLE RollingMarketProfile instance
 mp = RollingMarketProfile(window=timedelta(seconds=PROFILE_FREQUENCY))
@@ -771,9 +776,9 @@ print("\nDetecting d-Shape and p-Shape patterns...")
 output_dir = Path("outputs")
 output_dir.mkdir(exist_ok=True)
 
-# Generate filename with timestamp
-timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-csv_path_output = output_dir / f"db_shapes_{timestamp_str}.csv"
+# Generate filename with data date (20251022)
+#timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+csv_path_output = output_dir / "db_shapes_dom_20251022.csv"
 
 signals = []
 for i, (timestamp, profile, closing_price) in enumerate(profiles_data):

@@ -25,7 +25,7 @@ MODOS DE VISUALIZACIÓN:
 
 Características Visuales:
 - NO muestra señales d-shape/p-shape (solo trades ejecutados)
-- ENTRADAS: Triangle-up verde (LONG), Triangle-down rojo (SHORT)
+- ENTRADAS: NO SE MUESTRAN (sin triángulos)
 - SALIDAS TARGET: Cuadrado sin relleno VERDE + línea discontinua verde
 - SALIDAS STOP: Cuadrado sin relleno ROJO + línea discontinua roja
 - Solo GRID horizontal (sin grid vertical)
@@ -183,11 +183,37 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
         )
     )
 
-    # NO mostrar señales d_shape / p_shape (comentado)
-    # df_d = sig_win[sig_win["shape"].eq("d_shape")]
-    # df_p = sig_win[sig_win["shape"].eq("p_shape")]
+    # Mostrar señales d_shape / p_shape con dots ajustados
+    df_d = sig_win[sig_win["shape"].eq("d_shape")]
+    df_p = sig_win[sig_win["shape"].eq("p_shape")]
 
-    # Entradas/salidas con REGLA: cierre = triángulo opuesto a la dirección de entrada
+    # d_shape: green dot 0.05 puntos por encima del close (1 tick aprox)
+    if not df_d.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=df_d["timestamp"],
+                y=df_d["close_price"] + 0.05,
+                mode="markers",
+                marker=dict(symbol="circle", size=8, color="green"),
+                name="d-shape (BID)",
+                hovertemplate="<b>d-shape</b><br>%{x}<br>Close: %{y:.2f}<extra></extra>",
+            )
+        )
+
+    # p_shape: red dot 0.05 puntos por debajo del close (1 tick aprox)
+    if not df_p.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=df_p["timestamp"],
+                y=df_p["close_price"] - 0.05,
+                mode="markers",
+                marker=dict(symbol="circle", size=8, color="red"),
+                name="p-shape (ASK)",
+                hovertemplate="<b>p-shape</b><br>%{x}<br>Close: %{y:.2f}<extra></extra>",
+            )
+        )
+
+    # Entradas/salidas - NO mostrar triángulos de entrada
     for _, tr in df_trades.iterrows():
         side = tr["side"].upper()
         entry_t, exit_t = tr["entry_time"], tr["exit_time"]
@@ -195,24 +221,10 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
         pl = tr["profit_dollars"]
         reason = tr.get("exit_reason", "")
 
-        entry_symbol = "triangle-up" if side == "LONG" else "triangle-down"
-        entry_color  = "green" if side == "LONG" else "red"
-
-        fig.add_trace(
-            go.Scatter(
-                x=[entry_t], y=[entry_px],
-                mode="markers",
-                marker=dict(
-                    symbol=entry_symbol,
-                    size=11,
-                    color=entry_color,
-                    line=dict(width=2, color=entry_color)  # Contorno del mismo color: verde para LONG, rojo para SHORT
-                ),
-                name=f"{side} Entry",
-                showlegend=False,
-                hovertemplate=f"<b>ENTRY {side}</b><br>%{{x}}<br>Precio: %{{y:.2f}}<extra></extra>",
-            )
-        )
+        # NO añadir marcador de entrada (comentado)
+        # entry_symbol = "triangle-up" if side == "LONG" else "triangle-down"
+        # entry_color  = "green" if side == "LONG" else "red"
+        # fig.add_trace(...)
 
         # Salida: cuadrado sin relleno
         # Verde si TARGET, Rojo si STOP
@@ -284,9 +296,15 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
 
     print("Abriendo en el navegador...")
     try:
-        webbrowser.open(str(OUTPUT_HTML))
-    except Exception:
-        pass
+        import os
+        import platform
+        if platform.system() == 'Windows':
+            os.startfile(str(OUTPUT_HTML))
+        else:
+            webbrowser.open(f'file://{Path(OUTPUT_HTML).resolve()}')
+    except Exception as e:
+        print(f"  No se pudo abrir automaticamente: {e}")
+        print(f"  Abre manualmente: {OUTPUT_HTML}")
 
     print("\n¡Gráfico generado correctamente!")
     print("=" * 70)

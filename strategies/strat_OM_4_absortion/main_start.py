@@ -2,6 +2,8 @@
 MAIN SCRIPT - d-Shape & p-Shape Absorption Strategy
 ====================================================
 
+# Se usa Market Orders en vez de Limit Orders a efectos del backtest
+
 Ejecuta la estrategia completa en orden:
 1. Backtest con strat_absortion_shape.py
 2. Visualización de trades con plot_trades_chart.py
@@ -33,8 +35,8 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 CHARTS_DIR = PROJECT_ROOT / "charts"
 
 # Archivos de entrada
-TNS_FILE = DATA_DIR / "historic" / "time_and_sales_nq_20250918.csv"  # Archivo T&S completo del 17/09/2025
-# TNS_FILE = DATA_DIR / "time_and_sales_nq_30min.csv"  # Alternativa: 30 minutos
+TNS_FILE = DATA_DIR / "historic" / "time_and_sales_nq_20251022.csv"  # Archivo T&S del 22/10/2025
+# TNS_FILE = DATA_DIR / "time_and_sales_nq_20250915.csv"  # Alternativa: 30min del 15/09/2025
 
 # PLASE HERE THE db_shapes FILE YOU WANT TO USE
 tns_date_match = re.search(r"\d{8}", TNS_FILE.name)

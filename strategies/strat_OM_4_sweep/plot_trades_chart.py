@@ -1,22 +1,23 @@
 """
-Visualización de trades para estrategia d-Shape & p-Shape Absorption
+Visualización de trades para estrategia BIN FREQUENCY REVERSAL
 usando como SERIE BASE **todos los eventos** del fichero:
-    data/time_and_sales_nq.csv (FULL DAY)
+    data/historic/time_and_sales_nq_20251022.csv (FULL DAY)
 (semicolumnas y coma decimal)
 
 Lee:
-  • outputs/tracking_record_absortion_shape_all_day.csv  (trades TODO EL DÍA)
-  • outputs/db_shapes_20251024_003251.csv               (señales d/p-shape TODO EL DÍA)
-  • data/time_and_sales_nq.csv                          (precio base COMPLETO)
+  • outputs/sweep/bins_TR_20251022.csv           (trades ejecutados)
+  • outputs/sweep/bins_signals_temp.csv          (señales de bins)
+  • data/historic/time_and_sales_nq_20251022.csv (precio base COMPLETO)
+  • strat_sweep/db_mushroom_all_data.csv         (indicador naranja continuo)
 
 Guarda:
-  • charts/trades_visualization_absortion_shape_all_day.html
+  • charts/trades_visualization_bins_20251022.html
 
 MODOS DE VISUALIZACIÓN:
 ========================
 1. TODO EL DÍA (recomendado):
    - Cambiar USE_INDEX_RANGE = False
-   - Muestra TODOS los 5,367 trades del día completo (9:00h - 22:00h+)
+   - Muestra TODOS los trades del día completo (9:00h - 22:00h+)
 
 2. RANGO DE ÍNDICES:
    - Cambiar USE_INDEX_RANGE = True
@@ -24,10 +25,11 @@ MODOS DE VISUALIZACIÓN:
    - Ejemplo: 0 a 50 para ver solo los primeros 50 trades
 
 Características Visuales:
-- NO muestra señales d-shape/p-shape (solo trades ejecutados)
-- ENTRADAS: NO SE MUESTRAN (sin triángulos)
+- Muestra señales bin (dots) en el gráfico
+- ENTRADAS: Triángulos (verde=LONG, rojo=SHORT)
 - SALIDAS TARGET: Cuadrado sin relleno VERDE + línea discontinua verde
 - SALIDAS STOP: Cuadrado sin relleno ROJO + línea discontinua roja
+- Indicador naranja continuo (bin frequency rolling)
 - Solo GRID horizontal (sin grid vertical)
 - Equity: Área verde sin línea (sin outliers)
 """
@@ -45,23 +47,20 @@ from plotly.subplots import make_subplots
 # ============================================================
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import CHART_WIDTH, CHART_HEIGHT, SYMBOL
-from path_helper import get_output_path, get_charts_path
+from config import CHART_WIDTH, CHART_HEIGHT
 
-try:
-    from path_helper import get_data_path  # opcional
-except Exception:
-    get_data_path = None
+# Default paths for bins strategy
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+STRAT_SWEEP_DIR = PROJECT_ROOT / "strat_sweep"
+OUTPUTS_SWEEP_DIR = PROJECT_ROOT / "outputs" / "sweep"
+CHARTS_DIR = PROJECT_ROOT / "charts"
 
-TRADES_FILE = get_output_path("tracking_record_absortion_shape_all_day.csv")
-SIGNALS_FILE = get_output_path("db_shapes_20251024_003251.csv")
-if get_data_path:
-    BASE_TNS_FILE = get_data_path("time_and_sales_nq.csv")
-else:
-    PROJECT_ROOT = Path(__file__).resolve().parents[2]
-    BASE_TNS_FILE = PROJECT_ROOT / "data" / "time_and_sales_nq.csv"
+TRADES_FILE = OUTPUTS_SWEEP_DIR / "bins_TR_20251022.csv"
+SIGNALS_FILE = OUTPUTS_SWEEP_DIR / "bins_signals_temp.csv"  # Created by main_strat_bins.py
+BASE_TNS_FILE = PROJECT_ROOT / "data" / "historic" / "time_and_sales_nq_20251022.csv"
+OUTPUT_HTML = CHARTS_DIR / "trades_visualization_bins_20251022.html"
 
-OUTPUT_HTML = get_charts_path("trades_visualization_absortion_shape_all_day.html")
+SYMBOL = "NQ - BIN REVERSAL (UP->SHORT, DOWN->LONG)"
 
 # ============================================================
 # CONFIGURACIÓN DE VISUALIZACIÓN
@@ -195,11 +194,54 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
     print(f"Ventana: {time_start} — {time_end}")
 
     # ========================================================
-    # PLOT
+    # LOAD BIN FREQUENCY DATA (CONTINUOUS INDICATOR)
     # ========================================================
-    fig = go.Figure()
+    # Load continuous frequency indicator from db_mushroom_all_data.csv
+    bins_continuous = None
+    try:
+        PROJECT_ROOT = Path(__file__).resolve().parents[2]
+        BINS_ALL_DATA_FILE = PROJECT_ROOT / "strat_sweep" / "db_mushroom_all_data.csv"
 
-    # Precio base T&S (línea azul)
+        if BINS_ALL_DATA_FILE.exists():
+            print(f"[INFO] Loading continuous bin frequency from: {BINS_ALL_DATA_FILE.name}")
+
+            # Load full resampled data
+            df_all = pd.read_csv(BINS_ALL_DATA_FILE, sep=';', decimal=',')
+            df_all.columns = df_all.columns.str.strip()
+            df_all['timestamp'] = pd.to_datetime(df_all['timestamp'])
+
+            # Convert numeric columns (European format)
+            df_all['close_price'] = df_all['close_price'].astype(str).str.replace(',', '.').astype(float)
+            df_all['total_bid'] = df_all['total_bid'].fillna(0).astype(str).str.replace(',', '.').astype(float)
+            df_all['total_ask'] = df_all['total_ask'].fillna(0).astype(str).str.replace(',', '.').astype(float)
+
+            # Calculate rolling frequency (same as plot_resample_sweep.py)
+            VOLUME_THRESHOLD = 50
+            BIN_SIZE = 10
+            window_frames = int(BIN_SIZE / 0.5)  # 10s / 0.5s = 20 frames
+
+            df_all['is_bid_signal'] = (df_all['total_bid'] > VOLUME_THRESHOLD).astype(int)
+            df_all['is_ask_signal'] = (df_all['total_ask'] > VOLUME_THRESHOLD).astype(int)
+            df_all['freq_bid_rolling'] = df_all['is_bid_signal'].rolling(window=window_frames, min_periods=1).sum()
+            df_all['freq_ask_rolling'] = df_all['is_ask_signal'].rolling(window=window_frames, min_periods=1).sum()
+            df_all['freq_total_rolling'] = df_all['freq_bid_rolling'] + df_all['freq_ask_rolling']
+
+            # Filter to time window
+            bins_continuous = df_all[(df_all['timestamp'] >= time_start) & (df_all['timestamp'] <= time_end)].copy()
+            print(f"[OK] Continuous bin frequency loaded: {len(bins_continuous):,} frames (max freq: {bins_continuous['freq_total_rolling'].max():.0f})")
+        else:
+            print(f"[WARN] {BINS_ALL_DATA_FILE} not found - bin indicator will not be shown")
+    except Exception as e:
+        print(f"[ERROR] Could not load continuous bin frequency data: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # ========================================================
+    # PLOT (with secondary Y-axis for bin frequency)
+    # ========================================================
+    fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
+
+    # Precio base T&S (línea azul) - PRIMARY Y-AXIS
     fig.add_trace(
         go.Scatter(
             x=base_win[ts_col],
@@ -209,7 +251,8 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
             opacity=0.7,
             name="Precio (T&S)",
             hovertemplate="<b>%{x}</b><br>Precio: %{y:.2f}<extra></extra>",
-        )
+        ),
+        secondary_y=False
     )
 
     ema_series = None
@@ -224,7 +267,8 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
                 line=dict(width=2, color='green'),
                 name=f"SMA {EMA_PERIOD}",
                 hovertemplate="<b>SMA</b><br>%{x}<br>Valor: %{y:.2f}<extra></extra>",
-            )
+            ),
+            secondary_y=False
         )
         ema_lookup = (
             pd.DataFrame(
@@ -289,7 +333,8 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
                 name=f"{visual_side} Entry",
                 showlegend=False,
                 hovertemplate=f"<b>{visual_side} ENTRY</b><br>%{{x}}<br>Precio: %{{y:.2f}}<extra></extra>",
-            )
+            ),
+            secondary_y=False
         )
 
         # Salida: cuadrado sin relleno
@@ -327,7 +372,8 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
                 name=f"{visual_side} Exit {reason}",
                 showlegend=False,
                 hovertemplate=f"<b>EXIT {reason}</b><br>%{{x}}<br>Precio: %{{y:.2f}}<br>P/L: ${pl:.2f}<extra></extra>",
-            )
+            ),
+            secondary_y=False
         )
 
         # Línea conectando entrada y salida (siempre visible para cortos incluso con TARGET/STOP)
@@ -340,13 +386,74 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
                 opacity=connector_opacity,
                 showlegend=False,
                 hoverinfo="skip",
-            )
+            ),
+            secondary_y=False
         )
+
+    # ========================================================
+    # BIN FREQUENCY INDICATOR (SECONDARY Y-AXIS - RIGHT)
+    # ========================================================
+    if bins_continuous is not None and not bins_continuous.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=bins_continuous["timestamp"],  # Continuous timestamps
+                y=bins_continuous["freq_total_rolling"],  # Continuous rolling frequency
+                mode="lines",
+                name=f"Volume Frequency (Rolling 10s)",
+                line=dict(color="orange", width=2),  # Smooth line (no steps)
+                fill="tozeroy",
+                fillcolor="rgba(255,165,0,0.1)",
+                hovertemplate="<b>Bin Frequency</b><br>%{x}<br>Freq: %{y:.0f}<extra></extra>",
+            ),
+            secondary_y=True
+        )
+
+    # ========================================================
+    # ADD VERTICAL ORANGE LINES AT BIN PEAKS
+    # ========================================================
+    # Load bin peaks from db_mushroom_bins.csv
+    shapes = []
+    try:
+        BINS_FILE = PROJECT_ROOT / "strat_sweep" / "db_mushroom_bins.csv"
+        if BINS_FILE.exists():
+            print(f"[INFO] Loading bin peaks for vertical lines from: {BINS_FILE.name}")
+            df_bins = pd.read_csv(BINS_FILE, sep=';', decimal=',')
+            df_bins['peak_timestamp'] = pd.to_datetime(df_bins['peak_timestamp'])
+
+            # Filter to time window
+            bins_in_window = df_bins[
+                (df_bins['peak_timestamp'] >= time_start) &
+                (df_bins['peak_timestamp'] <= time_end)
+            ]
+
+            print(f"[INFO] Adding {len(bins_in_window)} vertical lines at bin peaks")
+
+            # Add vertical orange lines at each peak_timestamp
+            for timestamp in bins_in_window['peak_timestamp']:
+                shapes.append(
+                    dict(
+                        type='line',
+                        x0=timestamp,
+                        x1=timestamp,
+                        y0=0,
+                        y1=1,
+                        yref='paper',
+                        line=dict(color='rgba(255,165,0,0.5)', width=2, dash='solid'),
+                        layer='below'
+                    )
+                )
+        else:
+            print(f"[WARN] {BINS_FILE} not found - vertical lines will not be shown")
+    except Exception as e:
+        print(f"[ERROR] Could not load bin peaks: {e}")
+        import traceback
+        traceback.print_exc()
 
     # Panel 2: P&L acumulado (SOLO área verde, sin línea)
     # ===== Layout: SOLO GRID HORIZONTAL =====
     fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.08)")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.08)", secondary_y=False)
+    fig.update_yaxes(showgrid=False, secondary_y=True)
 
     # Title: Show index range or "ALL DAY" based on USE_INDEX_RANGE flag
     if USE_INDEX_RANGE:
@@ -362,7 +469,12 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
         hovermode="closest",
         template="plotly_white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        shapes=shapes  # Add vertical lines at bin peaks
     )
+
+    # Configure Y-axis titles
+    fig.update_yaxes(title_text="Price (NQ)", secondary_y=False)
+    fig.update_yaxes(title_text="Bin Frequency", secondary_y=True, showgrid=False)
 
     # Guardar y abrir
     Path(OUTPUT_HTML).parent.mkdir(parents=True, exist_ok=True)

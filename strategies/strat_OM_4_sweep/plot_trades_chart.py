@@ -30,8 +30,10 @@ Características Visuales:
 - SALIDAS TARGET: Cuadrado sin relleno VERDE + línea discontinua verde
 - SALIDAS STOP: Cuadrado sin relleno ROJO + línea discontinua roja
 - Indicador naranja continuo (bin frequency rolling)
+- BINS START: Línea vertical naranja (width=1, alpha=0.5) + círculo naranja relleno
+- BINS END: Línea vertical naranja (width=1, alpha=0.5) + círculo naranja hueco
+- SMA200: Línea verde fina (width=1, opacity=0.5)
 - Solo GRID horizontal (sin grid vertical)
-- Equity: Área verde sin línea (sin outliers)
 """
 
 import webbrowser
@@ -151,7 +153,7 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
     if "timestamp" not in df_signals.columns or "close_price" not in df_signals.columns:
         raise ValueError("El archivo de señales debe contener 'timestamp' y 'close_price'")
 
-    df_signals["timestamp"] = pd.to_datetime(df_signals["timestamp"]).dt.floor("S")
+    df_signals["timestamp"] = pd.to_datetime(df_signals["timestamp"]).dt.floor("s")
     df_signals["close_price"] = _to_float(df_signals["close_price"])
 
     if "mushroom" in df_signals.columns:
@@ -264,7 +266,8 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
                 x=base_win[ts_col],
                 y=ema_series,
                 mode="lines",
-                line=dict(width=2, color='green'),
+                line=dict(width=1, color='green'),
+                opacity=0.5,
                 name=f"SMA {EMA_PERIOD}",
                 hovertemplate="<b>SMA</b><br>%{x}<br>Valor: %{y:.2f}<extra></extra>",
             ),
@@ -409,16 +412,25 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
         )
 
     # ========================================================
-    # ADD VERTICAL ORANGE LINES AT BIN PEAKS
+    # ADD VERTICAL ORANGE LINES AT BIN PEAKS + MARKERS
     # ========================================================
     # Load bin peaks from db_mushroom_bins.csv
     shapes = []
+    bin_start_times = []
+    bin_start_freqs = []
+    bin_end_times = []
+    bin_end_freqs = []
+
     try:
         BINS_FILE = PROJECT_ROOT / "strat_sweep" / "db_mushroom_bins.csv"
         if BINS_FILE.exists():
             print(f"[INFO] Loading bin peaks for vertical lines from: {BINS_FILE.name}")
             df_bins = pd.read_csv(BINS_FILE, sep=';', decimal=',')
             df_bins['peak_timestamp'] = pd.to_datetime(df_bins['peak_timestamp'])
+            df_bins['signal_timestamp'] = pd.to_datetime(df_bins['signal_timestamp'])
+
+            # Convert frequency columns (European format)
+            df_bins['peak_freq'] = df_bins['peak_freq'].astype(str).str.replace(',', '.').astype(float)
 
             # Filter to time window
             bins_in_window = df_bins[
@@ -426,19 +438,55 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
                 (df_bins['peak_timestamp'] <= time_end)
             ]
 
-            print(f"[INFO] Adding {len(bins_in_window)} vertical lines at bin peaks")
+            print(f"[INFO] Adding {len(bins_in_window)} bin markers (start/end) and vertical lines")
 
-            # Add vertical orange lines at each peak_timestamp
-            for timestamp in bins_in_window['peak_timestamp']:
+            # Collect bin start/end positions for scatter markers
+            for _, bin_row in bins_in_window.iterrows():
+                peak_time = bin_row['peak_timestamp']
+                signal_time = bin_row['signal_timestamp']
+                peak_freq = bin_row['peak_freq']
+
+                # Store peak (start) marker positions
+                bin_start_times.append(peak_time)
+                bin_start_freqs.append(peak_freq)
+
+                # Find frequency at signal_timestamp (end) by looking up in bins_continuous
+                if bins_continuous is not None:
+                    signal_freq_row = bins_continuous[bins_continuous['timestamp'] == signal_time]
+                    if not signal_freq_row.empty:
+                        signal_freq = signal_freq_row['freq_total_rolling'].iloc[0]
+                    else:
+                        # If exact timestamp not found, use nearest
+                        idx = (bins_continuous['timestamp'] - signal_time).abs().idxmin()
+                        signal_freq = bins_continuous.loc[idx, 'freq_total_rolling']
+
+                    bin_end_times.append(signal_time)
+                    bin_end_freqs.append(signal_freq)
+
+                # Add vertical orange line at peak_timestamp (bin START)
                 shapes.append(
                     dict(
                         type='line',
-                        x0=timestamp,
-                        x1=timestamp,
+                        x0=peak_time,
+                        x1=peak_time,
                         y0=0,
                         y1=1,
                         yref='paper',
-                        line=dict(color='rgba(255,165,0,0.5)', width=2, dash='solid'),
+                        line=dict(color='rgba(255,165,0,0.5)', width=1),
+                        layer='below'
+                    )
+                )
+
+                # Add vertical orange line at signal_timestamp (bin END)
+                shapes.append(
+                    dict(
+                        type='line',
+                        x0=signal_time,
+                        x1=signal_time,
+                        y0=0,
+                        y1=1,
+                        yref='paper',
+                        line=dict(color='rgba(255,165,0,0.5)', width=1),
                         layer='below'
                     )
                 )
@@ -448,6 +496,47 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
         print(f"[ERROR] Could not load bin peaks: {e}")
         import traceback
         traceback.print_exc()
+
+    # ========================================================
+    # ADD SCATTER MARKERS ON ORANGE LINE (START=ORANGE FILLED, END=ORANGE HOLLOW)
+    # ========================================================
+    # Bin START markers (orange filled circles at peak - smaller)
+    if bin_start_times and bins_continuous is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=bin_start_times,
+                y=bin_start_freqs,
+                mode="markers",
+                name="Bin START (Peak)",
+                marker=dict(
+                    symbol="circle",
+                    size=8,
+                    color="orange",
+                    line=dict(width=1, color="darkorange")
+                ),
+                hovertemplate="<b>BIN START</b><br>%{x}<br>Peak Freq: %{y:.0f}<extra></extra>",
+            ),
+            secondary_y=True
+        )
+
+    # Bin END markers (orange hollow circles at signal)
+    if bin_end_times and bins_continuous is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=bin_end_times,
+                y=bin_end_freqs,
+                mode="markers",
+                name="Bin END (Signal)",
+                marker=dict(
+                    symbol="circle-open",
+                    size=8,
+                    color="orange",
+                    line=dict(width=2, color="orange")
+                ),
+                hovertemplate="<b>BIN END</b><br>%{x}<br>Freq: %{y:.0f}<extra></extra>",
+            ),
+            secondary_y=True
+        )
 
     # Panel 2: P&L acumulado (SOLO área verde, sin línea)
     # ===== Layout: SOLO GRID HORIZONTAL =====

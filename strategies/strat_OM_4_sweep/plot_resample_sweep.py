@@ -19,9 +19,10 @@ BIN_SIZE = 10  # Bin size in seconds for frequency calculation (more sensitive)
 BIN_FILTER = 4  # Minimum frequency to show in table (filters out low-activity bins)
 SUPPRESSION_WINDOW_SECONDS = 30  # Group peaks within this window (seconds) and keep only highest
 
-# TREND DETECTION PARAMETERS
-SMA_TREND_PERIOD = 40  # SMA period for trend detection (40 frames = 20 seconds at 0.5s/frame)
-TREND_THRESHOLD_PCT = 0.0002  # 0.02% threshold for up/down classification (~0.5 points on NQ 25000)
+# TREND DETECTION PARAMETERS (HYBRID METHOD: N-periods lookback + ROC)
+LOOKBACK_PERIODS = 10  # Compare price with N frames ago (10 frames = 5 seconds at 0.5s/frame)
+MIN_CHANGE_POINTS = 3.0  # Minimum price change in points to detect trend
+MIN_ROC_PCT = 0.01  # Minimum Rate of Change in % (0.01% ~ 2.5 points on NQ 25000)
 
 # File paths
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -85,11 +86,23 @@ print(f"  - Max TOTAL frequency: {df['freq_total_rolling'].max():.0f} signals pe
 print(f"  - Avg TOTAL frequency: {df['freq_total_rolling'].mean():.1f} signals per {BIN_SIZE}s")
 
 # ===========================================================================
-# CALCULATE PRICE SMA FOR TREND DETECTION
+# CALCULATE HYBRID TREND DETECTION (N-periods lookback + ROC)
 # ===========================================================================
-print(f"\n[INFO] Calculating price SMA for trend detection (period={SMA_TREND_PERIOD} frames)...")
-df['price_sma'] = df['close_price'].rolling(window=SMA_TREND_PERIOD, min_periods=1).mean()
-print(f"[OK] Price SMA calculated")
+print(f"\n[INFO] Calculating HYBRID trend detection (lookback={LOOKBACK_PERIODS} frames, ~{LOOKBACK_PERIODS * 0.5:.0f}s)...")
+
+# Calculate price N periods ago
+df['price_N_ago'] = df['close_price'].shift(LOOKBACK_PERIODS)
+
+# Calculate absolute price change in points
+df['price_change'] = df['close_price'] - df['price_N_ago']
+
+# Calculate Rate of Change (ROC) in percentage
+df['roc_pct'] = (df['price_change'] / df['price_N_ago']) * 100
+
+print(f"[OK] Hybrid trend detection calculated")
+print(f"  - Lookback period: {LOOKBACK_PERIODS} frames ({LOOKBACK_PERIODS * 0.5:.0f} seconds)")
+print(f"  - Min change threshold: {MIN_CHANGE_POINTS} points")
+print(f"  - Min ROC threshold: {MIN_ROC_PCT}%")
 
 # ===========================================================================
 # CALCULATE BINS (for trading signals, kept separate)
@@ -157,22 +170,27 @@ for idx, row in reversal_points.iterrows():
     peak_row = df.loc[peak_idx]
 
     # ============================================================
-    # DETERMINE PRICE TREND USING SMA AT PEAK MOMENT
+    # DETERMINE PRICE TREND USING HYBRID METHOD (N-periods + ROC)
     # ============================================================
-    # Compare peak price with its SMA to determine true trend
+    # Use lookback comparison and ROC to detect trend at peak moment
     peak_price = peak_row['close_price']
-    peak_sma = peak_row['price_sma']
+    peak_change = peak_row['price_change']  # Change vs N periods ago
+    peak_roc = peak_row['roc_pct']          # Rate of Change in %
 
-    # Calculate percentage deviation from SMA
-    price_deviation_pct = (peak_price - peak_sma) / peak_sma
-
-    # Classify trend based on SMA position
-    if price_deviation_pct > TREND_THRESHOLD_PCT:
-        price_tag = 'up'    # Price above SMA → uptrend
-    elif price_deviation_pct < -TREND_THRESHOLD_PCT:
-        price_tag = 'down'  # Price below SMA → downtrend
+    # Classify trend based on HYBRID criteria (both conditions must be met)
+    if peak_change > MIN_CHANGE_POINTS and peak_roc > MIN_ROC_PCT:
+        price_tag = 'up'    # Price rising → uptrend → ENTER SHORT (contratrend)
+    elif peak_change < -MIN_CHANGE_POINTS and peak_roc < -MIN_ROC_PCT:
+        price_tag = 'down'  # Price falling → downtrend → ENTER LONG (contratrend)
     else:
-        price_tag = 'flat'  # Price near SMA → no clear trend
+        price_tag = 'flat'  # No clear trend or insufficient movement
+
+    # Calculate percentage deviation for statistics (vs N-periods ago)
+    price_N_ago = peak_row['price_N_ago']
+    if pd.notna(price_N_ago) and price_N_ago > 0:
+        price_deviation_pct = peak_roc / 100  # Convert ROC% to decimal for compatibility
+    else:
+        price_deviation_pct = 0.0
 
     # Calculate price change from peak to signal (for statistics)
     price_change = row['close_price'] - peak_row['close_price']
@@ -182,7 +200,7 @@ for idx, row in reversal_points.iterrows():
         'peak_timestamp': peak_row['timestamp'],          # Timestamp at peak
         'peak_freq': int(peak_row['freq_total_rolling']), # Max frequency value (bin máximo)
         'peak_close_price': peak_row['close_price'],      # Price at peak
-        'peak_sma': round(peak_sma, 2),                    # SMA at peak (for trend detection)
+        'peak_price_N_ago': round(price_N_ago, 2) if pd.notna(price_N_ago) else 0.0,  # Price N periods ago (for trend detection)
 
         # ENTRY SIGNAL DATA (siguiente tick tras el pico, cuando freq cae)
         'signal_timestamp': row['timestamp'],              # Entry signal timestamp (SEND ORDER HERE)
@@ -197,10 +215,12 @@ for idx, row in reversal_points.iterrows():
         'max_total_bid': int(row['total_bid']),            # BID volume at signal
         'max_total_ask': int(row['total_ask']),            # ASK volume at signal
 
-        # PRICE MOVEMENT AND TREND
+        # PRICE MOVEMENT AND TREND (HYBRID METHOD)
         'price_change': round(price_change, 2),            # Price movement from peak to signal
-        'price_tag': price_tag,                            # Direction tag based on SMA ('up'/'down'/'flat')
-        'price_vs_sma_pct': round(price_deviation_pct * 100, 4),  # % deviation from SMA at peak
+        'price_change_lookback': round(peak_change, 2) if pd.notna(peak_change) else 0.0,  # Change vs N periods ago
+        'roc_pct': round(peak_roc, 4) if pd.notna(peak_roc) else 0.0,  # Rate of Change %
+        'price_tag': price_tag,                            # Direction tag based on HYBRID ('up'/'down'/'flat')
+        'price_vs_lookback_pct': round(price_deviation_pct * 100, 4),  # % deviation vs N-ago (same as ROC)
     })
 
 # Create DataFrame
@@ -269,24 +289,27 @@ if len(peak_signals_df) > 0:
               f"{int(row['max_total_bid']):<8} {int(row['max_total_ask']):<8}")
 
     print("=" * 200)
-    print(f"\n[INFO] NEW TREND DETECTION METHOD - Using SMA for price_tag classification:")
-    print(f"  - SMA Period: {SMA_TREND_PERIOD} frames ({SMA_TREND_PERIOD * 0.5:.0f} seconds)")
-    print(f"  - Threshold: {TREND_THRESHOLD_PCT * 100:.02f}% deviation")
-    print(f"  - Logic: If peak_price > peak_sma * {1 + TREND_THRESHOLD_PCT:.6f} => 'up'")
-    print(f"           If peak_price < peak_sma * {1 - TREND_THRESHOLD_PCT:.6f} => 'down'")
+    print(f"\n[INFO] HYBRID TREND DETECTION METHOD - Using N-periods lookback + ROC for price_tag:")
+    print(f"  - Lookback Period: {LOOKBACK_PERIODS} frames ({LOOKBACK_PERIODS * 0.5:.0f} seconds)")
+    print(f"  - Min Change: {MIN_CHANGE_POINTS} points")
+    print(f"  - Min ROC: {MIN_ROC_PCT}%")
+    print(f"  - Logic: If (price_change > {MIN_CHANGE_POINTS} pts AND roc > {MIN_ROC_PCT}%) => 'up' (ENTER SHORT)")
+    print(f"           If (price_change < -{MIN_CHANGE_POINTS} pts AND roc < -{MIN_ROC_PCT}%) => 'down' (ENTER LONG)")
     print(f"           Otherwise => 'flat'")
     print(f"\n[INFO] CSV Structure - Column Descriptions:")
     print(f"  - peak_timestamp: Timestamp when frequency reached MAXIMUM (peak)")
     print(f"  - peak_freq: Maximum frequency value (bin máximo)")
     print(f"  - peak_close_price: Close price at peak moment")
-    print(f"  - peak_sma: SMA value at peak (USED FOR TREND DETECTION)")
+    print(f"  - peak_price_N_ago: Price {LOOKBACK_PERIODS} frames ago (USED FOR TREND DETECTION)")
     print(f"  - signal_timestamp: Entry signal timestamp (NEXT TICK after peak, when freq drops)")
     print(f"  - signal_close_price: ORDER ENTRY PRICE (close price at signal moment)")
     print(f"  - freq_bid/freq_ask/freq_total: Frequency components at signal time")
     print(f"  - max_total_bid/max_total_ask: Volume levels at signal time")
     print(f"  - price_change: Price movement from peak to signal")
-    print(f"  - price_tag: TREND DIRECTION based on peak_price vs peak_sma ('up'/'down'/'flat')")
-    print(f"  - price_vs_sma_pct: % deviation from SMA at peak (positive = above SMA)")
+    print(f"  - price_change_lookback: Price change vs {LOOKBACK_PERIODS} periods ago (in points)")
+    print(f"  - roc_pct: Rate of Change % vs {LOOKBACK_PERIODS} periods ago")
+    print(f"  - price_tag: TREND DIRECTION based on HYBRID method ('up'/'down'/'flat')")
+    print(f"  - price_vs_lookback_pct: % deviation from price N-ago (same as ROC)")
 
 # Export to CSV
 csv_output_path = STRAT_SWEEP_DIR / "db_mushroom_bins.csv"

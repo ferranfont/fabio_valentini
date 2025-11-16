@@ -80,25 +80,25 @@ class PendingOrder:
 # ========= BACKTEST =========
 def run_backtest_bins(df_bins: pd.DataFrame, df_base: pd.DataFrame) -> pd.DataFrame:
     """
-    Backtest basado en bins con lógica inversa (PEAK ENTRY):
-    - price_tag='up' → SHORT
-    - price_tag='down' → LONG
+    Backtest basado en bins con lógica inversa (RESET ENTRY):
+    - price_tag='up' → SHORT (contrarian: price above SMA, expect reversal down)
+    - price_tag='down' → LONG (contrarian: price below SMA, expect reversal up)
 
-    NUEVA LÓGICA:
-    - Entra en el PEAK (peak_timestamp, peak_close_price)
-    - Mantiene 1 posición por bin hasta detectar nuevo peak
-    - Cierra la anterior cuando llega un nuevo peak
+    NUEVA LÓGICA CON RESET:
+    - Entra en el RESET (reset_timestamp, reset_price)
+    - Cada reset representa fin de acumulación de volumen
+    - Entry basado en price_tag (contrarian logic)
 
-    df_bins: columnas ['peak_timestamp','peak_close_price','price_tag', etc.]
+    df_bins: columnas ['reset_timestamp','reset_price','price_tag', etc.]
     df_base: columnas ['timestamp','price'] (derivado de T&S)
     """
-    # Preparar datos de bins (señales) - ORDENAR POR PEAK_TIMESTAMP
-    # ELIMINAR DUPLICADOS: Solo tomar la primera señal por cada peak_timestamp único
-    bins = df_bins.copy().sort_values(["peak_timestamp", "signal_timestamp"]).drop_duplicates("peak_timestamp", keep="first").reset_index(drop=True)
+    # Preparar datos de bins (señales) - ORDENAR POR RESET_TIMESTAMP
+    # ELIMINAR DUPLICADOS: Solo tomar la primera señal por cada reset_timestamp único
+    bins = df_bins.copy().sort_values("reset_timestamp").drop_duplicates("reset_timestamp", keep="first").reset_index(drop=True)
     bins['signal_idx'] = range(len(bins))
 
-    print(f"  [INFO] Removed {len(df_bins) - len(bins)} duplicate peak timestamps")
-    print(f"  [INFO] Using {len(bins)} unique peak signals for backtest")
+    print(f"  [INFO] Removed {len(df_bins) - len(bins)} duplicate reset timestamps")
+    print(f"  [INFO] Using {len(bins)} unique reset signals for backtest")
 
     base = df_base.copy().sort_values("timestamp").reset_index(drop=True)
 
@@ -210,7 +210,7 @@ def run_backtest_bins(df_bins: pd.DataFrame, df_base: pd.DataFrame) -> pd.DataFr
                 # Add bin signal data
                 if pos.signal_data:
                     for key, value in pos.signal_data.items():
-                        if key not in ['signal_timestamp', 'signal_idx']:
+                        if key not in ['reset_timestamp', 'signal_idx']:
                             trade_record[f"bin_{key}"] = value
 
                 trades.append(trade_record)
@@ -223,54 +223,57 @@ def run_backtest_bins(df_bins: pd.DataFrame, df_base: pd.DataFrame) -> pd.DataFr
         # Try to fill pending orders
         attempt_fill_pending_orders(current_time, current_price)
 
-        # 2. Check for new bin PEAK signals (peak_timestamp reached)
+        # 2. Check for new bin RESET signals (reset_timestamp reached)
         while (
             next_signal_idx < total_signals
-            and signals_list[next_signal_idx]["peak_timestamp"] <= current_time
+            and signals_list[next_signal_idx]["reset_timestamp"] <= current_time
         ):
             signal_data = signals_list[next_signal_idx]
             next_signal_idx += 1
 
             price_tag = str(signal_data.get('price_tag', '')).strip().lower()
 
-            # Ignorar señales 'flat'
+            # Ignorar señales 'flat' (aunque no deberían existir en este CSV)
             if price_tag == 'flat':
                 continue
 
-            # LÓGICA: Determinar el tipo de entrada según price_tag
-            # - price_tag='up' → mercado subió, esperamos reversión → SHORT
-            # - price_tag='down' → mercado bajó, esperamos reversión → LONG
+            # LÓGICA CONTRARIAN: Determinar el tipo de entrada según price_tag
+            # - price_tag='up' → precio encima de SMA, esperamos reversión → SHORT
+            # - price_tag='down' → precio debajo de SMA, esperamos reversión → LONG
             if price_tag == 'up':
                 side = "SHORT"
             elif price_tag == 'down':
                 side = "LONG"
-
-            # NUEVA LÓGICA: Solo entrar si este peak_timestamp NO ha sido usado antes
-            # Esto previene duplicados basándose en el TIEMPO del bin, no en su dirección
-            peak_ts = signal_data['peak_timestamp']
-            if peak_ts in entered_bin_timestamps:
-                # Ya entramos en este bin timestamp → NO entrar de nuevo
+            else:
+                # Skip unknown tags
                 continue
 
-            # Ahora crear nueva orden para entrar en el PEAK actual
-            peak_price = float(signal_data['peak_close_price'])  # USAR PEAK PRICE
-            peak_freq = int(float(signal_data['peak_freq']))
+            # NUEVA LÓGICA: Solo entrar si este reset_timestamp NO ha sido usado antes
+            # Esto previene duplicados basándose en el TIEMPO del reset
+            reset_ts = signal_data['reset_timestamp']
+            if reset_ts in entered_bin_timestamps:
+                # Ya entramos en este reset timestamp → NO entrar de nuevo
+                continue
+
+            # Crear nueva orden para entrar en el RESET actual
+            reset_price = float(signal_data['reset_price'])  # USAR RESET PRICE
+            cum_vol = float(signal_data.get('cumulative_volume_before_reset', 0))
 
             pending_orders.append(
                 PendingOrder(
                     side=side,
                     signal_tag=price_tag,
-                    signal_time=peak_ts,  # USAR PEAK TIMESTAMP
-                    signal_price=peak_price,
-                    entry_price=peak_price,  # ENTRAR EN EL PEAK
+                    signal_time=reset_ts,  # USAR RESET TIMESTAMP
+                    signal_price=reset_price,
+                    entry_price=reset_price,  # ENTRAR EN EL RESET
                     signal_data=signal_data,
                     force_fill=True,
-                    bin_number=peak_freq,
+                    bin_number=int(cum_vol),  # Use cumulative volume as bin identifier
                 )
             )
 
             # Marcar este timestamp como usado
-            entered_bin_timestamps.add(peak_ts)
+            entered_bin_timestamps.add(reset_ts)
 
             # IMPORTANTE: Llenar la orden INMEDIATAMENTE para que open_positions se actualice
             # antes de procesar la siguiente señal (permite que has_same_side_position funcione)
@@ -308,7 +311,7 @@ def run_backtest_bins(df_bins: pd.DataFrame, df_base: pd.DataFrame) -> pd.DataFr
 
             if pos.signal_data:
                 for key, value in pos.signal_data.items():
-                    if key not in ['peak_timestamp', 'signal_idx']:
+                    if key not in ['reset_timestamp', 'signal_idx']:
                         trade_record[f"bin_{key}"] = value
 
             trades.append(trade_record)
@@ -321,44 +324,38 @@ def run_backtest_bins(df_bins: pd.DataFrame, df_base: pd.DataFrame) -> pd.DataFr
 def main() -> pd.DataFrame:
     """Ejecuta el backtest con bins."""
     print("=" * 80)
-    print("BACKTEST - BIN FREQUENCY REVERSAL STRATEGY")
+    print("BACKTEST - BIN RESET REVERSAL STRATEGY (CONTRARIAN)")
     print("=" * 80)
-    print(f"\n[INFO] Loading bins signals from: {BINS_FILE}")
+    print(f"\n[INFO] Loading bin reset signals from: {BINS_FILE}")
     print(f"[INFO] Loading T&S data from: {TNS_FILE}")
 
-    # Load bins (signals)
+    # Load bins (signals) - NEW CSV STRUCTURE
     df_bins_raw = _read_csv_semicolon_decimal(BINS_FILE)
     df_bins = pd.DataFrame({
-        # Peak data (momento del máximo)
-        'peak_timestamp': pd.to_datetime(df_bins_raw['peak_timestamp'], errors='coerce'),
-        'peak_freq': _to_float(df_bins_raw['peak_freq']),
-        'peak_close_price': _to_float(df_bins_raw['peak_close_price']),
+        # Reset data (momento del reset de acumulación)
+        'reset_timestamp': pd.to_datetime(df_bins_raw['reset_timestamp'], errors='coerce'),
+        'reset_price': _to_float(df_bins_raw['reset_price']),
+        'cumulative_volume_before_reset': _to_float(df_bins_raw['cumulative_volume_before_reset']),
 
-        # Signal data (momento de la señal de entrada)
-        'signal_timestamp': pd.to_datetime(df_bins_raw['signal_timestamp'], errors='coerce'),
-        'signal_close_price': _to_float(df_bins_raw['signal_close_price']),
+        # Volume data at reset moment
+        'total_bid': _to_float(df_bins_raw['total_bid']),
+        'total_ask': _to_float(df_bins_raw['total_ask']),
+        'total_bid_ask': _to_float(df_bins_raw['total_bid_ask']),
+        'total_volume': _to_float(df_bins_raw['total_volume']),
 
-        # Frequency breakdown
-        'freq_bid': _to_float(df_bins_raw['freq_bid']),
-        'freq_ask': _to_float(df_bins_raw['freq_ask']),
-        'freq_total': _to_float(df_bins_raw['freq_total']),
-
-        # Volume data
-        'max_total_bid': _to_float(df_bins_raw['max_total_bid']),
-        'max_total_ask': _to_float(df_bins_raw['max_total_ask']),
-
-        # Price movement
-        'price_change': _to_float(df_bins_raw['price_change']),
-        'price_tag': df_bins_raw['price_tag'].str.strip()
+        # SMA and price direction
+        'sma': _to_float(df_bins_raw['sma']),
+        'price_tag': df_bins_raw['price_tag'].str.strip().str.lower()
     })
 
-    print(f"[OK] Loaded {len(df_bins)} bin signals")
-    print(f"     - UP signals: {(df_bins['price_tag']=='up').sum()} -> will generate SHORT trades (entry at PEAK)")
-    print(f"     - DOWN signals: {(df_bins['price_tag']=='down').sum()} -> will generate LONG trades (entry at PEAK)")
-    print(f"\n[INFO] PEAK ENTRY LOGIC:")
-    print(f"     - Entry Price: peak_close_price (at maximum frequency)")
-    print(f"     - Entry Time: peak_timestamp (moment of peak)")
-    print(f"     - Exit: TP/SL or NEW_PEAK (when new opposite peak appears)")
+    print(f"[OK] Loaded {len(df_bins)} bin reset signals")
+    print(f"     - UP signals: {(df_bins['price_tag']=='up').sum()} -> will generate SHORT trades (contrarian: entry at RESET)")
+    print(f"     - DOWN signals: {(df_bins['price_tag']=='down').sum()} -> will generate LONG trades (contrarian: entry at RESET)")
+    print(f"\n[INFO] RESET ENTRY LOGIC (CONTRARIAN):")
+    print(f"     - Entry Price: reset_price (when cumulative volume resets)")
+    print(f"     - Entry Time: reset_timestamp (moment of volume reset)")
+    print(f"     - Entry Logic: UP tag (price>SMA) -> SHORT | DOWN tag (price<SMA) -> LONG")
+    print(f"     - Exit: TP/SL only")
 
     # Load T&S base data
     df_tns_raw = _read_csv_semicolon_decimal(TNS_FILE)

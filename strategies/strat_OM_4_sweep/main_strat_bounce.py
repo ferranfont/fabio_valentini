@@ -1,10 +1,10 @@
 """
-MAIN SCRIPT - Bin Frequency Reversal Strategy
-==============================================
+MAIN SCRIPT - Bin Frequency Bounce Strategy
+============================================
 
-Estrategia basada en inversión de señales de bins:
-- Bins con price_tag='up' → Entra SHORT (espera reversión bajista)
-- Bins con price_tag='down' → Entra LONG (espera reversión alcista)
+Estrategia basada en seguimiento de señales de bins:
+- Bins con price_tag='up' → Entra LONG (sigue la tendencia alcista)
+- Bins con price_tag='down' → Entra SHORT (sigue la tendencia bajista)
 
 Ejecuta la estrategia completa en orden:
 1. Backtest con strat_bins.py
@@ -47,25 +47,29 @@ BINS_FILE = STRAT_SWEEP_DIR / "db_mushroom_bins.csv"
 _sweep_dir = OUTPUTS_DIR / "sweep"
 _sweep_dir.mkdir(parents=True, exist_ok=True)
 
-TRACKING_RECORD_FILE = _sweep_dir / "bins_TR_20251022.csv"
-TRADES_CHART_FILE = CHARTS_DIR / "trades_visualization_bins_20251022.html"
-BACKTEST_CHART_FILE = CHARTS_DIR / "backtest_results_bins_20251022.html"
-SUMMARY_REPORT_FILE = CHARTS_DIR / "summary_report_bins_20251022.html"
+TRACKING_RECORD_FILE = _sweep_dir / "bounce_TR_20251022.csv"
+TRADES_CHART_FILE = CHARTS_DIR / "trades_visualization_bounce_20251022.html"
+BACKTEST_CHART_FILE = CHARTS_DIR / "backtest_results_bounce_20251022.html"
+SUMMARY_REPORT_FILE = CHARTS_DIR / "summary_report_bounce_20251022.html"
 
 # ========= PARÁMETROS DE ESTRATEGIA =========
 SYMBOL = "NQ"
-TP_POINTS = 100            # Take Profit en puntos
-SL_POINTS = 20             # Stop Loss en puntos
+TP_POINTS = 5           # Take Profit en puntos
+SL_POINTS = 5           # Stop Loss en puntos
 POINT_VALUE = 20.0          # Valor del punto en dolares ($20 por punto para NQ)
 CONTRACTS = 1               # Número de contratos por trade
 BREAK_EVEN_POINTS = 10.0    # Avance necesario para mover el stop a precio de entrada
 NUM_MAX_OPEN_CONTRACTS = 20 # Máximo de posiciones abiertas simultáneamente
 
+# ========= PARÁMETROS DE BOUNCE =========
+EXTENDED_LINE_MINUTES = 3 # Tiempo límite para observar bounce y cruce
+MIN_BOUNCE = 5           # Mínimo movimiento en puntos para considerar bounce válido
+
 # ========= PARÁMETROS DE VISUALIZACIÓN =========
 USE_INDEX_RANGE = False     # True: filtrar por índice, False: mostrar todos
 START_INDEX = 0             # Índice inicial (si USE_INDEX_RANGE = True)
 END_INDEX = 50              # Índice final (si USE_INDEX_RANGE = True)
-EMA_PERIOD = 0              # Sin EMA para esta estrategia
+EMA_PERIOD = 200            # SMA200 verde en el gráfico
 
 # ==============================================================================
 # FUNCIONES
@@ -98,26 +102,28 @@ def print_step(step_num, title):
 
 
 def run_backtest():
-    """Ejecuta el backtest de la estrategia de bins."""
-    print_step(1, "EJECUTANDO BACKTEST - BIN REVERSAL STRATEGY")
+    """Ejecuta el backtest de la estrategia de bounce."""
+    print_step(1, "EJECUTANDO BACKTEST - BIN BOUNCE STRATEGY")
 
-    # Importar función main de strat_bins.py
-    import strat_bins
+    # Importar función main de strat_bounce.py
+    import strat_bounce
 
     # Configurar parámetros globales
-    strat_bins.TNS_FILE = TNS_FILE
-    strat_bins.BINS_FILE = BINS_FILE
-    strat_bins.OUTPUT_FILE = TRACKING_RECORD_FILE
-    strat_bins.SYMBOL = SYMBOL
-    strat_bins.TP_POINTS = TP_POINTS
-    strat_bins.SL_POINTS = SL_POINTS
-    strat_bins.POINT_VALUE = POINT_VALUE
-    strat_bins.BREAK_EVEN_POINTS = BREAK_EVEN_POINTS
-    strat_bins.CONTRACTS = CONTRACTS
-    strat_bins.NUM_MAX_OPEN_CONTRACTS = NUM_MAX_OPEN_CONTRACTS
+    strat_bounce.TNS_FILE = TNS_FILE
+    strat_bounce.BINS_FILE = BINS_FILE
+    strat_bounce.OUTPUT_FILE = TRACKING_RECORD_FILE
+    strat_bounce.SYMBOL = SYMBOL
+    strat_bounce.TP_POINTS = TP_POINTS
+    strat_bounce.SL_POINTS = SL_POINTS
+    strat_bounce.POINT_VALUE = POINT_VALUE
+    strat_bounce.BREAK_EVEN_POINTS = BREAK_EVEN_POINTS
+    strat_bounce.CONTRACTS = CONTRACTS
+    strat_bounce.NUM_MAX_OPEN_CONTRACTS = NUM_MAX_OPEN_CONTRACTS
+    strat_bounce.EXTENDED_LINE_MINUTES = EXTENDED_LINE_MINUTES
+    strat_bounce.MIN_BOUNCE = MIN_BOUNCE
 
     # Ejecutar backtest
-    trades_df = strat_bins.main()
+    trades_df = strat_bounce.main()
 
     print(f"\n[OK] Backtest completado: {len(trades_df)} trades generados")
     print(f"[OK] Resultados guardados en: {TRACKING_RECORD_FILE}")
@@ -133,7 +139,7 @@ def plot_trades():
     # (renombrar timestamp_end -> timestamp, close_price_end -> close_price)
     import pandas as pd
 
-    temp_signals_file = _sweep_dir / "bins_signals_temp.csv"
+    temp_signals_file = _sweep_dir / "bounce_signals_temp.csv"
 
     try:
         # Leer bins CSV (nueva estructura con reset_timestamp y reset_price)
@@ -169,7 +175,7 @@ def plot_trades():
     plot_trades_chart.DEFAULT_START_INDEX = START_INDEX
     plot_trades_chart.DEFAULT_END_INDEX = END_INDEX
     plot_trades_chart.EMA_PERIOD = EMA_PERIOD
-    plot_trades_chart.SYMBOL = f"{SYMBOL} - BIN REVERSAL (UP->SHORT, DOWN->LONG)"
+    plot_trades_chart.SYMBOL = f"{SYMBOL} - BIN BOUNCE (UP->LONG, DOWN->SHORT)"
 
     # Ejecutar visualización
     try:
@@ -199,14 +205,14 @@ def plot_backtest_results():
     original_create_equity = plot_backtest_results.create_equity_curve
     def custom_create_equity(df):
         fig = original_create_equity(df)
-        fig.update_layout(title_text=f"BIN REVERSAL Strategy - Backtest Results - {len(df):,} trades (TP:{TP_POINTS}pts, SL:{SL_POINTS}pts)")
+        fig.update_layout(title_text=f"BIN BOUNCE Strategy - Backtest Results - {len(df):,} trades (TP:{TP_POINTS}pts, SL:{SL_POINTS}pts)")
         return fig
     plot_backtest_results.create_equity_curve = custom_create_equity
 
     original_create_dist = plot_backtest_results.create_distribution_charts
     def custom_create_dist(df):
         fig = original_create_dist(df)
-        fig.update_layout(title_text="BIN REVERSAL Strategy - Distribution Analysis")
+        fig.update_layout(title_text="BIN BOUNCE Strategy - Distribution Analysis")
         return fig
     plot_backtest_results.create_distribution_charts = custom_create_dist
 
@@ -245,11 +251,11 @@ def generate_summary():
                 html_content = f.read()
             html_content = html_content.replace(
                 '<title>Backtest Summary - d-Shape & p-Shape Strategy</title>',
-                '<title>BIN REVERSAL Strategy - Summary Report</title>'
+                '<title>BIN BOUNCE Strategy - Summary Report</title>'
             )
             html_content = html_content.replace(
                 '<h1>Backtest Summary Report</h1>',
-                f'<h1>BIN REVERSAL Strategy - Summary Report</h1><p style="text-align:center;color:#666;">UP-&gt;SHORT | DOWN-&gt;LONG | TP:{TP_POINTS}pts | SL:{SL_POINTS}pts | Max Positions:{NUM_MAX_OPEN_CONTRACTS}</p>'
+                f'<h1>BIN BOUNCE Strategy - Summary Report</h1><p style="text-align:center;color:#666;">UP-&gt;LONG | DOWN-&gt;SHORT | TP:{TP_POINTS}pts | SL:{SL_POINTS}pts | Max Positions:{NUM_MAX_OPEN_CONTRACTS}</p>'
             )
             with open(SUMMARY_REPORT_FILE, 'w', encoding='utf-8') as f:
                 f.write(html_content)
@@ -273,7 +279,7 @@ def main():
     """Función principal que ejecuta todos los pasos."""
     start_time = time.time()
 
-    print_header("BIN FREQUENCY REVERSAL STRATEGY - EJECUCIÓN COMPLETA")
+    print_header("BIN FREQUENCY BOUNCE STRATEGY - EJECUCIÓN COMPLETA")
 
     print("CONFIGURACIÓN:")
     print(f"  Símbolo: {SYMBOL}")
@@ -282,10 +288,13 @@ def main():
     print(f"  Contratos: {CONTRACTS}")
     print(f"  Max posiciones abiertas: {NUM_MAX_OPEN_CONTRACTS}")
     print(f"  Break-even a favor: {BREAK_EVEN_POINTS} puntos")
+    print(f"\n  BOUNCE PARAMETERS:")
+    print(f"  - Observation window: {EXTENDED_LINE_MINUTES} minutes")
+    print(f"  - Min bounce movement: {MIN_BOUNCE} points")
     print(f"\n  Datos T&S: {TNS_FILE.name}")
     print(f"  Señales (Bins): {BINS_FILE.name}")
     print(f"  Salida: {TRACKING_RECORD_FILE.name}")
-    print(f"\n  LOGICA: UP->SHORT | DOWN->LONG (reversion contraria)")
+    print(f"\n  LOGICA: Bounce UP + cross reset -> LONG | Bounce DOWN + cross reset -> SHORT")
 
     if USE_INDEX_RANGE:
         print(f"\n  Filtro de visualización: Índices {START_INDEX} a {END_INDEX}")

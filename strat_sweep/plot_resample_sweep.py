@@ -13,10 +13,11 @@ import os
 # ============================================================================
 # CONFIGURATION VARIABLES
 # ============================================================================
-BIG_VOLUME = 90  # Volume threshold for red dots
+BIG_VOLUME = 100 # Volume threshold for red dots
 WAIT_TIME_CUM_VOL = 15  # Seconds to wait before resetting accumulator
 MIN_CUMULATIVE_VOLUME = 300  # Minimum cumulative volume to consider reset event valid
 SMA_PERIOD = 200  # Period for moving average to determine price direction
+EXTENDED_LINE_MINUTES = 10  # Minutes to extend horizontal line after reset point
 
 # File paths
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -95,7 +96,6 @@ for idx, row in df.iterrows():
                     'total_ask': row['total_ask'],
                     'total_bid_ask': current_total_bid_ask,
                     'total_volume': row['total_volume'],
-                    'pattern_tag': row['pattern_tag'],
                     'sma': current_sma,
                     'price_tag': price_tag
                 })
@@ -162,6 +162,18 @@ fig.add_trace(go.Scatter(
     showlegend=True
 ), row=1, col=1, secondary_y=False)
 
+# Add SMA line (primary y-axis)
+fig.add_trace(go.Scatter(
+    x=df['timestamp'],
+    y=df['sma'],
+    mode='lines',
+    name=f'SMA{SMA_PERIOD}',
+    line=dict(color='green', width=1),
+    opacity=0.6,
+    hovertemplate='<b>SMA%{SMA_PERIOD}</b><br>%{x}<br>Value: %{y:.2f}<extra></extra>',
+    showlegend=True
+), row=1, col=1, secondary_y=False)
+
 # Add big volume markers (VERTICAL LIGHT GREY LINES)
 big_volume_df = df[df['total_volume'] > BIG_VOLUME].copy()
 shapes = []
@@ -215,6 +227,25 @@ if len(reset_events) > 0:
         hovertemplate='<b>RESET</b><br>%{x}<br>Price: %{y:.2f}<extra></extra>',
         showlegend=True
     ), row=1, col=1, secondary_y=False)
+
+    # Add horizontal orange lines from each reset point extending 3 minutes forward
+    from datetime import timedelta
+    for _, reset_row in df_reset_events.iterrows():
+        reset_time = reset_row['reset_timestamp']
+        reset_price = reset_row['reset_price']
+        end_time = reset_time + timedelta(minutes=EXTENDED_LINE_MINUTES)
+
+        shapes.append(
+            dict(
+                type='line',
+                x0=reset_time,
+                x1=end_time,
+                y0=reset_price,
+                y1=reset_price,
+                line=dict(color='rgba(255,165,0,0.2)', width=20),  # Orange with alpha 0.2
+                layer='below'
+            )
+        )
 
 # Add total_bid_ask line (BID + ASK volumes) (secondary y-axis - RIGHT)
 fig.add_trace(go.Scatter(

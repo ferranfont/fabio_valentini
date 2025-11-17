@@ -394,149 +394,113 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
         )
 
     # ========================================================
-    # BIN FREQUENCY INDICATOR (SECONDARY Y-AXIS - RIGHT)
+    # TOTAL BID+ASK VOLUME INDICATOR (SECONDARY Y-AXIS - RIGHT)
     # ========================================================
     if bins_continuous is not None and not bins_continuous.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=bins_continuous["timestamp"],  # Continuous timestamps
-                y=bins_continuous["freq_total_rolling"],  # Continuous rolling frequency
-                mode="lines",
-                name=f"Volume Frequency (Rolling 10s)",
-                line=dict(color="orange", width=2),  # Smooth line (no steps)
-                fill="tozeroy",
-                fillcolor="rgba(255,165,0,0.1)",
-                hovertemplate="<b>Bin Frequency</b><br>%{x}<br>Freq: %{y:.0f}<extra></extra>",
-            ),
-            secondary_y=True
-        )
+        # Calculate total_bid_ask if columns exist
+        if 'total_bid' in bins_continuous.columns and 'total_ask' in bins_continuous.columns:
+            bins_continuous['total_bid_ask'] = bins_continuous['total_bid'] + bins_continuous['total_ask']
+
+            fig.add_trace(
+                go.Scatter(
+                    x=bins_continuous["timestamp"],
+                    y=bins_continuous["total_bid_ask"],
+                    mode="lines",
+                    name="BID + ASK Volume",
+                    line=dict(color="darkorange", width=1.5),
+                    fill="tozeroy",
+                    fillcolor="rgba(255,165,0,0.1)",
+                    hovertemplate="<b>BID+ASK</b><br>%{x}<br>Volume: %{y:.0f}<extra></extra>",
+                ),
+                secondary_y=True
+            )
 
     # ========================================================
-    # ADD VERTICAL ORANGE LINES AT BIN PEAKS + MARKERS
+    # ADD ORANGE DOTS (RESET POINTS) AND HORIZONTAL ORANGE LINES
     # ========================================================
-    # Load bin peaks from db_mushroom_bins.csv
+    EXTENDED_LINE_MINUTES = 10  # Same as in strat_bounce.py
+
+    # Add orange dots for reset points
+    if df_signals is not None and not df_signals.empty:
+        # Filter signals to time window
+        signals_in_window = df_signals[
+            (df_signals['timestamp'] >= time_start) &
+            (df_signals['timestamp'] <= time_end)
+        ]
+
+        if len(signals_in_window) > 0:
+            fig.add_trace(
+                go.Scatter(
+                    x=signals_in_window['timestamp'],
+                    y=signals_in_window['close_price'],
+                    mode='markers',
+                    name='Reset Points',
+                    marker=dict(
+                        color='orange',
+                        size=8,
+                        symbol='circle',
+                        line=dict(color='darkorange', width=2)
+                    ),
+                    hovertemplate='<b>RESET</b><br>%{x}<br>Price: %{y:.2f}<extra></extra>',
+                ),
+                secondary_y=False
+            )
+            print(f"[INFO] Added {len(signals_in_window)} orange reset dots")
+
+    # ========================================================
+    # ADD GREY VERTICAL LINES FOR BIG VOLUME EVENTS (>90)
+    # ========================================================
     shapes = []
-    bin_start_times = []
-    bin_start_freqs = []
-    bin_end_times = []
-    bin_end_freqs = []
 
-    try:
-        BINS_FILE = PROJECT_ROOT / "strat_sweep" / "db_mushroom_bins.csv"
-        if BINS_FILE.exists():
-            print(f"[INFO] Loading bin peaks for vertical lines from: {BINS_FILE.name}")
-            df_bins = pd.read_csv(BINS_FILE, sep=';', decimal=',')
-            df_bins['peak_timestamp'] = pd.to_datetime(df_bins['peak_timestamp'])
-            df_bins['signal_timestamp'] = pd.to_datetime(df_bins['signal_timestamp'])
+    # Add horizontal orange lines from reset points (extending EXTENDED_LINE_MINUTES forward)
+    if df_signals is not None and not df_signals.empty and len(signals_in_window) > 0:
+        from datetime import timedelta
+        for _, signal_row in signals_in_window.iterrows():
+            reset_time = signal_row['timestamp']
+            reset_price = signal_row['close_price']
+            end_time = reset_time + timedelta(minutes=EXTENDED_LINE_MINUTES)
 
-            # Convert frequency columns (European format)
-            df_bins['peak_freq'] = df_bins['peak_freq'].astype(str).str.replace(',', '.').astype(float)
+            shapes.append(
+                dict(
+                    type='line',
+                    x0=reset_time,
+                    x1=end_time,
+                    y0=reset_price,
+                    y1=reset_price,
+                    line=dict(color='rgba(255,165,0,0.3)', width=20),
+                    layer='below'
+                )
+            )
+        print(f"[INFO] Added {len(signals_in_window)} horizontal orange lines (extending {EXTENDED_LINE_MINUTES} minutes)")
+    BIG_VOLUME_THRESHOLD = 90
+
+    if bins_continuous is not None and not bins_continuous.empty:
+        if 'total_volume' in bins_continuous.columns:
+            # Filter big volume events
+            big_volume_events = bins_continuous[bins_continuous['total_volume'] > BIG_VOLUME_THRESHOLD]
 
             # Filter to time window
-            bins_in_window = df_bins[
-                (df_bins['peak_timestamp'] >= time_start) &
-                (df_bins['peak_timestamp'] <= time_end)
+            big_volume_in_window = big_volume_events[
+                (big_volume_events['timestamp'] >= time_start) &
+                (big_volume_events['timestamp'] <= time_end)
             ]
 
-            print(f"[INFO] Adding {len(bins_in_window)} bin markers (start/end) and vertical lines")
+            print(f"[INFO] Adding {len(big_volume_in_window)} grey vertical lines for big volume events (>{BIG_VOLUME_THRESHOLD})")
 
-            # Collect bin start/end positions for scatter markers
-            for _, bin_row in bins_in_window.iterrows():
-                peak_time = bin_row['peak_timestamp']
-                signal_time = bin_row['signal_timestamp']
-                peak_freq = bin_row['peak_freq']
-
-                # Store peak (start) marker positions
-                bin_start_times.append(peak_time)
-                bin_start_freqs.append(peak_freq)
-
-                # Find frequency at signal_timestamp (end) by looking up in bins_continuous
-                if bins_continuous is not None:
-                    signal_freq_row = bins_continuous[bins_continuous['timestamp'] == signal_time]
-                    if not signal_freq_row.empty:
-                        signal_freq = signal_freq_row['freq_total_rolling'].iloc[0]
-                    else:
-                        # If exact timestamp not found, use nearest
-                        idx = (bins_continuous['timestamp'] - signal_time).abs().idxmin()
-                        signal_freq = bins_continuous.loc[idx, 'freq_total_rolling']
-
-                    bin_end_times.append(signal_time)
-                    bin_end_freqs.append(signal_freq)
-
-                # Add vertical orange line at peak_timestamp (bin START)
+            # Add vertical grey lines for each big volume event
+            for timestamp in big_volume_in_window['timestamp']:
                 shapes.append(
                     dict(
                         type='line',
-                        x0=peak_time,
-                        x1=peak_time,
+                        x0=timestamp,
+                        x1=timestamp,
                         y0=0,
                         y1=1,
                         yref='paper',
-                        line=dict(color='rgba(255,165,0,0.5)', width=1),
+                        line=dict(color='lightgrey', width=1),
                         layer='below'
                     )
                 )
-
-                # Add vertical orange line at signal_timestamp (bin END)
-                shapes.append(
-                    dict(
-                        type='line',
-                        x0=signal_time,
-                        x1=signal_time,
-                        y0=0,
-                        y1=1,
-                        yref='paper',
-                        line=dict(color='rgba(255,165,0,0.5)', width=1),
-                        layer='below'
-                    )
-                )
-        else:
-            print(f"[WARN] {BINS_FILE} not found - vertical lines will not be shown")
-    except Exception as e:
-        print(f"[ERROR] Could not load bin peaks: {e}")
-        import traceback
-        traceback.print_exc()
-
-    # ========================================================
-    # ADD SCATTER MARKERS ON ORANGE LINE (START=ORANGE FILLED, END=ORANGE HOLLOW)
-    # ========================================================
-    # Bin START markers (orange filled circles at peak - smaller)
-    if bin_start_times and bins_continuous is not None:
-        fig.add_trace(
-            go.Scatter(
-                x=bin_start_times,
-                y=bin_start_freqs,
-                mode="markers",
-                name="Bin START (Peak)",
-                marker=dict(
-                    symbol="circle",
-                    size=8,
-                    color="orange",
-                    line=dict(width=1, color="darkorange")
-                ),
-                hovertemplate="<b>BIN START</b><br>%{x}<br>Peak Freq: %{y:.0f}<extra></extra>",
-            ),
-            secondary_y=True
-        )
-
-    # Bin END markers (orange hollow circles at signal)
-    if bin_end_times and bins_continuous is not None:
-        fig.add_trace(
-            go.Scatter(
-                x=bin_end_times,
-                y=bin_end_freqs,
-                mode="markers",
-                name="Bin END (Signal)",
-                marker=dict(
-                    symbol="circle-open",
-                    size=8,
-                    color="orange",
-                    line=dict(width=2, color="orange")
-                ),
-                hovertemplate="<b>BIN END</b><br>%{x}<br>Freq: %{y:.0f}<extra></extra>",
-            ),
-            secondary_y=True
-        )
 
     # Panel 2: P&L acumulado (SOLO área verde, sin línea)
     # ===== Layout: SOLO GRID HORIZONTAL =====

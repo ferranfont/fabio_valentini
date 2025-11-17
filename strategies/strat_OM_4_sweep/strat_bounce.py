@@ -227,23 +227,12 @@ def run_backtest_bounce(
                     bounce_signal.bounce_tag = 'down'
                     # print(f"    [BOUNCE DOWN] Reset: {bounce_signal.reset_price:.2f} -> Min: {bounce_signal.max_price_down:.2f} (-{movement_down:.2f}pts)")
 
-            # Check if price crosses reset_price after bounce
+            # Check if bounce is confirmed and enter immediately at reset_price level
             if bounce_signal.bounce_tag is not None:
-                crossed = False
-                side = None
+                # Bounce confirmed - enter immediately at reset_price
+                side = "LONG" if bounce_signal.bounce_tag == 'up' else "SHORT"
 
-                if bounce_signal.bounce_tag == 'up':
-                    # Bounce UP confirmed, waiting for price to cross reset_price downward (buy on support)
-                    if current_price <= bounce_signal.reset_price:
-                        crossed = True
-                        side = "LONG"
-                elif bounce_signal.bounce_tag == 'down':
-                    # Bounce DOWN confirmed, waiting for price to cross reset_price upward (sell on resistance)
-                    if current_price >= bounce_signal.reset_price:
-                        crossed = True
-                        side = "SHORT"
-
-                if crossed and len(open_positions) < NUM_MAX_OPEN_CONTRACTS:
+                if len(open_positions) < NUM_MAX_OPEN_CONTRACTS:
                     # ENTRY: Price crossed reset_price after bounce
                     entry_price = current_price
                     tp_price = entry_price + TP_POINTS if side == "LONG" else entry_price - TP_POINTS

@@ -74,6 +74,9 @@ USE_INDEX_RANGE = False
 DEFAULT_START_INDEX = 0
 DEFAULT_END_INDEX = 50  # Only used if USE_INDEX_RANGE = True
 EMA_PERIOD = 200
+# Si es True, se pinta el lado LONG/SHORT seg��n comparaci��n con EMA.
+# Para estrategias como bounce queremos respetar el lado real del trade.
+USE_EMA_FOR_SIDE_OVERRIDE = True
 
 
 # ============================================================
@@ -316,7 +319,7 @@ def plot_trades_on_chart(start_idx: int = DEFAULT_START_INDEX, end_idx: int = DE
 
         if visual_override in ("LONG", "SHORT"):
             visual_side = visual_override
-        elif ema_value is not None and not pd.isna(ema_value):
+        elif USE_EMA_FOR_SIDE_OVERRIDE and ema_value is not None and not pd.isna(ema_value):
             visual_side = "LONG" if ref_price >= ema_value else "SHORT"
         else:
             visual_side = actual_side

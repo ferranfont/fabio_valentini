@@ -54,16 +54,16 @@ SUMMARY_REPORT_FILE = CHARTS_DIR / "summary_report_bounce_20251022.html"
 
 # ========= PARÁMETROS DE ESTRATEGIA =========
 SYMBOL = "NQ"
-TP_POINTS = 5           # Take Profit en puntos
-SL_POINTS = 5           # Stop Loss en puntos
+TP_POINTS = 5               # Take Profit en puntos
+SL_POINTS = 5               # Stop Loss en puntos
 POINT_VALUE = 20.0          # Valor del punto en dolares ($20 por punto para NQ)
 CONTRACTS = 1               # Número de contratos por trade
 BREAK_EVEN_POINTS = 10.0    # Avance necesario para mover el stop a precio de entrada
 NUM_MAX_OPEN_CONTRACTS = 20 # Máximo de posiciones abiertas simultáneamente
 
 # ========= PARÁMETROS DE BOUNCE =========
-EXTENDED_LINE_MINUTES = 3 # Tiempo límite para observar bounce y cruce
-MIN_BOUNCE = 5           # Mínimo movimiento en puntos para considerar bounce válido
+EXTENDED_LINE_MINUTES = 5  #Tiempo límite para observar bounce y cruce
+MIN_BOUNCE = 7           # Mínimo movimiento en puntos para considerar bounce válido
 
 # ========= PARÁMETROS DE VISUALIZACIÓN =========
 USE_INDEX_RANGE = False     # True: filtrar por índice, False: mostrar todos
@@ -175,6 +175,7 @@ def plot_trades():
     plot_trades_chart.DEFAULT_START_INDEX = START_INDEX
     plot_trades_chart.DEFAULT_END_INDEX = END_INDEX
     plot_trades_chart.EMA_PERIOD = EMA_PERIOD
+    plot_trades_chart.USE_EMA_FOR_SIDE_OVERRIDE = False
     plot_trades_chart.SYMBOL = f"{SYMBOL} - BIN BOUNCE (UP->LONG, DOWN->SHORT)"
 
     # Ejecutar visualización

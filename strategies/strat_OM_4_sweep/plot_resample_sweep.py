@@ -54,14 +54,19 @@ print(f"\n[INFO] Pattern breakdown:")
 for pattern, count in pattern_counts.items():
     print(f"  - {pattern}: {count:,} frames ({count/len(df)*100:.2f}%)")
 
+# Calculate total_bid_ask early for statistics
+df['total_bid_ask'] = df['total_bid'] + df['total_ask']
+
 # Big volume breakdown
 big_volume_count = len(df[df['total_volume'] > BIG_VOLUME])
 big_bid_count = len(df[df['total_bid'] > 50])
 big_ask_count = len(df[df['total_ask'] > 50])
+big_bid_ask_count = len(df[df['total_bid_ask'] > 100])
 print(f"\n[INFO] Volume Thresholds:")
 print(f"  - Big volume (>{BIG_VOLUME}): {big_volume_count:,} frames ({big_volume_count/len(df)*100:.2f}%) [grey lines]")
-print(f"  - Big BID (>50): {big_bid_count:,} frames ({big_bid_count/len(df)*100:.2f}%) [red lines]")
-print(f"  - Big ASK (>50): {big_ask_count:,} frames ({big_ask_count/len(df)*100:.2f}%) [green lines]")
+print(f"  - Big BID (>50): {big_bid_count:,} frames ({big_bid_count/len(df)*100:.2f}%)")
+print(f"  - Big ASK (>50): {big_ask_count:,} frames ({big_ask_count/len(df)*100:.2f}%)")
+print(f"  - Big BID+ASK (>100): {big_bid_ask_count:,} frames ({big_bid_ask_count/len(df)*100:.2f}%) [orange line]")
 
 # ============================================================================
 # CALCULATE FREQUENCY INDICATOR (ROLLING WINDOW - CONTINUOUS)
@@ -364,40 +369,6 @@ if len(big_volume_df) > 0:
             )
         )
 
-# Add vertical RED lines where total_bid > 50
-big_bid_df = df[df['total_bid'] > 50].copy()
-if len(big_bid_df) > 0:
-    for timestamp in big_bid_df['timestamp']:
-        shapes.append(
-            dict(
-                type='line',
-                x0=timestamp,
-                x1=timestamp,
-                y0=0,
-                y1=1,
-                yref='paper',
-                line=dict(color='rgba(255,0,0,0.3)', width=1, dash='solid'),
-                layer='below'
-            )
-        )
-
-# Add vertical GREEN lines where total_ask > 50
-big_ask_df = df[df['total_ask'] > 50].copy()
-if len(big_ask_df) > 0:
-    for timestamp in big_ask_df['timestamp']:
-        shapes.append(
-            dict(
-                type='line',
-                x0=timestamp,
-                x1=timestamp,
-                y0=0,
-                y1=1,
-                yref='paper',
-                line=dict(color='rgba(0,128,0,0.3)', width=1, dash='solid'),
-                layer='below'
-            )
-        )
-
 # Add vertical ORANGE lines at peak_timestamp of each bin (bin peak moments)
 if len(peak_signals_df) > 0:
     for timestamp in peak_signals_df['peak_timestamp']:
@@ -441,6 +412,16 @@ fig.add_trace(go.Scatter(
     line=dict(color='orange', width=2),  # Smooth line (no 'hv' shape)
     fill='tozeroy',
     fillcolor='rgba(255,165,0,0.1)',
+    showlegend=True
+), secondary_y=True)
+
+# Add total_bid_ask line (BID + ASK volumes) (secondary y-axis - RIGHT)
+fig.add_trace(go.Scatter(
+    x=df['timestamp'],
+    y=df['total_bid_ask'],
+    mode='lines',
+    name='BID + ASK Volume',
+    line=dict(color='darkorange', width=1.5),
     showlegend=True
 ), secondary_y=True)
 

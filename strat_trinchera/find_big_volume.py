@@ -26,8 +26,19 @@ else:
 # CONFIGURATION
 # ============================================================================
 CURRENT_DIR = Path(__file__).resolve().parent
-DATA_FILE = CURRENT_DIR / "db_trinchera_all_data.csv"
-OUTPUT_FILE = CURRENT_DIR / "db_trinchera_bins.csv"
+OUTPUTS_DIR = CURRENT_DIR / "outputs"
+OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Find most recent all_data file
+all_data_files = sorted(OUTPUTS_DIR.glob("db_trinchera_all_data*.csv"))
+if not all_data_files:
+    raise FileNotFoundError(f"No db_trinchera_all_data file found in {OUTPUTS_DIR}")
+DATA_FILE = all_data_files[-1]  # Get most recent
+
+# Generate output filename with date
+from datetime import datetime
+date_str = datetime.now().strftime("%Y%m%d")
+OUTPUT_FILE = OUTPUTS_DIR / f"db_trinchera_bins_{date_str}.csv"
 
 print("="*80)
 print("BIG VOLUME DETECTOR")

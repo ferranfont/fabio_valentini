@@ -1,5 +1,5 @@
 import pandas as pd
-from datetime import timedelta
+from datetime import timedelta, datetime
 from pathlib import Path
 import sys
 
@@ -209,8 +209,11 @@ print(f"\n[OK] Extracted {len(all_frames)} frames")
 # Create DataFrame
 df_all_frames = pd.DataFrame(all_frames)
 
-# Save to CSV in strat_trinchera folder
-output_csv = CURRENT_DIR / "db_trinchera_all_data.csv"
+# Save to CSV in strat_trinchera/outputs folder with date
+OUTPUTS_DIR = CURRENT_DIR / "outputs"
+OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+date_str = datetime.now().strftime("%Y%m%d")
+output_csv = OUTPUTS_DIR / f"db_trinchera_all_data_{date_str}.csv"
 df_all_frames.to_csv(output_csv, index=False, sep=';', decimal=',')
 
 print("\n" + "=" * 60)

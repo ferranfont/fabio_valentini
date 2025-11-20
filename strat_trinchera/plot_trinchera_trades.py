@@ -42,8 +42,10 @@ if not trades_files:
     raise FileNotFoundError(f"No trades file found in {OUTPUTS_DIR}")
 TRADES_FILE = trades_files[-1]  # Get most recent
 
-# Generate date for output filename
-date_str = datetime.now().strftime("%Y%m%d")
+# Extract date from trades filename (e.g., db_trinchera_TR_20251022.csv -> 20251022)
+import re
+date_match = re.search(r'_(\d{8})\.csv', TRADES_FILE.name)
+date_str = date_match.group(1) if date_match else datetime.now().strftime("%Y%m%d")
 OUTPUT_FILE = CHARTS_DIR / f"chart_trinchera_trades_{date_str}.html"
 
 print("="*80)

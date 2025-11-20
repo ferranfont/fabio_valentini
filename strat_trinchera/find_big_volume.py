@@ -35,9 +35,10 @@ if not all_data_files:
     raise FileNotFoundError(f"No db_trinchera_all_data file found in {OUTPUTS_DIR}")
 DATA_FILE = all_data_files[-1]  # Get most recent
 
-# Generate output filename with date
-from datetime import datetime
-date_str = datetime.now().strftime("%Y%m%d")
+# Extract date from input filename (e.g., db_trinchera_all_data_20251022.csv -> 20251022)
+import re
+date_match = re.search(r'_(\d{8})\.csv', DATA_FILE.name)
+date_str = date_match.group(1) if date_match else datetime.now().strftime("%Y%m%d")
 OUTPUT_FILE = OUTPUTS_DIR / f"db_trinchera_bins_{date_str}.csv"
 
 print("="*80)

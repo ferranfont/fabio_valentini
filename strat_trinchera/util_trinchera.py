@@ -209,10 +209,13 @@ print(f"\n[OK] Extracted {len(all_frames)} frames")
 # Create DataFrame
 df_all_frames = pd.DataFrame(all_frames)
 
-# Save to CSV in strat_trinchera/outputs folder with date
+# Save to CSV in strat_trinchera/outputs folder with date from source file
 OUTPUTS_DIR = CURRENT_DIR / "outputs"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-date_str = datetime.now().strftime("%Y%m%d")
+# Extract date from source filename (e.g., time_and_sales_nq_20251022.csv -> 20251022)
+import re
+date_match = re.search(r'_(\d{8})\.csv', csv_path.name)
+date_str = date_match.group(1) if date_match else datetime.now().strftime("%Y%m%d")
 output_csv = OUTPUTS_DIR / f"db_trinchera_all_data_{date_str}.csv"
 df_all_frames.to_csv(output_csv, index=False, sep=';', decimal=',')
 

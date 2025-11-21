@@ -8,7 +8,7 @@ Trades based on price touching mean reversion levels (red/green lines)
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
-from config_trinchera import MEAN_REVERS_EXPAND
+from config_trinchera import MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, FILTER_BY_SMA
 
 # ============================================================================
 # STRATEGY CONFIGURATION
@@ -37,8 +37,6 @@ date_match = re.search(r'_(\d{8})\.csv', ALL_DATA_FILE.name)
 date_str = date_match.group(1) if date_match else datetime.now().strftime("%Y%m%d")
 OUTPUT_FILE = OUTPUTS_DIR / f"db_trinchera_TR_{date_str}.csv"
 
-TP_POINTS = 5.0  # Take profit in points
-SL_POINTS = 10.0  # Stop loss in points
 POINT_VALUE = 20.0  # USD value per point for NQ futures
 
 print("="*80)
@@ -49,6 +47,10 @@ print(f"  - Take Profit: {TP_POINTS} points (${TP_POINTS * POINT_VALUE:.0f})")
 print(f"  - Stop Loss: {SL_POINTS} points (${SL_POINTS * POINT_VALUE:.0f})")
 print(f"  - Mean Reversion Expand: {MEAN_REVERS_EXPAND} points")
 print(f"  - Point Value: ${POINT_VALUE:.0f} per point")
+print(f"  - SMA Filter: {'ENABLED' if FILTER_BY_SMA else 'DISABLED'}")
+if FILTER_BY_SMA:
+    print(f"    * Orange dot < SMA at event: ONLY SELL orders")
+    print(f"    * Orange dot > SMA at event: ONLY BUY orders")
 
 # Load big volume events (bins)
 print(f"\n[INFO] Loading big volume events from: {BINS_FILE.name}")
@@ -82,6 +84,10 @@ for idx, event in df_bins.iterrows():
     mean_level_up = event['mean_level_up']
     mean_level_down = event['mean_level_down']
 
+    # Get orange dot (close price) and SMA at big volume event timestamp
+    event_close = event['close']  # Orange dot price
+    event_sma = event['sma']      # SMA at big volume event
+
     # Get price data within the timeout window
     mask = (df_data['timestamp'] >= start_ts) & (df_data['timestamp'] <= end_ts)
     window_data = df_data[mask].copy()
@@ -94,6 +100,12 @@ for idx, event in df_bins.iterrows():
     if len(sell_touches) > 0:
         entry_time = sell_touches.iloc[0]['timestamp']
         entry_price = mean_level_up
+        entry_sma = sell_touches.iloc[0]['sma']
+
+        # Check SMA filter: SELL only if orange dot was BELOW SMA at event
+        filter_passed = True
+        if FILTER_BY_SMA:
+            filter_passed = event_close < event_sma
 
         # Calculate TP and SL for SELL
         tp_price = entry_price - TP_POINTS
@@ -105,6 +117,7 @@ for idx, event in df_bins.iterrows():
         exit_reason = None
         exit_time = None
         exit_price = None
+        exit_sma = None
 
         for _, bar in exit_data.iterrows():
             # Check TP (price goes down to TP)
@@ -112,15 +125,17 @@ for idx, event in df_bins.iterrows():
                 exit_reason = 'profit'
                 exit_time = bar['timestamp']
                 exit_price = tp_price
+                exit_sma = bar['sma']
                 break
             # Check SL (price goes up to SL)
             elif bar['high'] >= sl_price:
                 exit_reason = 'stop'
                 exit_time = bar['timestamp']
                 exit_price = sl_price
+                exit_sma = bar['sma']
                 break
 
-        if exit_reason:
+        if exit_reason and (not FILTER_BY_SMA or filter_passed):
             pnl = entry_price - exit_price  # SELL: profit when price goes down
             pnl_usd = pnl * POINT_VALUE
             trades.append({
@@ -129,11 +144,16 @@ for idx, event in df_bins.iterrows():
                 'direction': 'SELL',
                 'entry_price': entry_price,
                 'exit_price': exit_price,
+                'entry_sma': entry_sma,
+                'exit_sma': exit_sma,
+                'event_close': event_close,
+                'event_sma': event_sma,
                 'tp_price': tp_price,
                 'sl_price': sl_price,
                 'exit_reason': exit_reason,
                 'pnl': pnl,
                 'pnl_usd': pnl_usd,
+                'filter_passed': filter_passed,
                 'event_timestamp': event['timestamp']
             })
 
@@ -142,6 +162,12 @@ for idx, event in df_bins.iterrows():
     if len(buy_touches) > 0:
         entry_time = buy_touches.iloc[0]['timestamp']
         entry_price = mean_level_down
+        entry_sma = buy_touches.iloc[0]['sma']
+
+        # Check SMA filter: BUY only if orange dot was ABOVE SMA at event
+        filter_passed = True
+        if FILTER_BY_SMA:
+            filter_passed = event_close > event_sma
 
         # Calculate TP and SL for BUY
         tp_price = entry_price + TP_POINTS
@@ -153,6 +179,7 @@ for idx, event in df_bins.iterrows():
         exit_reason = None
         exit_time = None
         exit_price = None
+        exit_sma = None
 
         for _, bar in exit_data.iterrows():
             # Check TP (price goes up to TP)
@@ -160,15 +187,17 @@ for idx, event in df_bins.iterrows():
                 exit_reason = 'profit'
                 exit_time = bar['timestamp']
                 exit_price = tp_price
+                exit_sma = bar['sma']
                 break
             # Check SL (price goes down to SL)
             elif bar['low'] <= sl_price:
                 exit_reason = 'stop'
                 exit_time = bar['timestamp']
                 exit_price = sl_price
+                exit_sma = bar['sma']
                 break
 
-        if exit_reason:
+        if exit_reason and (not FILTER_BY_SMA or filter_passed):
             pnl = exit_price - entry_price  # BUY: profit when price goes up
             pnl_usd = pnl * POINT_VALUE
             trades.append({
@@ -177,11 +206,16 @@ for idx, event in df_bins.iterrows():
                 'direction': 'BUY',
                 'entry_price': entry_price,
                 'exit_price': exit_price,
+                'entry_sma': entry_sma,
+                'exit_sma': exit_sma,
+                'event_close': event_close,
+                'event_sma': event_sma,
                 'tp_price': tp_price,
                 'sl_price': sl_price,
                 'exit_reason': exit_reason,
                 'pnl': pnl,
                 'pnl_usd': pnl_usd,
+                'filter_passed': filter_passed,
                 'event_timestamp': event['timestamp']
             })
 
@@ -190,6 +224,9 @@ for idx, event in df_bins.iterrows():
 # ============================================================================
 if len(trades) > 0:
     df_trades = pd.DataFrame(trades)
+
+    # Add sequential trade ID (starting from 1)
+    df_trades.insert(0, 'trade_id', range(1, len(df_trades) + 1))
 
     # Save to CSV
     df_trades.to_csv(OUTPUT_FILE, index=False, sep=';', decimal=',')
@@ -210,6 +247,14 @@ if len(trades) > 0:
     print(f"Total trades: {len(df_trades)}")
     print(f"  - PROFIT exits: {len(profit_trades)} ({len(profit_trades)/len(df_trades)*100:.1f}%)")
     print(f"  - STOP exits: {len(stop_trades)} ({len(stop_trades)/len(df_trades)*100:.1f}%)")
+
+    if FILTER_BY_SMA:
+        filtered_trades = df_trades[df_trades['filter_passed'] == True]
+        rejected_trades = df_trades[df_trades['filter_passed'] == False]
+        print(f"\nSMA Filter:")
+        print(f"  - Passed filter: {len(filtered_trades)} ({len(filtered_trades)/len(df_trades)*100:.1f}%)")
+        print(f"  - Rejected by filter: {len(rejected_trades)} ({len(rejected_trades)/len(df_trades)*100:.1f}%)")
+
     print(f"\nTotal P&L: {total_pnl:.2f} points (${total_pnl_usd:,.2f})")
     print(f"Average P&L per trade: {total_pnl/len(df_trades):.2f} points (${total_pnl_usd/len(df_trades):,.2f})")
 

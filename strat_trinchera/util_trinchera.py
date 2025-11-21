@@ -10,6 +10,7 @@ if str(ROLLING_PROFILE_DIR) not in sys.path:
     sys.path.append(str(ROLLING_PROFILE_DIR))
 
 from rolling_profile import RollingMarketProfile
+from config_trinchera import SMA_PERIOD
 
 # ============ CONFIGURATION ============
 FRAME_FREQUENCY = "1s"  # Frequency for frame updates (1 second)
@@ -208,6 +209,11 @@ print(f"\n[OK] Extracted {len(all_frames)} frames")
 
 # Create DataFrame
 df_all_frames = pd.DataFrame(all_frames)
+
+# Calculate SMA
+print(f"\n[INFO] Calculating SMA-{SMA_PERIOD}...")
+df_all_frames['sma'] = df_all_frames['close'].rolling(window=SMA_PERIOD, min_periods=1).mean()
+print(f"[OK] SMA-{SMA_PERIOD} calculated")
 
 # Save to CSV in strat_trinchera/outputs folder with date from source file
 OUTPUTS_DIR = CURRENT_DIR / "outputs"

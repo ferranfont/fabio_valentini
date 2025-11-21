@@ -14,7 +14,7 @@ from plotly.subplots import make_subplots
 from pathlib import Path
 import webbrowser
 from datetime import datetime
-from config_trinchera import BIG_VOLUME_TRIGGER
+from config_trinchera import BIG_VOLUME_TRIGGER, FILTER_BY_SMA
 
 # ============================================================================
 # FILTER CONFIGURATION
@@ -122,6 +122,17 @@ fig.add_trace(go.Scatter(
     name='Close Price',
     line=dict(color='blue', width=1),
     hovertemplate='<b>%{x}</b><br>Close: %{y:.2f}<extra></extra>',
+    showlegend=False
+), secondary_y=False)
+
+# Add SMA line (green with alpha) on primary y-axis (left)
+fig.add_trace(go.Scatter(
+    x=df['timestamp'],
+    y=df['sma'],
+    mode='lines',
+    name='SMA-200',
+    line=dict(color='rgba(0,128,0,0.5)', width=1),
+    hovertemplate='<b>%{x}</b><br>SMA: %{y:.2f}<extra></extra>',
     showlegend=True
 ), secondary_y=False)
 
@@ -133,7 +144,7 @@ fig.add_trace(go.Scatter(
     name='Total Volume',
     line=dict(color='orange', width=1),
     hovertemplate='<b>%{x}</b><br>Volume: %{y:.0f}<extra></extra>',
-    showlegend=True
+    showlegend=False
 ), secondary_y=True)
 
 # Add horizontal line for BIG_VOLUME_TRIGGER on secondary y-axis (right)
@@ -143,7 +154,7 @@ fig.add_trace(go.Scatter(
     mode='lines',
     name=f'Trigger ({BIG_VOLUME_TRIGGER})',
     line=dict(color='orange', width=1, dash='dot'),
-    showlegend=True
+    showlegend=False
 ), secondary_y=True)
 
 # Add orange dots at big volume events on the close price line
@@ -183,56 +194,74 @@ if len(big_volume_events) > 0 and df_bins is not None:
             )
         )
 
-    # Add horizontal timeout lines
-    for _, row in df_bins.iterrows():
+    # Add horizontal timeout lines as scatter traces (for legend control)
+    for idx, row in df_bins.iterrows():
         start_ts = row['start_timestamp']
         end_ts_bigvolume = row['end_timeout_bigvolume']
         end_ts_mean_reversion = row['end_timeout_mean_reversion']
         close_price = row['close']
         mean_level_up = row['mean_level_up']
         mean_level_down = row['mean_level_down']
+        event_sma = row['sma']
+        event_timestamp = row['timestamp']
 
-        # Orange line at close price
-        shapes.append(
-            dict(
-                type='line',
-                x0=start_ts,
-                x1=end_ts_bigvolume,
-                y0=close_price,
-                y1=close_price,
-                yref='y',
-                line=dict(color='rgba(255,165,0,0.3)', width=10),
-                layer='below'
-            )
-        )
+        # Orange line at close price (as scatter trace)
+        # Use mean_reversion timeout to match red/green lines duration
+        fig.add_trace(go.Scatter(
+            x=[start_ts, end_ts_mean_reversion],
+            y=[close_price, close_price],
+            mode='lines',
+            name='Big Volume Timeout',
+            line=dict(color='rgba(255,165,0,0.3)', width=10),
+            showlegend=(idx == 0),  # Only show in legend once
+            legendgroup='big_volume_timeout',  # Group all timeout lines together
+            hoverinfo='skip'
+        ), secondary_y=False)
 
-        # Red line at mean_level_up
-        shapes.append(
-            dict(
-                type='line',
-                x0=start_ts,
-                x1=end_ts_mean_reversion,
-                y0=mean_level_up,
-                y1=mean_level_up,
-                yref='y',
-                line=dict(color='rgba(255,0,0,0.7)', width=1),
-                layer='below'
-            )
-        )
+        # Determine which lines to show based on filter
+        show_red = True
+        show_green = True
 
-        # Green line at mean_level_down
-        shapes.append(
-            dict(
-                type='line',
-                x0=start_ts,
-                x1=end_ts_mean_reversion,
-                y0=mean_level_down,
-                y1=mean_level_down,
-                yref='y',
-                line=dict(color='rgba(34,139,34,0.7)', width=1),
-                layer='below'
+        if FILTER_BY_SMA:
+            # Check if orange dot is above or below SMA
+            if close_price < event_sma:
+                # Orange dot below SMA → Only SELL allowed → Show only RED line
+                show_red = True
+                show_green = False
+            else:
+                # Orange dot above SMA → Only BUY allowed → Show only GREEN line
+                show_red = False
+                show_green = True
+
+        # Red line at mean_level_up (only if allowed)
+        if show_red:
+            shapes.append(
+                dict(
+                    type='line',
+                    x0=start_ts,
+                    x1=end_ts_mean_reversion,
+                    y0=mean_level_up,
+                    y1=mean_level_up,
+                    yref='y',
+                    line=dict(color='rgba(255,0,0,0.7)', width=1),
+                    layer='below'
+                )
             )
-        )
+
+        # Green line at mean_level_down (only if allowed)
+        if show_green:
+            shapes.append(
+                dict(
+                    type='line',
+                    x0=start_ts,
+                    x1=end_ts_mean_reversion,
+                    y0=mean_level_down,
+                    y1=mean_level_down,
+                    yref='y',
+                    line=dict(color='rgba(34,139,34,0.7)', width=1),
+                    layer='below'
+                )
+            )
 
 # Add trade markers and connection lines
 if df_trades is not None and len(df_trades) > 0:
@@ -253,7 +282,7 @@ if df_trades is not None and len(df_trades) > 0:
                 symbol='triangle-up',
                 line=dict(color='green', width=1)
             ),
-            showlegend=True
+            showlegend=False
         ), secondary_y=False)
 
     # SELL entries (triangle down, red)
@@ -269,7 +298,7 @@ if df_trades is not None and len(df_trades) > 0:
                 symbol='triangle-down',
                 line=dict(color='red', width=1)
             ),
-            showlegend=True
+            showlegend=False
         ), secondary_y=False)
 
     # Profit exits (square open, green)
@@ -286,7 +315,7 @@ if df_trades is not None and len(df_trades) > 0:
                 symbol='square',
                 line=dict(color='green', width=2)
             ),
-            showlegend=True
+            showlegend=False
         ), secondary_y=False)
 
     # Stop exits (square open, red)
@@ -303,7 +332,7 @@ if df_trades is not None and len(df_trades) > 0:
                 symbol='square',
                 line=dict(color='red', width=2)
             ),
-            showlegend=True
+            showlegend=False
         ), secondary_y=False)
 
     # Add connection lines from entry to exit

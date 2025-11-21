@@ -7,7 +7,7 @@ import pandas as pd
 from pathlib import Path
 import webbrowser
 from datetime import datetime
-from config_trinchera import MEAN_REVERS_EXPAND, BIG_VOLUME_TRIGGER
+from config_trinchera import MEAN_REVERS_EXPAND, BIG_VOLUME_TRIGGER, TP_POINTS, SL_POINTS
 
 # ============================================================================
 # CONFIGURATION
@@ -30,9 +30,7 @@ date_match = re.search(r'_(\d{8})\.csv', TRADES_FILE.name)
 date_str = date_match.group(1) if date_match else datetime.now().strftime("%Y%m%d")
 OUTPUT_FILE = CHARTS_DIR / f"summary_trinchera_{date_str}.html"
 
-# Strategy parameters (from strat_trinchera.py)
-TP_POINTS = 5.0
-SL_POINTS = 10.0
+# Strategy parameters
 POINT_VALUE = 20.0
 
 print("="*80)

@@ -112,7 +112,8 @@ output_columns = [
     'profile_ask_volume',
     'profile_total_volume',
     'profile_bid_ask_ratio',
-    'tick_count'
+    'tick_count',
+    'sma'
 ]
 
 # Create output DataFrame with selected columns

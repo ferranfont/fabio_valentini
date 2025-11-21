@@ -7,7 +7,7 @@ import pandas as pd
 from pathlib import Path
 import webbrowser
 from datetime import datetime
-from config_trinchera import MEAN_REVERS_EXPAND, BIG_VOLUME_TRIGGER, TP_POINTS, SL_POINTS
+from config_trinchera import MEAN_REVERS_EXPAND, BIG_VOLUME_TRIGGER, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS
 
 # ============================================================================
 # CONFIGURATION
@@ -119,10 +119,12 @@ recovery_factor = abs(total_pnl / max_drawdown) if max_drawdown != 0 else 0
 # Sharpe Ratio (assuming 0 risk-free rate)
 sharpe_ratio = avg_profit / std_profit if std_profit != 0 else 0
 
-# Sortino Ratio (downside deviation)
-downside_returns = df_trades[df_trades['pnl'] < 0]['pnl']
-downside_std = downside_returns.std() if len(downside_returns) > 0 else 0
-sortino_ratio = avg_profit / downside_std if downside_std != 0 else 0
+# Sortino Ratio (downside deviation from zero)
+# Calculate downside deviation: square root of mean of squared negative returns
+downside_returns = df_trades['pnl'].copy()
+downside_returns[downside_returns > 0] = 0  # Zero out positive returns
+downside_deviation = ((downside_returns ** 2).mean()) ** 0.5
+sortino_ratio = avg_profit / downside_deviation if downside_deviation != 0 else 0
 
 # Winning/Losing Streaks
 df_trades['win'] = (df_trades['exit_reason'] == 'profit').astype(int)
@@ -248,7 +250,9 @@ html_content = f"""
     <div class="header">
         <h1>TRINCHERA MEAN REVERSION STRATEGY</h1>
         <p>TP: {TP_POINTS} pts (${TP_POINTS * POINT_VALUE:.0f}) | SL: {SL_POINTS} pts (${SL_POINTS * POINT_VALUE:.0f}) | Mean Reversion: ±{MEAN_REVERS_EXPAND} pts | Volume Trigger: {BIG_VOLUME_TRIGGER}</p>
+        <p>GRID: {'ENABLED' if USE_GRID else 'DISABLED'}{' | Distance: ' + str(GRID_MEAN_REVERS_EXPAND) + ' pts | TP: ' + str(GRID_TP_POINTS) + ' pts ($' + str(int(GRID_TP_POINTS * POINT_VALUE)) + ') | SL: ' + str(GRID_SL_POINTS) + ' pts ($' + str(int(GRID_SL_POINTS * POINT_VALUE)) + ')' if USE_GRID else ''}</p>
         <p>Period: {period_start.strftime('%Y-%m-%d %H:%M')} to {period_end.strftime('%Y-%m-%d %H:%M')}</p>
+        <p>Filters: SMA Filter {'ENABLED' if FILTER_BY_SMA else 'DISABLED'} | Time Filter {'ENABLED' if FILTER_TIME_OF_DAY else 'DISABLED'}{' (' + START_TRADING_TIME + ' to ' + END_TRADING_TIME + ')' if FILTER_TIME_OF_DAY else ''}</p>
     </div>
 
     <div class="container">
@@ -258,7 +262,7 @@ html_content = f"""
             <div class="section-content">
                 <table>
                     <tr><td>Total Trades</td><td>{total_trades}</td></tr>
-                    <tr><td>Periodo</td><td>{period_start.strftime('%Y-%m-%d %H:%M:%S')}<br>{period_end.strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
+                    <tr><td>Periodo</td><td>{'Time: ' + START_TRADING_TIME + ' to ' + END_TRADING_TIME if FILTER_TIME_OF_DAY else period_start.strftime('%Y-%m-%d %H:%M:%S') + '<br>' + period_end.strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
                     <tr><td>Exposure Days</td><td>{exposure_days}</td></tr>
                     <tr><td>Trades per Day</td><td>{trades_per_day:.1f}</td></tr>
                     <tr><td>Avg Duration</td><td>{avg_duration:.1f} min</td></tr>

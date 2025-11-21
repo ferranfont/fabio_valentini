@@ -9,12 +9,16 @@ import sys
 
 # Get BIG_VOLUME_TRIGGER from command line argument or use default from config
 try:
-    from config_trinchera import BIG_VOLUME_TRIGGER as DEFAULT_TRIGGER, BIG_VOLUME_TIMEOUT, MEAN_REVERS_EXPAND, MEAN_REVERSE_TIMEOUT_ORDER
+    from config_trinchera import BIG_VOLUME_TRIGGER as DEFAULT_TRIGGER, BIG_VOLUME_TIMEOUT, MEAN_REVERS_EXPAND, MEAN_REVERSE_TIMEOUT_ORDER, USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS
 except ImportError:
     DEFAULT_TRIGGER = 300
     BIG_VOLUME_TIMEOUT = 10
     MEAN_REVERS_EXPAND = 10
     MEAN_REVERSE_TIMEOUT_ORDER = 1
+    USE_GRID = False
+    GRID_MEAN_REVERS_EXPAND = 5.0
+    GRID_TP_POINTS = 10.0
+    GRID_SL_POINTS = 3.0
 
 # Check if BIG_VOLUME_TRIGGER was passed as command line argument
 if len(sys.argv) > 1:
@@ -77,11 +81,18 @@ big_volume_df['end_timeout_bigvolume'] = big_volume_df['start_timestamp'] + time
 print(f"[INFO] Added timeout window: {BIG_VOLUME_TIMEOUT} minutes per event")
 
 # Calculate mean reversion levels (close price +/- MEAN_REVERS_EXPAND)
-big_volume_df['mean_level_up'] = big_volume_df['close'] + MEAN_REVERS_EXPAND
-big_volume_df['mean_level_down'] = big_volume_df['close'] - MEAN_REVERS_EXPAND
-big_volume_df['end_timeout_mean_reversion'] = big_volume_df['start_timestamp'] + timedelta(minutes=MEAN_REVERSE_TIMEOUT_ORDER)
+# If GRID is enabled, adjust levels to account for second entry distance
+if USE_GRID:
+    # Lines should be drawn at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
+    big_volume_df['mean_level_up'] = big_volume_df['close'] + MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
+    big_volume_df['mean_level_down'] = big_volume_df['close'] - MEAN_REVERS_EXPAND - GRID_MEAN_REVERS_EXPAND
+    print(f"[INFO] GRID ENABLED: Lines drawn at {MEAN_REVERS_EXPAND} + {GRID_MEAN_REVERS_EXPAND} = {MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND} points from close price")
+else:
+    big_volume_df['mean_level_up'] = big_volume_df['close'] + MEAN_REVERS_EXPAND
+    big_volume_df['mean_level_down'] = big_volume_df['close'] - MEAN_REVERS_EXPAND
+    print(f"[INFO] Added mean reversion levels: +/- {MEAN_REVERS_EXPAND} points from close price")
 
-print(f"[INFO] Added mean reversion levels: +/- {MEAN_REVERS_EXPAND} points from close price")
+big_volume_df['end_timeout_mean_reversion'] = big_volume_df['start_timestamp'] + timedelta(minutes=MEAN_REVERSE_TIMEOUT_ORDER)
 print(f"[INFO] Added mean reversion timeout: {MEAN_REVERSE_TIMEOUT_ORDER} minutes per event")
 
 # Select relevant columns for output

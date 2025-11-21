@@ -17,18 +17,37 @@ SMA_PERIOD = 200  # Simple Moving Average period
 # ============================================================================
 # FILTERS TRADING SYSTEM
 # ============================================================================
-FILTER_BY_SMA = True  # Enable/disable SMA filter
+FILTER_BY_SMA = False  # Enable/disable SMA filter
 # If True (checks orange dot position at big volume event):
 #   - If orange dot < SMA: ONLY SELL (SHORT) orders allowed
 #   - If orange dot > SMA: ONLY BUY (LONG) orders allowed
 
+FILTER_TIME_OF_DAY = False  # Enable/disable time-of-day filter
+START_TRADING_TIME = "18:50:00"  # Start trading from this time (HH:MM:SS)
+END_TRADING_TIME = "22:50:00"    # Stop trading after this time (HH:MM:SS)
+# If True: Only trades with entry_time between START and END are allowed
+
 # ============================================================================
 # TRADING PARAMETERS
 # ============================================================================
-TP_POINTS = 20.0   # Take profit in points
-SL_POINTS = 9.0  # Stop loss in points
+TP_POINTS = 5.0   # Take profit in points, usar 4 oara scalping and 20 for swing
+SL_POINTS = 10.0  # Stop loss in points, usar 9 para scalping
 
-MEAN_REVERS_EXPAND = 10   # Points to expand mean reversion levels up/down
-MEAN_REVERSE_TIMEOUT_ORDER = 3 #Timeout in minutes for mean reversion order lines (red/green)
+MEAN_REVERS_EXPAND = 10          # Points to expand mean reversion levels up/down
+MEAN_REVERSE_TIMEOUT_ORDER = 3   # Timeout in minutes for mean reversion order lines (red/green)
+
+# ============================================================================
+# GRID SYSTEM
+# ============================================================================
+USE_GRID = False  # Enable/disable GRID system (second entry)
+GRID_MEAN_REVERS_EXPAND = 5.0  # Distance in points for second entry from first entry
+GRID_TP_POINTS = 4.0  # Take profit distance from average entry price when GRID is active
+GRID_SL_POINTS = 3.0   # Stop loss distance BEYOND second entry level when GRID is active
+# If True:
+#   - SELL: First entry at MEAN_REVERS_EXPAND, second entry at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
+#   - BUY: First entry at MEAN_REVERS_EXPAND, second entry at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
+#   - If first entry reaches TP_POINTS before second entry triggers → close immediately at profit
+#   - If price squeezes and second entry triggers → use GRID_TP_POINTS from average price, GRID_SL_POINTS beyond second entry
+#   - Filled zones drawn at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND (where second entry would be)
 
 

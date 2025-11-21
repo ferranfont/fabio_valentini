@@ -14,7 +14,7 @@ from plotly.subplots import make_subplots
 from pathlib import Path
 import webbrowser
 from datetime import datetime
-from config_trinchera import BIG_VOLUME_TRIGGER, FILTER_BY_SMA
+from config_trinchera import BIG_VOLUME_TRIGGER, FILTER_BY_SMA, MEAN_REVERS_EXPAND, USE_GRID, GRID_MEAN_REVERS_EXPAND
 
 # ============================================================================
 # FILTER CONFIGURATION
@@ -233,35 +233,75 @@ if len(big_volume_events) > 0 and df_bins is not None:
                 show_red = False
                 show_green = True
 
-        # Red line at mean_level_up (only if allowed)
+        # Red line at mean_level_up (only if allowed and GRID is disabled)
         if show_red:
-            shapes.append(
-                dict(
-                    type='line',
-                    x0=start_ts,
-                    x1=end_ts_mean_reversion,
-                    y0=mean_level_up,
-                    y1=mean_level_up,
-                    yref='y',
-                    line=dict(color='rgba(255,0,0,0.7)', width=1),
-                    layer='below'
+            # Only draw horizontal line if GRID is disabled
+            if not USE_GRID:
+                shapes.append(
+                    dict(
+                        type='line',
+                        x0=start_ts,
+                        x1=end_ts_mean_reversion,
+                        y0=mean_level_up,
+                        y1=mean_level_up,
+                        yref='y',
+                        line=dict(color='rgba(255,0,0,0.7)', width=1),
+                        layer='below'
+                    )
                 )
-            )
 
-        # Green line at mean_level_down (only if allowed)
-        if show_green:
-            shapes.append(
-                dict(
-                    type='line',
-                    x0=start_ts,
-                    x1=end_ts_mean_reversion,
-                    y0=mean_level_down,
-                    y1=mean_level_down,
-                    yref='y',
-                    line=dict(color='rgba(34,139,34,0.7)', width=1),
-                    layer='below'
+            # Add red filled rectangle for GRID zone (SELL zone)
+            # From mean_level_up down to (close + MEAN_REVERS_EXPAND)
+            if USE_GRID:
+                first_entry_level = close_price + MEAN_REVERS_EXPAND
+                shapes.append(
+                    dict(
+                        type='rect',
+                        x0=start_ts,
+                        x1=end_ts_mean_reversion,
+                        y0=mean_level_up,  # Current red line (MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND)
+                        y1=first_entry_level,  # Down to MEAN_REVERS_EXPAND level
+                        yref='y',
+                        fillcolor='rgba(255,0,0,0.05)',
+                        line=dict(width=0),
+                        layer='below'
+                    )
                 )
-            )
+
+        # Green line at mean_level_down (only if allowed and GRID is disabled)
+        if show_green:
+            # Only draw horizontal line if GRID is disabled
+            if not USE_GRID:
+                shapes.append(
+                    dict(
+                        type='line',
+                        x0=start_ts,
+                        x1=end_ts_mean_reversion,
+                        y0=mean_level_down,
+                        y1=mean_level_down,
+                        yref='y',
+                        line=dict(color='rgba(34,139,34,0.7)', width=1),
+                        layer='below'
+                    )
+                )
+
+            # Add green filled rectangle for GRID zone (BUY zone)
+            # From mean_level_down up to (close - MEAN_REVERS_EXPAND)
+            if USE_GRID:
+                first_entry_level = close_price - MEAN_REVERS_EXPAND
+                shapes.append(
+                    dict(
+                        type='rect',
+                        x0=start_ts,
+                        x1=end_ts_mean_reversion,
+                        y0=mean_level_down,  # Current green line (MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND)
+                        y1=first_entry_level,  # Up to MEAN_REVERS_EXPAND level
+                        yref='y',
+                        fillcolor='rgba(0,128,0,0.05)',
+                        line=dict(width=0),
+                        layer='below'
+                    )
+                )
 
 # Add trade markers and connection lines
 if df_trades is not None and len(df_trades) > 0:
@@ -269,7 +309,7 @@ if df_trades is not None and len(df_trades) > 0:
     buy_trades = df_trades[df_trades['direction'] == 'BUY']
     sell_trades = df_trades[df_trades['direction'] == 'SELL']
 
-    # BUY entries (triangle up, green)
+    # BUY entries (triangle up, green) - First entry
     if len(buy_trades) > 0:
         fig.add_trace(go.Scatter(
             x=buy_trades['entry_time'],
@@ -285,7 +325,24 @@ if df_trades is not None and len(df_trades) > 0:
             showlegend=False
         ), secondary_y=False)
 
-    # SELL entries (triangle down, red)
+        # BUY second entries (GRID)
+        buy_grid = buy_trades[buy_trades['entry_time_2'].notna()]
+        if len(buy_grid) > 0:
+            fig.add_trace(go.Scatter(
+                x=buy_grid['entry_time_2'],
+                y=buy_grid['entry_price_2'],
+                mode='markers',
+                name='BUY Entry 2 (GRID)',
+                marker=dict(
+                    color='green',
+                    size=12,
+                    symbol='triangle-up',
+                    line=dict(color='green', width=1)
+                ),
+                showlegend=False
+            ), secondary_y=False)
+
+    # SELL entries (triangle down, red) - First entry
     if len(sell_trades) > 0:
         fig.add_trace(go.Scatter(
             x=sell_trades['entry_time'],
@@ -300,6 +357,23 @@ if df_trades is not None and len(df_trades) > 0:
             ),
             showlegend=False
         ), secondary_y=False)
+
+        # SELL second entries (GRID)
+        sell_grid = sell_trades[sell_trades['entry_time_2'].notna()]
+        if len(sell_grid) > 0:
+            fig.add_trace(go.Scatter(
+                x=sell_grid['entry_time_2'],
+                y=sell_grid['entry_price_2'],
+                mode='markers',
+                name='SELL Entry 2 (GRID)',
+                marker=dict(
+                    color='red',
+                    size=12,
+                    symbol='triangle-down',
+                    line=dict(color='red', width=1)
+                ),
+                showlegend=False
+            ), secondary_y=False)
 
     # Profit exits (square open, green)
     profit_exits = df_trades[df_trades['exit_reason'] == 'profit']
@@ -335,9 +409,9 @@ if df_trades is not None and len(df_trades) > 0:
             showlegend=False
         ), secondary_y=False)
 
-    # Add connection lines from entry to exit
+    # Add connection lines from entries to exit
     for _, trade in df_trades.iterrows():
-        # Grey line connecting entry to exit
+        # Always draw line from first entry to exit
         shapes.append(
             dict(
                 type='line',
@@ -346,13 +420,117 @@ if df_trades is not None and len(df_trades) > 0:
                 y0=trade['entry_price'],
                 y1=trade['exit_price'],
                 yref='y',
-                line=dict(color='rgba(128,128,128,0.8)', width=1, dash='dot'),
+                line=dict(color='rgba(211,211,211,0.8)', width=1, dash='dot'),
                 layer='below'
             )
         )
 
-    print(f"[INFO] Added {len(buy_trades)} BUY entry markers")
-    print(f"[INFO] Added {len(sell_trades)} SELL entry markers")
+        # If has second entry (GRID), draw second line
+        if pd.notna(trade.get('entry_time_2')):
+            shapes.append(
+                dict(
+                    type='line',
+                    x0=trade['entry_time_2'],
+                    x1=trade['exit_time'],
+                    y0=trade['entry_price_2'],
+                    y1=trade['exit_price'],
+                    yref='y',
+                    line=dict(color='rgba(211,211,211,0.8)', width=1, dash='dot'),
+                    layer='below'
+                )
+            )
+
+    # Add GRID zone traces (only if GRID is enabled)
+    # These will be linked to legend so they can be toggled
+    if USE_GRID:
+        # First, add the actual filled zones as scatter traces (they will be hidden in legend)
+        # Then add invisible legend items that control them via legendgroup
+
+        # Collect all SELL zone rectangles from shapes list
+        sell_zones = []
+        buy_zones = []
+
+        for shape in shapes[:]:  # Iterate over copy
+            if shape.get('type') == 'rect' and shape.get('fillcolor'):
+                if 'rgba(255,0,0' in shape['fillcolor']:  # Red SELL zone
+                    # Convert rectangle to scatter trace with fill
+                    x_coords = [shape['x0'], shape['x1'], shape['x1'], shape['x0'], shape['x0']]
+                    y_coords = [shape['y0'], shape['y0'], shape['y1'], shape['y1'], shape['y0']]
+                    sell_zones.append((x_coords, y_coords))
+                    shapes.remove(shape)  # Remove from shapes list
+                elif 'rgba(0,128,0' in shape['fillcolor']:  # Green BUY zone
+                    # Convert rectangle to scatter trace with fill
+                    x_coords = [shape['x0'], shape['x1'], shape['x1'], shape['x0'], shape['x0']]
+                    y_coords = [shape['y0'], shape['y0'], shape['y1'], shape['y1'], shape['y0']]
+                    buy_zones.append((x_coords, y_coords))
+                    shapes.remove(shape)  # Remove from shapes list
+
+        # Add SELL Zone legend entry
+        fig.add_trace(go.Scatter(
+            x=[None],
+            y=[None],
+            mode='markers',
+            name='SELL Zone (GRID)',
+            marker=dict(
+                color='rgba(255,0,0,0.05)',
+                size=15,
+                symbol='square',
+                line=dict(color='red', width=1)
+            ),
+            legendgroup='sell_zone',
+            showlegend=True
+        ), secondary_y=False)
+
+        # Add all SELL zone fills (linked to legend entry)
+        for x_coords, y_coords in sell_zones:
+            fig.add_trace(go.Scatter(
+                x=x_coords,
+                y=y_coords,
+                fill='toself',
+                fillcolor='rgba(255,0,0,0.05)',
+                line=dict(width=0),
+                mode='lines',
+                legendgroup='sell_zone',
+                showlegend=False,
+                hoverinfo='skip'
+            ), secondary_y=False)
+
+        # Add BUY Zone legend entry
+        fig.add_trace(go.Scatter(
+            x=[None],
+            y=[None],
+            mode='markers',
+            name='BUY Zone (GRID)',
+            marker=dict(
+                color='rgba(0,128,0,0.05)',
+                size=15,
+                symbol='square',
+                line=dict(color='green', width=1)
+            ),
+            legendgroup='buy_zone',
+            showlegend=True
+        ), secondary_y=False)
+
+        # Add all BUY zone fills (linked to legend entry)
+        for x_coords, y_coords in buy_zones:
+            fig.add_trace(go.Scatter(
+                x=x_coords,
+                y=y_coords,
+                fill='toself',
+                fillcolor='rgba(0,128,0,0.05)',
+                line=dict(width=0),
+                mode='lines',
+                legendgroup='buy_zone',
+                showlegend=False,
+                hoverinfo='skip'
+            ), secondary_y=False)
+
+    # Count GRID entries
+    buy_grid_count = len(buy_trades[buy_trades['entry_time_2'].notna()]) if 'entry_time_2' in buy_trades.columns else 0
+    sell_grid_count = len(sell_trades[sell_trades['entry_time_2'].notna()]) if 'entry_time_2' in sell_trades.columns else 0
+
+    print(f"[INFO] Added {len(buy_trades)} BUY entry markers ({buy_grid_count} with GRID)")
+    print(f"[INFO] Added {len(sell_trades)} SELL entry markers ({sell_grid_count} with GRID)")
     print(f"[INFO] Added {len(profit_exits)} PROFIT exit markers")
     print(f"[INFO] Added {len(stop_exits)} STOP exit markers")
     print(f"[INFO] Added {len(df_trades)} connection lines")

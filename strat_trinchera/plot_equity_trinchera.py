@@ -9,6 +9,7 @@ from plotly.subplots import make_subplots
 import webbrowser
 from pathlib import Path
 from datetime import datetime
+from config_trinchera import FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME
 
 # ============================================================================
 # CONFIGURATION
@@ -49,6 +50,9 @@ df['cumulative_pnl_usd'] = df['pnl_usd'].cumsum()
 # Calculate duration in minutes
 df['duration_minutes'] = (df['exit_time'] - df['entry_time']).dt.total_seconds() / 60
 
+# Extract time of day for hover info
+df['entry_time_only'] = df['entry_time'].dt.strftime('%H:%M:%S')
+
 # Create figure with 3 subplots
 fig = make_subplots(
     rows=3, cols=1,
@@ -71,7 +75,8 @@ fig.add_trace(
         line=dict(color=equity_color, width=2),
         fill='tozeroy',
         fillcolor=fill_color,
-        hovertemplate='Trade #%{x}<br>Equity: $%{y:,.2f}<extra></extra>'
+        customdata=df[['trade_id', 'entry_time_only']],
+        hovertemplate='Trade ID: %{customdata[0]}<br>Entry Time: %{customdata[1]}<br>Equity: $%{y:,.2f}<extra></extra>'
     ),
     row=1, col=1
 )
@@ -85,7 +90,8 @@ fig.add_trace(
         name='Profit/Loss',
         marker_color=colors,
         opacity=0.6,
-        hovertemplate='Trade #%{x}<br>P/L: $%{y:,.2f}<extra></extra>'
+        customdata=df[['trade_id', 'entry_time_only']],
+        hovertemplate='Trade ID: %{customdata[0]}<br>Entry Time: %{customdata[1]}<br>P/L: $%{y:,.2f}<extra></extra>'
     ),
     row=2, col=1
 )
@@ -103,7 +109,8 @@ fig.add_trace(
         line=dict(color='red', width=2),
         fill='tozeroy',
         fillcolor='rgba(200,0,0,0.2)',
-        hovertemplate='Trade #%{x}<br>DD: $%{y:,.2f}<extra></extra>'
+        customdata=df[['trade_id', 'entry_time_only']],
+        hovertemplate='Trade ID: %{customdata[0]}<br>Entry Time: %{customdata[1]}<br>DD: $%{y:,.2f}<extra></extra>'
     ),
     row=3, col=1
 )
@@ -114,13 +121,18 @@ fig.update_yaxes(title_text="Equity ($)", row=1, col=1)
 fig.update_yaxes(title_text="P/L ($)", row=2, col=1)
 fig.update_yaxes(title_text="DD ($)", row=3, col=1)
 
+# Build filter info for title
+filter_info = f"SMA Filter: {'ENABLED' if FILTER_BY_SMA else 'DISABLED'} | Time Filter: {'ENABLED' if FILTER_TIME_OF_DAY else 'DISABLED'}"
+if FILTER_TIME_OF_DAY:
+    filter_info += f" ({START_TRADING_TIME} to {END_TRADING_TIME})"
+
 # Update layout
 fig.update_layout(
     height=900,
     width=1400,
     showlegend=True,
     hovermode='x unified',
-    title_text=f"Trinchera Strategy - Backtest Results ({len(df):,} trades)",
+    title_text=f"Trinchera Strategy - Backtest Results ({len(df):,} trades)<br><sub>{filter_info}</sub>",
     template='plotly_white'
 )
 

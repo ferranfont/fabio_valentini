@@ -7,8 +7,8 @@ Trades based on price touching mean reversion levels (red/green lines)
 
 import pandas as pd
 from pathlib import Path
-from datetime import datetime
-from config_trinchera import MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, FILTER_BY_SMA
+from datetime import datetime, time
+from config_trinchera import MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS
 
 # ============================================================================
 # STRATEGY CONFIGURATION
@@ -39,6 +39,11 @@ OUTPUT_FILE = OUTPUTS_DIR / f"db_trinchera_TR_{date_str}.csv"
 
 POINT_VALUE = 20.0  # USD value per point for NQ futures
 
+# Parse trading time range
+if FILTER_TIME_OF_DAY:
+    start_time = datetime.strptime(START_TRADING_TIME, "%H:%M:%S").time()
+    end_time = datetime.strptime(END_TRADING_TIME, "%H:%M:%S").time()
+
 print("="*80)
 print("TRINCHERA MEAN REVERSION STRATEGY")
 print("="*80)
@@ -51,6 +56,15 @@ print(f"  - SMA Filter: {'ENABLED' if FILTER_BY_SMA else 'DISABLED'}")
 if FILTER_BY_SMA:
     print(f"    * Orange dot < SMA at event: ONLY SELL orders")
     print(f"    * Orange dot > SMA at event: ONLY BUY orders")
+print(f"  - Time Filter: {'ENABLED' if FILTER_TIME_OF_DAY else 'DISABLED'}")
+if FILTER_TIME_OF_DAY:
+    print(f"    * Trading hours: {START_TRADING_TIME} to {END_TRADING_TIME}")
+print(f"  - GRID System: {'ENABLED' if USE_GRID else 'DISABLED'}")
+if USE_GRID:
+    print(f"    * Second entry distance: {GRID_MEAN_REVERS_EXPAND} points")
+    print(f"    * GRID TP: {GRID_TP_POINTS} points (${GRID_TP_POINTS * POINT_VALUE:.0f}) from average entry")
+    print(f"    * GRID SL: {GRID_SL_POINTS} points (${GRID_SL_POINTS * POINT_VALUE:.0f}) beyond second entry")
+    print(f"    * TP from average, SL from second entry + {GRID_SL_POINTS} pts")
 
 # Load big volume events (bins)
 print(f"\n[INFO] Loading big volume events from: {BINS_FILE.name}")
@@ -96,53 +110,135 @@ for idx, event in df_bins.iterrows():
         continue
 
     # Check for SELL opportunity (price touches red line - mean_level_up)
-    sell_touches = window_data[window_data['high'] >= mean_level_up]
+    # If USE_GRID, first entry at MEAN_REVERS_EXPAND, second at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
+    if USE_GRID:
+        first_entry_level = event_close + MEAN_REVERS_EXPAND
+        second_entry_level = event_close + MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
+    else:
+        first_entry_level = mean_level_up
+        second_entry_level = None
+
+    sell_touches = window_data[window_data['high'] >= first_entry_level]
     if len(sell_touches) > 0:
         entry_time = sell_touches.iloc[0]['timestamp']
-        entry_price = mean_level_up
+        entry_price = first_entry_level
         entry_sma = sell_touches.iloc[0]['sma']
 
-        # Check SMA filter: SELL only if orange dot was BELOW SMA at event
-        filter_passed = True
+        # Check filters (both are independent)
+        sma_filter_passed = True
+        time_filter_passed = True
+
+        # SMA filter: SELL only if orange dot was BELOW SMA at event
         if FILTER_BY_SMA:
-            filter_passed = event_close < event_sma
+            sma_filter_passed = event_close < event_sma
 
-        # Calculate TP and SL for SELL
-        tp_price = entry_price - TP_POINTS
-        sl_price = entry_price + SL_POINTS
+        # Time filter: Check if entry time is within trading hours
+        if FILTER_TIME_OF_DAY:
+            entry_time_only = entry_time.time()
+            time_filter_passed = start_time <= entry_time_only <= end_time
 
-        # Find exit from entry time onwards
-        exit_data = df_data[df_data['timestamp'] > entry_time].copy()
+        # Both filters must pass (if enabled)
+        filter_passed = sma_filter_passed and time_filter_passed
 
-        exit_reason = None
-        exit_time = None
-        exit_price = None
-        exit_sma = None
+        # GRID: Look for second entry OR TP from first entry (whichever comes first)
+        second_entry_time = None
+        second_entry_price = None
+        has_second_entry = False
+        early_tp_exit = False
 
-        for _, bar in exit_data.iterrows():
-            # Check TP (price goes down to TP)
-            if bar['low'] <= tp_price:
-                exit_reason = 'profit'
-                exit_time = bar['timestamp']
-                exit_price = tp_price
-                exit_sma = bar['sma']
-                break
-            # Check SL (price goes up to SL)
-            elif bar['high'] >= sl_price:
-                exit_reason = 'stop'
-                exit_time = bar['timestamp']
-                exit_price = sl_price
-                exit_sma = bar['sma']
-                break
+        # Calculate TP from first entry
+        first_entry_tp = entry_price - TP_POINTS  # SELL: TP is below entry
+        first_entry_sl = entry_price + SL_POINTS  # SELL: SL is above entry
 
-        if exit_reason and (not FILTER_BY_SMA or filter_passed):
-            pnl = entry_price - exit_price  # SELL: profit when price goes down
+        if USE_GRID and second_entry_level is not None:
+            # Search for second entry OR TP from first entry (whichever comes first)
+            second_entry_data = df_data[(df_data['timestamp'] > entry_time) & (df_data['timestamp'] <= end_ts)].copy()
+
+            for _, bar in second_entry_data.iterrows():
+                # Check if first entry TP is reached BEFORE second entry
+                if bar['low'] <= first_entry_tp:
+                    # TP from first entry reached before second entry
+                    early_tp_exit = True
+                    exit_reason = 'profit'
+                    exit_time = bar['timestamp']
+                    exit_price = first_entry_tp
+                    exit_sma = bar['sma']
+                    avg_entry_price = entry_price
+                    tp_price = first_entry_tp
+                    sl_price = first_entry_sl
+                    break
+                # Check if first entry SL is reached BEFORE second entry
+                elif bar['high'] >= first_entry_sl:
+                    # SL from first entry reached before second entry
+                    early_tp_exit = True  # Use same flag to skip further processing
+                    exit_reason = 'stop'
+                    exit_time = bar['timestamp']
+                    exit_price = first_entry_sl
+                    exit_sma = bar['sma']
+                    avg_entry_price = entry_price
+                    tp_price = first_entry_tp
+                    sl_price = first_entry_sl
+                    break
+                # Check if second entry is triggered
+                elif bar['high'] >= second_entry_level:
+                    second_entry_time = bar['timestamp']
+                    second_entry_price = second_entry_level
+                    has_second_entry = True
+                    # Calculate average entry price for TP/SL
+                    avg_entry_price = (entry_price + second_entry_price) / 2
+                    break
+
+            # If no early exit and no second entry, use first entry price
+            if not early_tp_exit and not has_second_entry:
+                avg_entry_price = entry_price
+        else:
+            avg_entry_price = entry_price
+
+        # Calculate TP and SL for SELL (only if not early exit)
+        if not early_tp_exit:
+            if USE_GRID and has_second_entry:
+                tp_price = avg_entry_price - GRID_TP_POINTS
+                sl_price = event_close + MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND + GRID_SL_POINTS
+            else:
+                tp_price = avg_entry_price - TP_POINTS
+                sl_price = avg_entry_price + SL_POINTS
+
+            # Find exit from entry time (or second entry if exists) onwards
+            exit_search_start = second_entry_time if has_second_entry else entry_time
+            exit_data = df_data[df_data['timestamp'] > exit_search_start].copy()
+
+            exit_reason = None
+            exit_time = None
+            exit_price = None
+            exit_sma = None
+
+            for _, bar in exit_data.iterrows():
+                # Check TP (price goes down to TP)
+                if bar['low'] <= tp_price:
+                    exit_reason = 'profit'
+                    exit_time = bar['timestamp']
+                    exit_price = tp_price
+                    exit_sma = bar['sma']
+                    break
+                # Check SL (price goes up to SL)
+                elif bar['high'] >= sl_price:
+                    exit_reason = 'stop'
+                    exit_time = bar['timestamp']
+                    exit_price = sl_price
+                    exit_sma = bar['sma']
+                    break
+
+        if exit_reason and filter_passed:
+            pnl = avg_entry_price - exit_price  # SELL: profit when price goes down
             pnl_usd = pnl * POINT_VALUE
             trades.append({
                 'entry_time': entry_time,
+                'entry_time_2': second_entry_time if has_second_entry else None,
                 'exit_time': exit_time,
                 'direction': 'SELL',
                 'entry_price': entry_price,
+                'entry_price_2': second_entry_price if has_second_entry else None,
+                'avg_entry_price': avg_entry_price,
                 'exit_price': exit_price,
                 'entry_sma': entry_sma,
                 'exit_sma': exit_sma,
@@ -154,57 +250,140 @@ for idx, event in df_bins.iterrows():
                 'pnl': pnl,
                 'pnl_usd': pnl_usd,
                 'filter_passed': filter_passed,
-                'event_timestamp': event['timestamp']
+                'event_timestamp': event['timestamp'],
+                'has_grid_entry': has_second_entry
             })
 
     # Check for BUY opportunity (price touches green line - mean_level_down)
-    buy_touches = window_data[window_data['low'] <= mean_level_down]
+    # If USE_GRID, first entry at MEAN_REVERS_EXPAND, second at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
+    if USE_GRID:
+        first_entry_level = event_close - MEAN_REVERS_EXPAND
+        second_entry_level = event_close - MEAN_REVERS_EXPAND - GRID_MEAN_REVERS_EXPAND
+    else:
+        first_entry_level = mean_level_down
+        second_entry_level = None
+
+    buy_touches = window_data[window_data['low'] <= first_entry_level]
     if len(buy_touches) > 0:
         entry_time = buy_touches.iloc[0]['timestamp']
-        entry_price = mean_level_down
+        entry_price = first_entry_level
         entry_sma = buy_touches.iloc[0]['sma']
 
-        # Check SMA filter: BUY only if orange dot was ABOVE SMA at event
-        filter_passed = True
+        # Check filters (both are independent)
+        sma_filter_passed = True
+        time_filter_passed = True
+
+        # SMA filter: BUY only if orange dot was ABOVE SMA at event
         if FILTER_BY_SMA:
-            filter_passed = event_close > event_sma
+            sma_filter_passed = event_close > event_sma
 
-        # Calculate TP and SL for BUY
-        tp_price = entry_price + TP_POINTS
-        sl_price = entry_price - SL_POINTS
+        # Time filter: Check if entry time is within trading hours
+        if FILTER_TIME_OF_DAY:
+            entry_time_only = entry_time.time()
+            time_filter_passed = start_time <= entry_time_only <= end_time
 
-        # Find exit from entry time onwards
-        exit_data = df_data[df_data['timestamp'] > entry_time].copy()
+        # Both filters must pass (if enabled)
+        filter_passed = sma_filter_passed and time_filter_passed
 
-        exit_reason = None
-        exit_time = None
-        exit_price = None
-        exit_sma = None
+        # GRID: Look for second entry OR TP from first entry (whichever comes first)
+        second_entry_time = None
+        second_entry_price = None
+        has_second_entry = False
+        early_tp_exit = False
 
-        for _, bar in exit_data.iterrows():
-            # Check TP (price goes up to TP)
-            if bar['high'] >= tp_price:
-                exit_reason = 'profit'
-                exit_time = bar['timestamp']
-                exit_price = tp_price
-                exit_sma = bar['sma']
-                break
-            # Check SL (price goes down to SL)
-            elif bar['low'] <= sl_price:
-                exit_reason = 'stop'
-                exit_time = bar['timestamp']
-                exit_price = sl_price
-                exit_sma = bar['sma']
-                break
+        # Calculate TP from first entry
+        first_entry_tp = entry_price + TP_POINTS  # BUY: TP is above entry
+        first_entry_sl = entry_price - SL_POINTS  # BUY: SL is below entry
 
-        if exit_reason and (not FILTER_BY_SMA or filter_passed):
-            pnl = exit_price - entry_price  # BUY: profit when price goes up
+        if USE_GRID and second_entry_level is not None:
+            # Search for second entry OR TP from first entry (whichever comes first)
+            second_entry_data = df_data[(df_data['timestamp'] > entry_time) & (df_data['timestamp'] <= end_ts)].copy()
+
+            for _, bar in second_entry_data.iterrows():
+                # Check if first entry TP is reached BEFORE second entry
+                if bar['high'] >= first_entry_tp:
+                    # TP from first entry reached before second entry
+                    early_tp_exit = True
+                    exit_reason = 'profit'
+                    exit_time = bar['timestamp']
+                    exit_price = first_entry_tp
+                    exit_sma = bar['sma']
+                    avg_entry_price = entry_price
+                    tp_price = first_entry_tp
+                    sl_price = first_entry_sl
+                    break
+                # Check if first entry SL is reached BEFORE second entry
+                elif bar['low'] <= first_entry_sl:
+                    # SL from first entry reached before second entry
+                    early_tp_exit = True  # Use same flag to skip further processing
+                    exit_reason = 'stop'
+                    exit_time = bar['timestamp']
+                    exit_price = first_entry_sl
+                    exit_sma = bar['sma']
+                    avg_entry_price = entry_price
+                    tp_price = first_entry_tp
+                    sl_price = first_entry_sl
+                    break
+                # Check if second entry is triggered
+                elif bar['low'] <= second_entry_level:
+                    second_entry_time = bar['timestamp']
+                    second_entry_price = second_entry_level
+                    has_second_entry = True
+                    # Calculate average entry price for TP/SL
+                    avg_entry_price = (entry_price + second_entry_price) / 2
+                    break
+
+            # If no early exit and no second entry, use first entry price
+            if not early_tp_exit and not has_second_entry:
+                avg_entry_price = entry_price
+        else:
+            avg_entry_price = entry_price
+
+        # Calculate TP and SL for BUY (only if not early exit)
+        if not early_tp_exit:
+            if USE_GRID and has_second_entry:
+                tp_price = avg_entry_price + GRID_TP_POINTS
+                sl_price = event_close - MEAN_REVERS_EXPAND - GRID_MEAN_REVERS_EXPAND - GRID_SL_POINTS
+            else:
+                tp_price = avg_entry_price + TP_POINTS
+                sl_price = avg_entry_price - SL_POINTS
+
+            # Find exit from entry time (or second entry if exists) onwards
+            exit_search_start = second_entry_time if has_second_entry else entry_time
+            exit_data = df_data[df_data['timestamp'] > exit_search_start].copy()
+
+            exit_reason = None
+            exit_time = None
+            exit_price = None
+            exit_sma = None
+
+            for _, bar in exit_data.iterrows():
+                # Check TP (price goes up to TP)
+                if bar['high'] >= tp_price:
+                    exit_reason = 'profit'
+                    exit_time = bar['timestamp']
+                    exit_price = tp_price
+                    exit_sma = bar['sma']
+                    break
+                # Check SL (price goes down to SL)
+                elif bar['low'] <= sl_price:
+                    exit_reason = 'stop'
+                    exit_time = bar['timestamp']
+                    exit_price = sl_price
+                    exit_sma = bar['sma']
+                    break
+
+        if exit_reason and filter_passed:
+            pnl = exit_price - avg_entry_price  # BUY: profit when price goes up
             pnl_usd = pnl * POINT_VALUE
             trades.append({
                 'entry_time': entry_time,
+                'entry_time_2': second_entry_time if has_second_entry else None,
                 'exit_time': exit_time,
                 'direction': 'BUY',
                 'entry_price': entry_price,
+                'entry_price_2': second_entry_price if has_second_entry else None,
+                'avg_entry_price': avg_entry_price,
                 'exit_price': exit_price,
                 'entry_sma': entry_sma,
                 'exit_sma': exit_sma,
@@ -216,7 +395,8 @@ for idx, event in df_bins.iterrows():
                 'pnl': pnl,
                 'pnl_usd': pnl_usd,
                 'filter_passed': filter_passed,
-                'event_timestamp': event['timestamp']
+                'event_timestamp': event['timestamp'],
+                'has_grid_entry': has_second_entry
             })
 
 # ============================================================================

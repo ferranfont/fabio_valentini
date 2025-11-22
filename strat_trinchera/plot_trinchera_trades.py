@@ -14,7 +14,11 @@ from plotly.subplots import make_subplots
 from pathlib import Path
 import webbrowser
 from datetime import datetime
-from config_trinchera import BIG_VOLUME_TRIGGER, FILTER_BY_SMA, MEAN_REVERS_EXPAND, FILTER_USE_GRID, GRID_MEAN_REVERS_EXPAND
+from config_trinchera import (
+    BIG_VOLUME_TRIGGER, FILTER_BY_SMA, MEAN_REVERS_EXPAND, FILTER_USE_GRID,
+    GRID_MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, SMA_TRAILING_STOP,
+    TRAILING_STOP_ATR_MULT, FILTER_TIME_OF_DAY, GRID_TP_POINTS, GRID_SL_POINTS
+)
 
 # ============================================================================
 # FILTER CONFIGURATION
@@ -535,9 +539,47 @@ if df_trades is not None and len(df_trades) > 0:
     print(f"[INFO] Added {len(losing_exits)} LOSING exit markers (red squares)")
     print(f"[INFO] Added {len(df_trades)} connection lines")
 
+# Build dynamic title with filter status and TP/SL info
+filters_status = []
+if FILTER_BY_SMA:
+    filters_status.append("SMA Filter: ON")
+else:
+    filters_status.append("SMA Filter: OFF")
+
+# GRID info - if trailing stop is ON, GRID_TP_POINTS is ignored (trailing stop overrides)
+if FILTER_USE_GRID:
+    if SMA_TRAILING_STOP:
+        # Trailing stop overrides GRID_TP_POINTS - only show SL
+        filters_status.append(f"GRID: ON (SL:{GRID_SL_POINTS}p)")
+    else:
+        # Normal GRID behavior with fixed TP/SL
+        filters_status.append(f"GRID: ON (TP:{GRID_TP_POINTS}p SL:{GRID_SL_POINTS}p)")
+else:
+    filters_status.append("GRID: OFF")
+
+# Trailing stop info and main TP/SL
+if SMA_TRAILING_STOP:
+    filters_status.append(f"Trailing Stop: ON ({TRAILING_STOP_ATR_MULT}p)")
+    # When trailing stop is active, no fixed TP is used (for both GRID and non-GRID)
+    if FILTER_USE_GRID:
+        tp_sl_info = f"SL:{GRID_SL_POINTS}p"  # Use GRID SL when GRID is enabled
+    else:
+        tp_sl_info = f"SL:{SL_POINTS}p"  # Use normal SL when GRID is disabled
+else:
+    # Normal fixed TP/SL behavior
+    if FILTER_USE_GRID:
+        tp_sl_info = f"TP:{GRID_TP_POINTS}p SL:{GRID_SL_POINTS}p"
+    else:
+        tp_sl_info = f"TP:{TP_POINTS}p SL:{SL_POINTS}p"
+
+if FILTER_TIME_OF_DAY:
+    filters_status.append("Time Filter: ON")
+
+title_text = f"Trinchera - Trades Visualization | {tp_sl_info} | {' | '.join(filters_status)}"
+
 # Update layout with shapes
 fig.update_layout(
-    title='Trinchera - Trades Visualization',
+    title=title_text,
     xaxis_title='',
     yaxis_title='',
     hovermode=False,

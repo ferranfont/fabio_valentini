@@ -155,8 +155,8 @@ for idx, event in df_bins.iterrows():
         first_entry_sl = entry_price + SL_POINTS  # SELL: SL is above entry
 
         if FILTER_USE_GRID and second_entry_level is not None:
-            # Search for second entry OR TP from first entry (whichever comes first)
-            # BUT: Skip TP check if trailing stop is enabled (let profits run)
+            # Search for second entry OR TP/SL from first entry (whichever comes first)
+            # BUT: If trailing stop is enabled, ONLY check for second entry (skip fixed TP/SL)
             trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
             second_entry_data = df_data[(df_data['timestamp'] > entry_time) & (df_data['timestamp'] <= end_ts)].copy()
 
@@ -173,8 +173,8 @@ for idx, event in df_bins.iterrows():
                     tp_price = first_entry_tp
                     sl_price = first_entry_sl
                     break
-                # Check if first entry SL is reached BEFORE second entry
-                elif bar['high'] >= first_entry_sl:
+                # Check if first entry SL is reached BEFORE second entry (only if NO trailing stop)
+                elif not trailing_enabled and bar['high'] >= first_entry_sl:
                     # SL from first entry reached before second entry
                     early_tp_exit = True  # Use same flag to skip further processing
                     exit_reason = 'stop'
@@ -202,11 +202,14 @@ for idx, event in df_bins.iterrows():
 
         # Calculate TP and SL for SELL (only if not early exit)
         if not early_tp_exit:
+            trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
             if FILTER_USE_GRID and has_second_entry:
-                tp_price = avg_entry_price - GRID_TP_POINTS
+                # GRID second entry filled - use GRID TP/SL (unless trailing stop overrides TP)
+                tp_price = avg_entry_price - GRID_TP_POINTS if not trailing_enabled else None
                 sl_price = event_close + MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND + GRID_SL_POINTS
             else:
-                tp_price = avg_entry_price - TP_POINTS
+                # Only first entry (or GRID disabled) - use normal TP/SL (unless trailing stop overrides TP)
+                tp_price = avg_entry_price - TP_POINTS if not trailing_enabled else None
                 sl_price = avg_entry_price + SL_POINTS
 
             # Find exit from entry time (or second entry if exists) onwards
@@ -220,20 +223,25 @@ for idx, event in df_bins.iterrows():
 
             # Trailing stop tracking (only for SELL when FILTER_BY_SMA and SMA_TRAILING_STOP are both True)
             trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
-            trailing_distance = TRAILING_STOP_ATR_MULT  # Distance in points from SMA
+            trailing_distance = TRAILING_STOP_ATR_MULT  # Distance in points from price (volatility-based)
             initial_sl = sl_price  # Store initial stop loss
             trailing_has_moved = False  # Track if trailing stop actually moved
+            lowest_price = None  # Track lowest price reached for SHORT trailing
 
             for _, bar in exit_data.iterrows():
-                # Update trailing stop if enabled (SELL: SL moves DOWN following SMA + distance, never UP)
+                current_price = bar['low']  # Use low for SHORT (worst case for us)
+
+                # Update trailing stop if enabled (SELL: SL moves DOWN following lowest_price + distance, never UP)
                 if trailing_enabled:
-                    current_sma = bar['sma']
-                    # For SHORT: SL is above SMA by trailing_distance
-                    new_sl = current_sma + trailing_distance
-                    # Only move SL down (never up for SHORT)
-                    if new_sl < sl_price:
-                        sl_price = new_sl
-                        trailing_has_moved = True  # Mark that trailing has taken over
+                    # Track lowest price for SHORT
+                    if lowest_price is None or current_price < lowest_price:
+                        lowest_price = current_price
+                        # For SHORT: SL is above lowest price by trailing_distance
+                        new_sl = lowest_price + trailing_distance
+                        # Only move SL down (never up for SHORT)
+                        if new_sl < sl_price:
+                            sl_price = new_sl
+                            trailing_has_moved = True  # Mark that trailing has taken over
 
                 # Check TP (only if trailing stop is NOT active - let profits run with trailing stop)
                 if not trailing_enabled and bar['low'] <= tp_price:
@@ -319,8 +327,8 @@ for idx, event in df_bins.iterrows():
         first_entry_sl = entry_price - SL_POINTS  # BUY: SL is below entry
 
         if FILTER_USE_GRID and second_entry_level is not None:
-            # Search for second entry OR TP from first entry (whichever comes first)
-            # BUT: Skip TP check if trailing stop is enabled (let profits run)
+            # Search for second entry OR TP/SL from first entry (whichever comes first)
+            # BUT: If trailing stop is enabled, ONLY check for second entry (skip fixed TP/SL)
             trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
             second_entry_data = df_data[(df_data['timestamp'] > entry_time) & (df_data['timestamp'] <= end_ts)].copy()
 
@@ -337,8 +345,8 @@ for idx, event in df_bins.iterrows():
                     tp_price = first_entry_tp
                     sl_price = first_entry_sl
                     break
-                # Check if first entry SL is reached BEFORE second entry
-                elif bar['low'] <= first_entry_sl:
+                # Check if first entry SL is reached BEFORE second entry (only if NO trailing stop)
+                elif not trailing_enabled and bar['low'] <= first_entry_sl:
                     # SL from first entry reached before second entry
                     early_tp_exit = True  # Use same flag to skip further processing
                     exit_reason = 'stop'
@@ -366,11 +374,14 @@ for idx, event in df_bins.iterrows():
 
         # Calculate TP and SL for BUY (only if not early exit)
         if not early_tp_exit:
+            trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
             if FILTER_USE_GRID and has_second_entry:
-                tp_price = avg_entry_price + GRID_TP_POINTS
+                # GRID second entry filled - use GRID TP/SL (unless trailing stop overrides TP)
+                tp_price = avg_entry_price + GRID_TP_POINTS if not trailing_enabled else None
                 sl_price = event_close - MEAN_REVERS_EXPAND - GRID_MEAN_REVERS_EXPAND - GRID_SL_POINTS
             else:
-                tp_price = avg_entry_price + TP_POINTS
+                # Only first entry (or GRID disabled) - use normal TP/SL (unless trailing stop overrides TP)
+                tp_price = avg_entry_price + TP_POINTS if not trailing_enabled else None
                 sl_price = avg_entry_price - SL_POINTS
 
             # Find exit from entry time (or second entry if exists) onwards
@@ -384,20 +395,25 @@ for idx, event in df_bins.iterrows():
 
             # Trailing stop tracking (only for BUY when FILTER_BY_SMA and SMA_TRAILING_STOP are both True)
             trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
-            trailing_distance = TRAILING_STOP_ATR_MULT  # Distance in points from SMA
+            trailing_distance = TRAILING_STOP_ATR_MULT  # Distance in points from price (volatility-based)
             initial_sl = sl_price  # Store initial stop loss
             trailing_has_moved = False  # Track if trailing stop actually moved
+            highest_price = None  # Track highest price reached for LONG trailing
 
             for _, bar in exit_data.iterrows():
-                # Update trailing stop if enabled (BUY: SL moves UP following SMA - distance, never DOWN)
+                current_price = bar['high']  # Use high for LONG (worst case for us)
+
+                # Update trailing stop if enabled (BUY: SL moves UP following highest_price - distance, never DOWN)
                 if trailing_enabled:
-                    current_sma = bar['sma']
-                    # For LONG: SL is below SMA by trailing_distance
-                    new_sl = current_sma - trailing_distance
-                    # Only move SL up (never down for LONG)
-                    if new_sl > sl_price:
-                        sl_price = new_sl
-                        trailing_has_moved = True  # Mark that trailing has taken over
+                    # Track highest price for LONG
+                    if highest_price is None or current_price > highest_price:
+                        highest_price = current_price
+                        # For LONG: SL is below highest price by trailing_distance
+                        new_sl = highest_price - trailing_distance
+                        # Only move SL up (never down for LONG)
+                        if new_sl > sl_price:
+                            sl_price = new_sl
+                            trailing_has_moved = True  # Mark that trailing has taken over
 
                 # Check TP (only if trailing stop is NOT active - let profits run with trailing stop)
                 if not trailing_enabled and bar['high'] >= tp_price:

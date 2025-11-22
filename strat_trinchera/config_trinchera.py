@@ -17,21 +17,24 @@ SMA_PERIOD = 200  # Simple Moving Average period
 # ============================================================================
 # FILTERS TRADING SYSTEM
 # ============================================================================
-FILTER_BY_SMA = False  # Enable/disable SMA filter
+FILTER_BY_SMA = True  # Enable/disable SMA filter
 # If True (checks orange dot position at big volume event):
 #   - If orange dot < SMA: ONLY SELL (SHORT) orders allowed
 #   - If orange dot > SMA: ONLY BUY (LONG) orders allowed
 
-SMA_TRAILING_STOP = False  # Enable/disable SMA-based trailing stop (only works if FILTER_BY_SMA = True)
-TRAILING_STOP_ATR_MULT = 0.75  # Distance in points from SMA for trailing stop (volatility buffer)
+SMA_TRAILING_STOP = True  # Enable/disable volatility-based trailing stop (only works if FILTER_BY_SMA = True)
+TRAILING_STOP_ATR_MULT = 2.00  # Distance in points from price for trailing stop (volatility buffer)
 # If SMA_TRAILING_STOP = True (only when FILTER_BY_SMA is also True):
 #   - DISABLES fixed TP - lets profits run with dynamic trailing stop
-#   - For LONG trades: SL = SMA - TRAILING_STOP_ATR_MULT (below SMA), moves UP only (never down)
-#   - For SHORT trades: SL = SMA + TRAILING_STOP_ATR_MULT (above SMA), moves DOWN only (never up)
-#   - Trailing stop follows SMA with a volatility buffer (TRAILING_STOP_ATR_MULT points)
-#   - Exit when price hits the trailing SL (NOT when crossing SMA)
+#   - For LONG trades: SL = highest_price - TRAILING_STOP_ATR_MULT, moves UP only (never down)
+#   - For SHORT trades: SL = lowest_price + TRAILING_STOP_ATR_MULT, moves DOWN only (never up)
+#   - Trailing stop follows price movement with a volatility buffer (TRAILING_STOP_ATR_MULT points)
+#   - Exit when price hits the trailing SL
 #   - Exit reason will be 'trailing_stop' instead of 'stop'
 #   - NO fixed TP is used when trailing stop is active (let profits run)
+#   - NOTE: SMA is ONLY used for trade direction filtering, NOT for trailing stop calculation
+#   - IMPORTANT: Trailing Stop OVERRIDES GRID_TP_POINTS when both GRID and Trailing Stop are enabled
+#                When SMA_TRAILING_STOP=True, GRID_TP_POINTS is IGNORED and only GRID_SL_POINTS is used
 
 FILTER_TIME_OF_DAY = False  # Enable/disable time-of-day filter
 START_TRADING_TIME = "18:50:00"  # Start trading from this time (HH:MM:SS)
@@ -50,15 +53,24 @@ MEAN_REVERSE_TIMEOUT_ORDER = 3   # Timeout in minutes for mean reversion order l
 # ============================================================================
 # GRID SYSTEM
 # ============================================================================
-FILTER_USE_GRID = False  # Enable/disable GRID system (second entry)
+FILTER_USE_GRID = True  # Enable/disable GRID system (second entry)
 GRID_MEAN_REVERS_EXPAND = 5.0  # Distance in points for second entry from first entry
-GRID_TP_POINTS = 4.0  # Take profit distance from average entry price when GRID is active
+GRID_TP_POINTS = 4.0  # Take profit distance from average entry price when GRID is active (ignored if trailing stop is ON)
 GRID_SL_POINTS = 3.0   # Stop loss distance BEYOND second entry level when GRID is active
-# If True:
+# If FILTER_USE_GRID = True:
 #   - SELL: First entry at MEAN_REVERS_EXPAND, second entry at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
 #   - BUY: First entry at MEAN_REVERS_EXPAND, second entry at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
-#   - If first entry reaches TP_POINTS before second entry triggers → close immediately at profit
-#   - If price squeezes and second entry triggers → use GRID_TP_POINTS from average price, GRID_SL_POINTS beyond second entry
+#
+#   WITHOUT Trailing Stop (SMA_TRAILING_STOP = False):
+#     - If first entry reaches TP_POINTS before second entry triggers → close immediately at profit
+#     - If second entry triggers → use GRID_TP_POINTS from average price, GRID_SL_POINTS beyond second entry
+#
+#   WITH Trailing Stop (SMA_TRAILING_STOP = True):
+#     - Fixed TP is DISABLED for both first entry only AND second entry scenarios
+#     - Only trailing stop is used (GRID_TP_POINTS is IGNORED)
+#     - If only first entry fills → trailing stop manages exit (no fixed TP/SL)
+#     - If second entry fills → trailing stop still manages exit (GRID_TP_POINTS ignored)
+#
 #   - Filled zones drawn at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND (where second entry would be)
 
 

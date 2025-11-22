@@ -357,12 +357,45 @@ MEAN_REVERS_EXPAND = 10            # Mean reversion distance (points)
 MEAN_REVERSE_TIMEOUT_ORDER = 1    # Mean reversion level duration (minutes)
 ```
 
-### Trading Parameters (`strat_trinchera.py`)
+### Trading Parameters (`config_trinchera.py`)
 
 ```python
+# Basic TP/SL
 TP_POINTS = 5.0        # Take profit in points ($100 per contract)
 SL_POINTS = 10.0       # Stop loss in points ($200 per contract)
 POINT_VALUE = 20.0     # Dollar value per point for NQ futures
+
+# SMA Filter
+FILTER_BY_SMA = True   # Trade direction based on price vs SMA-200
+# - If close < SMA: Only SELL orders allowed
+# - If close > SMA: Only BUY orders allowed
+
+# Trailing Stop
+SMA_TRAILING_STOP = True           # Enable dynamic trailing stop
+TRAILING_STOP_ATR_MULT = 2.00      # Distance from extreme price (points)
+# When enabled:
+# - DISABLES fixed TP (let profits run)
+# - LONG: SL follows highest_price - TRAILING_STOP_ATR_MULT (moves UP only)
+# - SHORT: SL follows lowest_price + TRAILING_STOP_ATR_MULT (moves DOWN only)
+# - Exit reason: 'trailing_stop' instead of 'stop'
+
+# GRID System (Second Entry)
+FILTER_USE_GRID = True             # Enable second entry on deeper move
+GRID_MEAN_REVERS_EXPAND = 5.0      # Distance for second entry (points)
+GRID_TP_POINTS = 4.0               # TP from average entry (IGNORED if trailing stop ON)
+GRID_SL_POINTS = 3.0               # SL beyond second entry level
+
+# GRID Logic:
+# WITHOUT Trailing Stop:
+#   - First entry at MEAN_REVERS_EXPAND (10 pts)
+#   - Second entry at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND (15 pts)
+#   - If first entry hits TP before second entry → close at TP_POINTS profit
+#   - If second entry fills → TP at GRID_TP_POINTS from average, SL at GRID_SL_POINTS beyond second entry
+#
+# WITH Trailing Stop (SMA_TRAILING_STOP = True):
+#   - Fixed TP is DISABLED (both TP_POINTS and GRID_TP_POINTS are IGNORED)
+#   - Only trailing stop manages exits (let profits run)
+#   - Works for both single entry and double entry scenarios
 ```
 
 ### Optimization Tips
@@ -598,5 +631,5 @@ For questions or issues:
 
 ---
 
-*Last updated: 2025-11-20*
-*Version: 1.0 (Production)*
+*Last updated: 2025-11-22*
+*Version: 1.1 (GRID + Trailing Stop)*

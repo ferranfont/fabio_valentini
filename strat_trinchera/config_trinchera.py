@@ -22,7 +22,7 @@ FILTER_BY_SMA = True  # Enable/disable SMA filter
 #   - If orange dot < SMA: ONLY SELL (SHORT) orders allowed
 #   - If orange dot > SMA: ONLY BUY (LONG) orders allowed
 
-SMA_TRAILING_STOP = False  # Enable/disable volatility-based trailing stop (only works if FILTER_BY_SMA = True)
+SMA_TRAILING_STOP = False  # Enable/disable full trailing stop from entry (only works if FILTER_BY_SMA = True)
 TRAILING_STOP_ATR_MULT = 0.75    # Distance in points from price for trailing stop (volatility buffer)
 # If SMA_TRAILING_STOP = True (only when FILTER_BY_SMA is also True):
 #   - DISABLES fixed TP - lets profits run with dynamic trailing stop
@@ -36,6 +36,20 @@ TRAILING_STOP_ATR_MULT = 0.75    # Distance in points from price for trailing st
 #   - IMPORTANT: Trailing Stop OVERRIDES GRID_TP_POINTS when both GRID and Trailing Stop are enabled
 #                When SMA_TRAILING_STOP=True, GRID_TP_POINTS is IGNORED and only GRID_SL_POINTS is used
 
+SMA_CASH_TRAILING_ENABLED = True  # Enable hybrid cash & trail strategy (only if SMA_TRAILING_STOP = False)
+SMA_CASH_TRAILING = 15.0          # Points in favor to activate trailing stop (e.g., 15 points profit)
+SMA_CASH_TRAILING_DISTANCE = 5.0  # Trailing stop distance after activation (e.g., 5 points from extreme)
+# If SMA_CASH_TRAILING_ENABLED = True (and SMA_TRAILING_STOP = False):
+#   - Initial SL: Fixed at SL_POINTS (10 points)
+#   - When price moves SMA_CASH_TRAILING points in favor (e.g., 15 pts profit):
+#     * Activate trailing stop at SMA_CASH_TRAILING_DISTANCE from extreme price
+#     * Guarantees at least (SMA_CASH_TRAILING - SMA_CASH_TRAILING_DISTANCE) points profit
+#     * Example: 15 - 5 = 10 points minimum profit locked in
+#   - Final TP: Still at TP_POINTS (25 points)
+#   - For LONG: When price rises 15pts → trail at highest_price - 5pts (locks 10pts min)
+#   - For SHORT: When price drops 15pts → trail at lowest_price + 5pts (locks 10pts min)
+#   - Exit reason: 'cash_trailing' if trailing stop hits, 'profit' if TP hits
+
 FILTER_TIME_OF_DAY = False  # Enable/disable time-of-day filter
 START_TRADING_TIME = "18:50:00"  # Start trading from this time (HH:MM:SS)
 END_TRADING_TIME = "22:50:00"    # Stop trading after this time (HH:MM:SS)
@@ -44,7 +58,7 @@ END_TRADING_TIME = "22:50:00"    # Stop trading after this time (HH:MM:SS)
 # ============================================================================
 # TRADING PARAMETERS
 # ============================================================================
-TP_POINTS = 5.0   # Take profit in points, usar 4 oara scalping and 20 for swing
+TP_POINTS = 25.0   # Take profit in points, usar 4 oara scalping and 20 for swing
 SL_POINTS = 10.0  # Stop loss in points, usar 9 para scalping
 
 MEAN_REVERS_EXPAND = 10          # Points to expand mean reversion levels up/down

@@ -8,7 +8,7 @@ Trades based on price touching mean reversion levels (red/green lines)
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, time
-from config_trinchera import MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, FILTER_USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS, SMA_TRAILING_STOP, TRAILING_STOP_ATR_MULT
+from config_trinchera import MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, FILTER_USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS, SMA_TRAILING_STOP, TRAILING_STOP_ATR_MULT, SMA_CASH_TRAILING_ENABLED, SMA_CASH_TRAILING, SMA_CASH_TRAILING_DISTANCE
 
 # ============================================================================
 # STRATEGY CONFIGURATION
@@ -221,17 +221,26 @@ for idx, event in df_bins.iterrows():
             exit_price = None
             exit_sma = None
 
-            # Trailing stop tracking (only for SELL when FILTER_BY_SMA and SMA_TRAILING_STOP are both True)
+            # Trailing stop tracking
             trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
-            trailing_distance = TRAILING_STOP_ATR_MULT  # Distance in points from price (volatility-based)
+            cash_trailing_enabled = FILTER_BY_SMA and SMA_CASH_TRAILING_ENABLED and not trailing_enabled
+
+            trailing_distance = TRAILING_STOP_ATR_MULT  # Distance for full trailing stop
             initial_sl = sl_price  # Store initial stop loss
             trailing_has_moved = False  # Track if trailing stop actually moved
             lowest_price = None  # Track lowest price reached for SHORT trailing
 
+            # Cash & Trail specific variables
+            cash_trailing_activated = False  # Track if cash trailing threshold was reached
+            best_profit = 0.0  # Track best profit achieved (for SELL: entry - current)
+
             for _, bar in exit_data.iterrows():
                 current_price = bar['low']  # Use low for SHORT (worst case for us)
 
-                # Update trailing stop if enabled (SELL: SL moves DOWN following lowest_price + distance, never UP)
+                # Calculate current profit for SELL (entry - current)
+                current_profit = avg_entry_price - current_price
+
+                # FULL TRAILING STOP (from entry)
                 if trailing_enabled:
                     # Track lowest price for SHORT
                     if lowest_price is None or current_price < lowest_price:
@@ -243,7 +252,29 @@ for idx, event in df_bins.iterrows():
                             sl_price = new_sl
                             trailing_has_moved = True  # Mark that trailing has taken over
 
-                # Check TP (only if trailing stop is NOT active - let profits run with trailing stop)
+                # CASH & TRAIL HYBRID (activate trail after threshold)
+                elif cash_trailing_enabled:
+                    # Track best profit achieved
+                    if current_profit > best_profit:
+                        best_profit = current_profit
+
+                    # Check if we've reached the cash trailing threshold
+                    if best_profit >= SMA_CASH_TRAILING and not cash_trailing_activated:
+                        cash_trailing_activated = True
+                        lowest_price = current_price  # Initialize lowest price from activation point
+
+                    # If cash trailing is activated, apply trailing stop
+                    if cash_trailing_activated:
+                        if current_price < lowest_price:
+                            lowest_price = current_price
+                        # For SHORT: SL is above lowest price by cash trailing distance
+                        new_sl = lowest_price + SMA_CASH_TRAILING_DISTANCE
+                        # Only move SL down (never up for SHORT), and don't go below initial SL
+                        if new_sl < sl_price and new_sl < initial_sl:
+                            sl_price = new_sl
+                            trailing_has_moved = True
+
+                # Check TP (only if full trailing stop is NOT active)
                 if not trailing_enabled and bar['low'] <= tp_price:
                     exit_reason = 'profit'
                     exit_time = bar['timestamp']
@@ -252,8 +283,13 @@ for idx, event in df_bins.iterrows():
                     break
                 # Check SL (price goes up to SL)
                 elif bar['high'] >= sl_price:
-                    # Only mark as trailing_stop if trailing actually moved, otherwise it's initial stop
-                    exit_reason = 'trailing_stop' if (trailing_enabled and trailing_has_moved) else 'stop'
+                    # Determine exit reason based on trailing type
+                    if trailing_enabled and trailing_has_moved:
+                        exit_reason = 'trailing_stop'
+                    elif cash_trailing_enabled and trailing_has_moved:
+                        exit_reason = 'cash_trailing'
+                    else:
+                        exit_reason = 'stop'
                     exit_time = bar['timestamp']
                     exit_price = sl_price
                     exit_sma = bar['sma']
@@ -393,17 +429,26 @@ for idx, event in df_bins.iterrows():
             exit_price = None
             exit_sma = None
 
-            # Trailing stop tracking (only for BUY when FILTER_BY_SMA and SMA_TRAILING_STOP are both True)
+            # Trailing stop tracking
             trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
-            trailing_distance = TRAILING_STOP_ATR_MULT  # Distance in points from price (volatility-based)
+            cash_trailing_enabled = FILTER_BY_SMA and SMA_CASH_TRAILING_ENABLED and not trailing_enabled
+
+            trailing_distance = TRAILING_STOP_ATR_MULT  # Distance for full trailing stop
             initial_sl = sl_price  # Store initial stop loss
             trailing_has_moved = False  # Track if trailing stop actually moved
             highest_price = None  # Track highest price reached for LONG trailing
 
+            # Cash & Trail specific variables
+            cash_trailing_activated = False  # Track if cash trailing threshold was reached
+            best_profit = 0.0  # Track best profit achieved (for BUY: current - entry)
+
             for _, bar in exit_data.iterrows():
                 current_price = bar['high']  # Use high for LONG (worst case for us)
 
-                # Update trailing stop if enabled (BUY: SL moves UP following highest_price - distance, never DOWN)
+                # Calculate current profit for BUY (current - entry)
+                current_profit = current_price - avg_entry_price
+
+                # FULL TRAILING STOP (from entry)
                 if trailing_enabled:
                     # Track highest price for LONG
                     if highest_price is None or current_price > highest_price:
@@ -415,7 +460,29 @@ for idx, event in df_bins.iterrows():
                             sl_price = new_sl
                             trailing_has_moved = True  # Mark that trailing has taken over
 
-                # Check TP (only if trailing stop is NOT active - let profits run with trailing stop)
+                # CASH & TRAIL HYBRID (activate trail after threshold)
+                elif cash_trailing_enabled:
+                    # Track best profit achieved
+                    if current_profit > best_profit:
+                        best_profit = current_profit
+
+                    # Check if we've reached the cash trailing threshold
+                    if best_profit >= SMA_CASH_TRAILING and not cash_trailing_activated:
+                        cash_trailing_activated = True
+                        highest_price = current_price  # Initialize highest price from activation point
+
+                    # If cash trailing is activated, apply trailing stop
+                    if cash_trailing_activated:
+                        if current_price > highest_price:
+                            highest_price = current_price
+                        # For LONG: SL is below highest price by cash trailing distance
+                        new_sl = highest_price - SMA_CASH_TRAILING_DISTANCE
+                        # Only move SL up (never down for LONG), and don't go above initial SL
+                        if new_sl > sl_price and new_sl > initial_sl:
+                            sl_price = new_sl
+                            trailing_has_moved = True
+
+                # Check TP (only if full trailing stop is NOT active)
                 if not trailing_enabled and bar['high'] >= tp_price:
                     exit_reason = 'profit'
                     exit_time = bar['timestamp']
@@ -424,8 +491,13 @@ for idx, event in df_bins.iterrows():
                     break
                 # Check SL (price goes down to SL)
                 elif bar['low'] <= sl_price:
-                    # Only mark as trailing_stop if trailing actually moved, otherwise it's initial stop
-                    exit_reason = 'trailing_stop' if (trailing_enabled and trailing_has_moved) else 'stop'
+                    # Determine exit reason based on trailing type
+                    if trailing_enabled and trailing_has_moved:
+                        exit_reason = 'trailing_stop'
+                    elif cash_trailing_enabled and trailing_has_moved:
+                        exit_reason = 'cash_trailing'
+                    else:
+                        exit_reason = 'stop'
                     exit_time = bar['timestamp']
                     exit_price = sl_price
                     exit_sma = bar['sma']
@@ -476,6 +548,7 @@ if len(trades) > 0:
     profit_trades = df_trades[df_trades['exit_reason'] == 'profit']
     stop_trades = df_trades[df_trades['exit_reason'] == 'stop']
     trailing_stop_trades = df_trades[df_trades['exit_reason'] == 'trailing_stop']
+    cash_trailing_trades = df_trades[df_trades['exit_reason'] == 'cash_trailing']
 
     total_pnl = df_trades['pnl'].sum()
     total_pnl_usd = df_trades['pnl_usd'].sum()
@@ -488,6 +561,8 @@ if len(trades) > 0:
     print(f"  - STOP exits: {len(stop_trades)} ({len(stop_trades)/len(df_trades)*100:.1f}%)")
     if len(trailing_stop_trades) > 0:
         print(f"  - TRAILING STOP exits: {len(trailing_stop_trades)} ({len(trailing_stop_trades)/len(df_trades)*100:.1f}%)")
+    if len(cash_trailing_trades) > 0:
+        print(f"  - CASH TRAILING exits: {len(cash_trailing_trades)} ({len(cash_trailing_trades)/len(df_trades)*100:.1f}%)")
 
     if FILTER_BY_SMA:
         filtered_trades = df_trades[df_trades['filter_passed'] == True]
@@ -512,6 +587,8 @@ if len(trades) > 0:
         print(f"  - Stop exits: {len(buy_trades[buy_trades['exit_reason']=='stop'])}")
         if len(buy_trades[buy_trades['exit_reason']=='trailing_stop']) > 0:
             print(f"  - Trailing stop exits: {len(buy_trades[buy_trades['exit_reason']=='trailing_stop'])}")
+        if len(buy_trades[buy_trades['exit_reason']=='cash_trailing']) > 0:
+            print(f"  - Cash trailing exits: {len(buy_trades[buy_trades['exit_reason']=='cash_trailing'])}")
 
     print(f"\nSELL trades: {len(sell_trades)}")
     if len(sell_trades) > 0:
@@ -522,6 +599,8 @@ if len(trades) > 0:
         print(f"  - Stop exits: {len(sell_trades[sell_trades['exit_reason']=='stop'])}")
         if len(sell_trades[sell_trades['exit_reason']=='trailing_stop']) > 0:
             print(f"  - Trailing stop exits: {len(sell_trades[sell_trades['exit_reason']=='trailing_stop'])}")
+        if len(sell_trades[sell_trades['exit_reason']=='cash_trailing']) > 0:
+            print(f"  - Cash trailing exits: {len(sell_trades[sell_trades['exit_reason']=='cash_trailing'])}")
 
 else:
     print("\n[WARN] No trades executed")

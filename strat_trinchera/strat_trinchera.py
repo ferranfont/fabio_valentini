@@ -60,6 +60,12 @@ if FILTER_BY_SMA:
         print(f"    * SMA Trailing Stop: ENABLED (follows SMA)")
     else:
         print(f"    * SMA Trailing Stop: DISABLED")
+        # Add Cash & Trail status when trailing stop is disabled
+        if SMA_CASH_TRAILING_ENABLED:
+            min_profit = SMA_CASH_TRAILING - SMA_CASH_TRAILING_DISTANCE
+            print(f"    * Cash & Trail: ENABLED ({SMA_CASH_TRAILING}p->{SMA_CASH_TRAILING_DISTANCE}p, locks {min_profit}p min)")
+        else:
+            print(f"    * Cash & Trail: DISABLED")
 print(f"  - Time Filter: {'ENABLED' if FILTER_TIME_OF_DAY else 'DISABLED'}")
 if FILTER_TIME_OF_DAY:
     print(f"    * Trading hours: {START_TRADING_TIME} to {END_TRADING_TIME}")

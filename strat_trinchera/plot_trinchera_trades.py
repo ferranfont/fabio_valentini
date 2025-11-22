@@ -375,14 +375,15 @@ if df_trades is not None and len(df_trades) > 0:
                 showlegend=False
             ), secondary_y=False)
 
-    # Profit exits (square open, green)
-    profit_exits = df_trades[df_trades['exit_reason'] == 'profit']
-    if len(profit_exits) > 0:
+    # Exit markers - color based on P&L, not exit reason
+    # Green squares for profitable exits (pnl > 0), red squares for losing exits (pnl <= 0)
+    winning_exits = df_trades[df_trades['pnl'] > 0]
+    if len(winning_exits) > 0:
         fig.add_trace(go.Scatter(
-            x=profit_exits['exit_time'],
-            y=profit_exits['exit_price'],
+            x=winning_exits['exit_time'],
+            y=winning_exits['exit_price'],
             mode='markers',
-            name='PROFIT Exit',
+            name='Winning Exit (Profit)',
             marker=dict(
                 color='rgba(0,0,0,0)',  # Transparent fill
                 size=10,
@@ -392,36 +393,18 @@ if df_trades is not None and len(df_trades) > 0:
             showlegend=False
         ), secondary_y=False)
 
-    # Stop exits (square open, red)
-    stop_exits = df_trades[df_trades['exit_reason'] == 'stop']
-    if len(stop_exits) > 0:
+    losing_exits = df_trades[df_trades['pnl'] <= 0]
+    if len(losing_exits) > 0:
         fig.add_trace(go.Scatter(
-            x=stop_exits['exit_time'],
-            y=stop_exits['exit_price'],
+            x=losing_exits['exit_time'],
+            y=losing_exits['exit_price'],
             mode='markers',
-            name='STOP Exit',
+            name='Losing Exit (Loss)',
             marker=dict(
                 color='rgba(0,0,0,0)',  # Transparent fill
                 size=10,
                 symbol='square',
                 line=dict(color='red', width=2)
-            ),
-            showlegend=False
-        ), secondary_y=False)
-
-    # Trailing stop exits (square open, orange)
-    trailing_stop_exits = df_trades[df_trades['exit_reason'] == 'trailing_stop']
-    if len(trailing_stop_exits) > 0:
-        fig.add_trace(go.Scatter(
-            x=trailing_stop_exits['exit_time'],
-            y=trailing_stop_exits['exit_price'],
-            mode='markers',
-            name='TRAILING STOP Exit',
-            marker=dict(
-                color='rgba(0,0,0,0)',  # Transparent fill
-                size=10,
-                symbol='square',
-                line=dict(color='orange', width=2)
             ),
             showlegend=False
         ), secondary_y=False)
@@ -548,9 +531,8 @@ if df_trades is not None and len(df_trades) > 0:
 
     print(f"[INFO] Added {len(buy_trades)} BUY entry markers ({buy_grid_count} with GRID)")
     print(f"[INFO] Added {len(sell_trades)} SELL entry markers ({sell_grid_count} with GRID)")
-    print(f"[INFO] Added {len(profit_exits)} PROFIT exit markers")
-    print(f"[INFO] Added {len(stop_exits)} STOP exit markers")
-    print(f"[INFO] Added {len(trailing_stop_exits)} TRAILING STOP exit markers")
+    print(f"[INFO] Added {len(winning_exits)} WINNING exit markers (green squares)")
+    print(f"[INFO] Added {len(losing_exits)} LOSING exit markers (red squares)")
     print(f"[INFO] Added {len(df_trades)} connection lines")
 
 # Update layout with shapes

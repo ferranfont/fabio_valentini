@@ -11,18 +11,47 @@ Executes the complete workflow:
 import subprocess
 import sys
 from pathlib import Path
-from config_trinchera import BIG_VOLUME_TRIGGER
+from config_trinchera import BIG_VOLUME_TRIGGER, DATE
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 CURRENT_DIR = Path(__file__).resolve().parent
+OUTPUTS_DIR = CURRENT_DIR / "outputs"
 
 print("="*80)
 print("TRINCHERA MAIN PIPELINE")
 print("="*80)
 print(f"\nConfiguration:")
+print(f"  - Date: {DATE}")
 print(f"  - Big Volume Trigger: {BIG_VOLUME_TRIGGER}")
+
+# Step 0: Check if processed data exists, if not run util_trinchera.py
+print("\n" + "="*80)
+print("STEP 0: CHECKING PROCESSED DATA")
+print("="*80)
+
+processed_data_path = OUTPUTS_DIR / f"db_trinchera_all_data_{DATE}.csv"
+print(f"\nLooking for: {processed_data_path}")
+
+if not processed_data_path.exists():
+    print(f"[WARNING] Processed data not found!")
+    print(f"[INFO] Running util_trinchera.py to generate processed data...")
+
+    util_trinchera_script = CURRENT_DIR / "util_trinchera.py"
+    result = subprocess.run([sys.executable, str(util_trinchera_script)], cwd=str(CURRENT_DIR))
+
+    if result.returncode != 0:
+        print("\n[ERROR] Data processing failed!")
+        sys.exit(1)
+
+    if not processed_data_path.exists():
+        print(f"\n[ERROR] Processed data file was not created: {processed_data_path}")
+        sys.exit(1)
+
+    print(f"[OK] Processed data created successfully!")
+else:
+    print(f"[OK] Processed data found!")
 
 # Step 1: Detect big volume events
 print("\n" + "="*80)
@@ -92,10 +121,11 @@ if result.returncode != 0:
 print("\n" + "="*80)
 print("PIPELINE COMPLETED SUCCESSFULLY!")
 print("="*80)
-print("\nFiles generated:")
-print(f"  - outputs/db_trinchera_bins_YYYYMMDD.csv (big volume events)")
-print(f"  - outputs/db_trinchera_TR_YYYYMMDD.csv (trades)")
-print(f"  - charts/chart_trinchera_trades_YYYYMMDD.html (trades visualization)")
-print(f"  - charts/summary_trinchera_YYYYMMDD.html (summary report)")
-print(f"  - charts/equity_trinchera_YYYYMMDD.html (equity curve)")
+print(f"\nFiles generated for date {DATE}:")
+print(f"  - outputs/db_trinchera_all_data_{DATE}.csv (processed tick data)")
+print(f"  - outputs/db_trinchera_bins_{DATE}.csv (big volume events)")
+print(f"  - outputs/db_trinchera_TR_{DATE}.csv (trades)")
+print(f"  - charts/chart_trinchera_trades_{DATE}.html (trades visualization)")
+print(f"  - charts/summary_trinchera_{DATE}.html (summary report)")
+print(f"  - charts/equity_trinchera_{DATE}.html (equity curve)")
 print("\n" + "="*80)

@@ -9,7 +9,7 @@ import sys
 
 # Get BIG_VOLUME_TRIGGER from command line argument or use default from config
 try:
-    from config_trinchera import BIG_VOLUME_TRIGGER as DEFAULT_TRIGGER, BIG_VOLUME_TIMEOUT, MEAN_REVERS_EXPAND, MEAN_REVERSE_TIMEOUT_ORDER, FILTER_USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS
+    from config_trinchera import BIG_VOLUME_TRIGGER as DEFAULT_TRIGGER, BIG_VOLUME_TIMEOUT, MEAN_REVERS_EXPAND, MEAN_REVERSE_TIMEOUT_ORDER, FILTER_USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS, DATE
 except ImportError:
     DEFAULT_TRIGGER = 300
     BIG_VOLUME_TIMEOUT = 10
@@ -19,6 +19,7 @@ except ImportError:
     GRID_MEAN_REVERS_EXPAND = 5.0
     GRID_TP_POINTS = 10.0
     GRID_SL_POINTS = 3.0
+    DATE = "20251104"
 
 # Check if BIG_VOLUME_TRIGGER was passed as command line argument
 if len(sys.argv) > 1:
@@ -33,17 +34,9 @@ CURRENT_DIR = Path(__file__).resolve().parent
 OUTPUTS_DIR = CURRENT_DIR / "outputs"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Find most recent all_data file
-all_data_files = sorted(OUTPUTS_DIR.glob("db_trinchera_all_data*.csv"))
-if not all_data_files:
-    raise FileNotFoundError(f"No db_trinchera_all_data file found in {OUTPUTS_DIR}")
-DATA_FILE = all_data_files[-1]  # Get most recent
-
-# Extract date from input filename (e.g., db_trinchera_all_data_20251022.csv -> 20251022)
-import re
-date_match = re.search(r'_(\d{8})\.csv', DATA_FILE.name)
-date_str = date_match.group(1) if date_match else datetime.now().strftime("%Y%m%d")
-OUTPUT_FILE = OUTPUTS_DIR / f"db_trinchera_bins_{date_str}.csv"
+# Use DATE from config
+DATA_FILE = OUTPUTS_DIR / f"db_trinchera_all_data_{DATE}.csv"
+OUTPUT_FILE = OUTPUTS_DIR / f"db_trinchera_bins_{DATE}.csv"
 
 print("="*80)
 print("BIG VOLUME DETECTOR")

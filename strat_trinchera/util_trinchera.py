@@ -4,13 +4,12 @@ from pathlib import Path
 import sys
 
 CURRENT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = CURRENT_DIR.parent
-ROLLING_PROFILE_DIR = PROJECT_ROOT / "strat_absortion"
-if str(ROLLING_PROFILE_DIR) not in sys.path:
-    sys.path.append(str(ROLLING_PROFILE_DIR))
+UTILS_DIR = CURRENT_DIR / "utils"
+if str(UTILS_DIR) not in sys.path:
+    sys.path.append(str(UTILS_DIR))
 
 from rolling_profile import RollingMarketProfile
-from config_trinchera import SMA_PERIOD
+from config_trinchera import SMA_PERIOD, DATE
 
 # ============ CONFIGURATION ============
 FRAME_FREQUENCY = "1s"  # Frequency for frame updates (1 second)
@@ -19,7 +18,7 @@ TICK_SIZE = 0.25        # Price tick size for grouping levels
 # =======================================
 
 # Load data
-csv_path = PROJECT_ROOT / "data" / "historic" / "time_and_sales_nq_20251022.csv"
+csv_path = CURRENT_DIR / "data" / "historic" / f"time_and_sales_nq_{DATE}.csv"
 
 print("=" * 60)
 print("TRINCHERA DATA PROCESSOR")

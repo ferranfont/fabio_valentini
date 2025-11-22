@@ -9,7 +9,7 @@ from plotly.subplots import make_subplots
 import webbrowser
 from pathlib import Path
 from datetime import datetime
-from config_trinchera import FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, SMA_TRAILING_STOP
+from config_trinchera import FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, SMA_TRAILING_STOP, DATE
 
 # ============================================================================
 # CONFIGURATION
@@ -19,17 +19,9 @@ OUTPUTS_DIR = CURRENT_DIR / "outputs"
 CHARTS_DIR = CURRENT_DIR / "charts"
 CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Find most recent trades file
-trades_files = sorted(OUTPUTS_DIR.glob("db_trinchera_TR_*.csv"))
-if not trades_files:
-    raise FileNotFoundError(f"No trades file found in {OUTPUTS_DIR}")
-TRADES_FILE = trades_files[-1]  # Get most recent
-
-# Extract date from trades filename (e.g., db_trinchera_TR_20251022.csv -> 20251022)
-import re
-date_match = re.search(r'_(\d{8})\.csv', TRADES_FILE.name)
-date_str = date_match.group(1) if date_match else datetime.now().strftime("%Y%m%d")
-OUTPUT_FILE = CHARTS_DIR / f"equity_trinchera_{date_str}.html"
+# Use DATE from config
+TRADES_FILE = OUTPUTS_DIR / f"db_trinchera_TR_{DATE}.csv"
+OUTPUT_FILE = CHARTS_DIR / f"equity_trinchera_{DATE}.html"
 
 print("="*80)
 print("TRINCHERA EQUITY CURVE PLOTTER")

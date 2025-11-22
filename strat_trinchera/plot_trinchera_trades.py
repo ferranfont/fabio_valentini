@@ -18,7 +18,7 @@ from config_trinchera import (
     BIG_VOLUME_TRIGGER, FILTER_BY_SMA, MEAN_REVERS_EXPAND, FILTER_USE_GRID,
     GRID_MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, SMA_TRAILING_STOP,
     TRAILING_STOP_ATR_MULT, FILTER_TIME_OF_DAY, GRID_TP_POINTS, GRID_SL_POINTS,
-    SMA_CASH_TRAILING_ENABLED, SMA_CASH_TRAILING, SMA_CASH_TRAILING_DISTANCE
+    SMA_CASH_TRAILING_ENABLED, SMA_CASH_TRAILING, SMA_CASH_TRAILING_DISTANCE, DATE
 )
 
 # ============================================================================
@@ -35,23 +35,10 @@ OUTPUTS_DIR = CURRENT_DIR / "outputs"
 CHARTS_DIR = CURRENT_DIR / "charts"
 CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Find most recent all_data file
-all_data_files = sorted(OUTPUTS_DIR.glob("db_trinchera_all_data*.csv"))
-if not all_data_files:
-    raise FileNotFoundError(f"No db_trinchera_all_data file found in {OUTPUTS_DIR}")
-DATA_FILE = all_data_files[-1]  # Get most recent
-
-# Find most recent trades file
-trades_files = sorted(OUTPUTS_DIR.glob("db_trinchera_TR_*.csv"))
-if not trades_files:
-    raise FileNotFoundError(f"No trades file found in {OUTPUTS_DIR}")
-TRADES_FILE = trades_files[-1]  # Get most recent
-
-# Extract date from trades filename (e.g., db_trinchera_TR_20251022.csv -> 20251022)
-import re
-date_match = re.search(r'_(\d{8})\.csv', TRADES_FILE.name)
-date_str = date_match.group(1) if date_match else datetime.now().strftime("%Y%m%d")
-OUTPUT_FILE = CHARTS_DIR / f"chart_trinchera_trades_{date_str}.html"
+# Use DATE from config
+DATA_FILE = OUTPUTS_DIR / f"db_trinchera_all_data_{DATE}.csv"
+TRADES_FILE = OUTPUTS_DIR / f"db_trinchera_TR_{DATE}.csv"
+OUTPUT_FILE = CHARTS_DIR / f"chart_trinchera_trades_{DATE}.html"
 
 print("="*80)
 print("TRINCHERA TRADES PLOTTER")

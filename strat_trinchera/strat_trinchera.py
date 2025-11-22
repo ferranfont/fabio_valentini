@@ -8,7 +8,7 @@ Trades based on price touching mean reversion levels (red/green lines)
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, time
-from config_trinchera import MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, FILTER_USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS, SMA_TRAILING_STOP, TRAILING_STOP_ATR_MULT, SMA_CASH_TRAILING_ENABLED, SMA_CASH_TRAILING, SMA_CASH_TRAILING_DISTANCE
+from config_trinchera import MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, FILTER_USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS, SMA_TRAILING_STOP, TRAILING_STOP_ATR_MULT, SMA_CASH_TRAILING_ENABLED, SMA_CASH_TRAILING, SMA_CASH_TRAILING_DISTANCE, DATE
 
 # ============================================================================
 # STRATEGY CONFIGURATION
@@ -19,23 +19,10 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 CHARTS_DIR = CURRENT_DIR / "charts"
 CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Find most recent bins file
-bins_files = sorted(OUTPUTS_DIR.glob("db_trinchera_bins_*.csv"))
-if not bins_files:
-    raise FileNotFoundError(f"No bins file found in {OUTPUTS_DIR}")
-BINS_FILE = bins_files[-1]  # Get most recent
-
-# Find most recent all_data file
-all_data_files = sorted(OUTPUTS_DIR.glob("db_trinchera_all_data*.csv"))
-if not all_data_files:
-    raise FileNotFoundError(f"No db_trinchera_all_data file found in {OUTPUTS_DIR}")
-ALL_DATA_FILE = all_data_files[-1]  # Get most recent
-
-# Extract date from input filename (e.g., db_trinchera_all_data_20251022.csv -> 20251022)
-import re
-date_match = re.search(r'_(\d{8})\.csv', ALL_DATA_FILE.name)
-date_str = date_match.group(1) if date_match else datetime.now().strftime("%Y%m%d")
-OUTPUT_FILE = OUTPUTS_DIR / f"db_trinchera_TR_{date_str}.csv"
+# Use DATE from config
+BINS_FILE = OUTPUTS_DIR / f"db_trinchera_bins_{DATE}.csv"
+ALL_DATA_FILE = OUTPUTS_DIR / f"db_trinchera_all_data_{DATE}.csv"
+OUTPUT_FILE = OUTPUTS_DIR / f"db_trinchera_TR_{DATE}.csv"
 
 POINT_VALUE = 20.0  # USD value per point for NQ futures
 

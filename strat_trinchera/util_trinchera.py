@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 
 CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_DIR.parent  # fabio_valentini root directory
 UTILS_DIR = CURRENT_DIR / "utils"
 if str(UTILS_DIR) not in sys.path:
     sys.path.append(str(UTILS_DIR))
@@ -17,8 +18,8 @@ PROFILE_FREQUENCY = 1   # Frequency for Market Profile in seconds
 TICK_SIZE = 0.25        # Price tick size for grouping levels
 # =======================================
 
-# Load data
-csv_path = CURRENT_DIR / "data" / "historic" / f"time_and_sales_nq_{DATE}.csv"
+# Load data from project root data/historic folder
+csv_path = PROJECT_ROOT / "data" / "historic" / f"time_and_sales_nq_{DATE}.csv"
 
 print("=" * 60)
 print("TRINCHERA DATA PROCESSOR")

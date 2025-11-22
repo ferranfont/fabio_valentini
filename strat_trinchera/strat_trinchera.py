@@ -230,8 +230,8 @@ for idx, event in df_bins.iterrows():
                         if current_sma < sl_price:
                             sl_price = current_sma
 
-                # Check TP (price goes down to TP)
-                if bar['low'] <= tp_price:
+                # Check TP (only if trailing stop is NOT active - let profits run with trailing stop)
+                if not trailing_active and bar['low'] <= tp_price:
                     exit_reason = 'profit'
                     exit_time = bar['timestamp']
                     exit_price = tp_price
@@ -388,8 +388,8 @@ for idx, event in df_bins.iterrows():
                         if current_sma > sl_price:
                             sl_price = current_sma
 
-                # Check TP (price goes up to TP)
-                if bar['high'] >= tp_price:
+                # Check TP (only if trailing stop is NOT active - let profits run with trailing stop)
+                if not trailing_active and bar['high'] >= tp_price:
                     exit_reason = 'profit'
                     exit_time = bar['timestamp']
                     exit_price = tp_price

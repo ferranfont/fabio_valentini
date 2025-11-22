@@ -25,11 +25,13 @@ FILTER_BY_SMA = False  # Enable/disable SMA filter
 SMA_TRAILING_STOP = False  # Enable/disable SMA-based trailing stop (only works if FILTER_BY_SMA = True)
 TRAILING_STOP_ATR_MULT = 0.75  # Distance from SMA for trailing stop (in points, or ATR multiplier if using ATR)
 # If SMA_TRAILING_STOP = True (only when FILTER_BY_SMA is also True):
+#   - DISABLES fixed TP - lets profits run until price crosses back through SMA
 #   - For LONG trades: Move stop loss up following the SMA as it rises (never moves down)
 #   - For SHORT trades: Move stop loss down following the SMA as it falls (never moves up)
 #   - Locks in profits as price moves favorably and SMA follows
 #   - Trade exits when price crosses back through the trailing SMA level
 #   - Exit reason will be 'trailing_stop' instead of 'stop'
+#   - NO fixed TP is used when trailing stop is active (let profits run)
 
 FILTER_TIME_OF_DAY = False  # Enable/disable time-of-day filter
 START_TRADING_TIME = "18:50:00"  # Start trading from this time (HH:MM:SS)

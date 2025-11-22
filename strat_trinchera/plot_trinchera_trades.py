@@ -24,7 +24,7 @@ from config_trinchera import (
 # ============================================================================
 # FILTER CONFIGURATION
 # ============================================================================
-FILTER_FROM_14H = True  # Set to True to show only data from 14:00:00 onwards
+FILTER_FROM_14H = False  # Set to True to show only data from 14:00:00 onwards
 START_TIME = "14:50:00"  # Start time for filtering
 
 # ============================================================================

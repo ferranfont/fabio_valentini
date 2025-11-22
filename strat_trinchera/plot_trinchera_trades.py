@@ -17,7 +17,8 @@ from datetime import datetime
 from config_trinchera import (
     BIG_VOLUME_TRIGGER, FILTER_BY_SMA, MEAN_REVERS_EXPAND, FILTER_USE_GRID,
     GRID_MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, SMA_TRAILING_STOP,
-    TRAILING_STOP_ATR_MULT, FILTER_TIME_OF_DAY, GRID_TP_POINTS, GRID_SL_POINTS
+    TRAILING_STOP_ATR_MULT, FILTER_TIME_OF_DAY, GRID_TP_POINTS, GRID_SL_POINTS,
+    SMA_CASH_TRAILING_ENABLED, SMA_CASH_TRAILING, SMA_CASH_TRAILING_DISTANCE
 )
 
 # ============================================================================
@@ -571,6 +572,12 @@ else:
         tp_sl_info = f"TP:{GRID_TP_POINTS}p SL:{GRID_SL_POINTS}p"
     else:
         tp_sl_info = f"TP:{TP_POINTS}p SL:{SL_POINTS}p"
+
+    # Add Cash & Trail status (only shown when full trailing stop is OFF)
+    if SMA_CASH_TRAILING_ENABLED:
+        filters_status.append(f"Cash&Trail: ON ({SMA_CASH_TRAILING}p→{SMA_CASH_TRAILING_DISTANCE}p)")
+    else:
+        filters_status.append("Cash&Trail: OFF")
 
 if FILTER_TIME_OF_DAY:
     filters_status.append("Time Filter: ON")

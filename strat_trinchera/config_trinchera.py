@@ -23,7 +23,7 @@ FILTER_BY_SMA = True  # Enable/disable SMA filter
 #   - If orange dot > SMA: ONLY BUY (LONG) orders allowed
 
 SMA_TRAILING_STOP = True  # Enable/disable volatility-based trailing stop (only works if FILTER_BY_SMA = True)
-TRAILING_STOP_ATR_MULT = 2.00  # Distance in points from price for trailing stop (volatility buffer)
+TRAILING_STOP_ATR_MULT = 0.75    # Distance in points from price for trailing stop (volatility buffer)
 # If SMA_TRAILING_STOP = True (only when FILTER_BY_SMA is also True):
 #   - DISABLES fixed TP - lets profits run with dynamic trailing stop
 #   - For LONG trades: SL = highest_price - TRAILING_STOP_ATR_MULT, moves UP only (never down)

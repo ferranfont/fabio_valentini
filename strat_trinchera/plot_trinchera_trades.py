@@ -63,12 +63,11 @@ if TRADES_FILE.exists():
 else:
     print(f"\n[WARN] Trades file not found: {TRADES_FILE.name}")
 
-# Load big volume events
-bins_files = sorted(OUTPUTS_DIR.glob("db_trinchera_bins_*.csv"))
-BINS_FILE = bins_files[-1] if bins_files else None
+# Load big volume events - use DATE from config
+BINS_FILE = OUTPUTS_DIR / f"db_trinchera_bins_{DATE}.csv"
 big_volume_events = []
 df_bins = None
-if BINS_FILE and BINS_FILE.exists():
+if BINS_FILE.exists():
     print(f"\n[INFO] Loading big volume events from: {BINS_FILE.name}")
     df_bins = pd.read_csv(BINS_FILE, sep=';', decimal=',', low_memory=False)
     df_bins.columns = df_bins.columns.str.strip()

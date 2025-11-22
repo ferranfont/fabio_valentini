@@ -22,6 +22,15 @@ FILTER_BY_SMA = False  # Enable/disable SMA filter
 #   - If orange dot < SMA: ONLY SELL (SHORT) orders allowed
 #   - If orange dot > SMA: ONLY BUY (LONG) orders allowed
 
+SMA_TRAILING_STOP = False  # Enable/disable SMA-based trailing stop (only works if FILTER_BY_SMA = True)
+TRAILING_STOP_ATR_MULT = 0.75  # Distance from SMA for trailing stop (in points, or ATR multiplier if using ATR)
+# If SMA_TRAILING_STOP = True (only when FILTER_BY_SMA is also True):
+#   - For LONG trades: Move stop loss up following the SMA as it rises (never moves down)
+#   - For SHORT trades: Move stop loss down following the SMA as it falls (never moves up)
+#   - Locks in profits as price moves favorably and SMA follows
+#   - Trade exits when price crosses back through the trailing SMA level
+#   - Exit reason will be 'trailing_stop' instead of 'stop'
+
 FILTER_TIME_OF_DAY = False  # Enable/disable time-of-day filter
 START_TRADING_TIME = "18:50:00"  # Start trading from this time (HH:MM:SS)
 END_TRADING_TIME = "22:50:00"    # Stop trading after this time (HH:MM:SS)

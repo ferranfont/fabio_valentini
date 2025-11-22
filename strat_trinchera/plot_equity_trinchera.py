@@ -9,7 +9,7 @@ from plotly.subplots import make_subplots
 import webbrowser
 from pathlib import Path
 from datetime import datetime
-from config_trinchera import FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME
+from config_trinchera import FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, SMA_TRAILING_STOP
 
 # ============================================================================
 # CONFIGURATION
@@ -122,7 +122,10 @@ fig.update_yaxes(title_text="P/L ($)", row=2, col=1)
 fig.update_yaxes(title_text="DD ($)", row=3, col=1)
 
 # Build filter info for title
-filter_info = f"SMA Filter: {'ENABLED' if FILTER_BY_SMA else 'DISABLED'} | Time Filter: {'ENABLED' if FILTER_TIME_OF_DAY else 'DISABLED'}"
+filter_info = f"SMA Filter: {'ENABLED' if FILTER_BY_SMA else 'DISABLED'}"
+if FILTER_BY_SMA and SMA_TRAILING_STOP:
+    filter_info += " (Trailing Stop: ENABLED)"
+filter_info += f" | Time Filter: {'ENABLED' if FILTER_TIME_OF_DAY else 'DISABLED'}"
 if FILTER_TIME_OF_DAY:
     filter_info += f" ({START_TRADING_TIME} to {END_TRADING_TIME})"
 

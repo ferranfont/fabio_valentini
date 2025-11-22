@@ -7,7 +7,7 @@ import pandas as pd
 from pathlib import Path
 import webbrowser
 from datetime import datetime
-from config_trinchera import MEAN_REVERS_EXPAND, BIG_VOLUME_TRIGGER, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS
+from config_trinchera import MEAN_REVERS_EXPAND, BIG_VOLUME_TRIGGER, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS, SMA_TRAILING_STOP, TRAILING_STOP_ATR_MULT
 
 # ============================================================================
 # CONFIGURATION
@@ -74,10 +74,12 @@ std_profit_usd = df_trades['pnl_usd'].std()
 
 # WIN/LOSS
 winners = df_trades[df_trades['exit_reason'] == 'profit']
-losers = df_trades[df_trades['exit_reason'] == 'stop']
+losers = df_trades[(df_trades['exit_reason'] == 'stop') | (df_trades['exit_reason'] == 'trailing_stop')]
+trailing_stops = df_trades[df_trades['exit_reason'] == 'trailing_stop']
 win_rate = len(winners) / total_trades * 100 if total_trades > 0 else 0
 num_winners = len(winners)
 num_losers = len(losers)
+num_trailing_stops = len(trailing_stops)
 
 gross_profit = winners['pnl'].sum() if len(winners) > 0 else 0
 gross_profit_usd = winners['pnl_usd'].sum() if len(winners) > 0 else 0
@@ -252,7 +254,7 @@ html_content = f"""
         <p>TP: {TP_POINTS} pts (${TP_POINTS * POINT_VALUE:.0f}) | SL: {SL_POINTS} pts (${SL_POINTS * POINT_VALUE:.0f}) | Mean Reversion: ±{MEAN_REVERS_EXPAND} pts | Volume Trigger: {BIG_VOLUME_TRIGGER}</p>
         <p>GRID: {'ENABLED' if USE_GRID else 'DISABLED'}{' | Distance: ' + str(GRID_MEAN_REVERS_EXPAND) + ' pts | TP: ' + str(GRID_TP_POINTS) + ' pts ($' + str(int(GRID_TP_POINTS * POINT_VALUE)) + ') | SL: ' + str(GRID_SL_POINTS) + ' pts ($' + str(int(GRID_SL_POINTS * POINT_VALUE)) + ')' if USE_GRID else ''}</p>
         <p>Period: {period_start.strftime('%Y-%m-%d %H:%M')} to {period_end.strftime('%Y-%m-%d %H:%M')}</p>
-        <p>Filters: SMA Filter {'ENABLED' if FILTER_BY_SMA else 'DISABLED'} | Time Filter {'ENABLED' if FILTER_TIME_OF_DAY else 'DISABLED'}{' (' + START_TRADING_TIME + ' to ' + END_TRADING_TIME + ')' if FILTER_TIME_OF_DAY else ''}</p>
+        <p>Filters: SMA Filter {'ENABLED' if FILTER_BY_SMA else 'DISABLED'}{' (Trailing Stop: ' + ('ENABLED' if SMA_TRAILING_STOP else 'DISABLED') + ')' if FILTER_BY_SMA else ''} | Time Filter {'ENABLED' if FILTER_TIME_OF_DAY else 'DISABLED'}{' (' + START_TRADING_TIME + ' to ' + END_TRADING_TIME + ')' if FILTER_TIME_OF_DAY else ''}</p>
     </div>
 
     <div class="container">
@@ -328,6 +330,7 @@ html_content = f"""
                 <table>
                     <tr><td>TARGET exits</td><td>{target_exits} ({target_exits/total_trades*100:.1f}%)</td></tr>
                     <tr><td>STOP exits</td><td>{stop_exits} ({stop_exits/total_trades*100:.1f}%)</td></tr>
+                    {'<tr><td>TRAILING STOP exits</td><td>' + str(num_trailing_stops) + ' (' + f'{num_trailing_stops/total_trades*100:.1f}' + '%)</td></tr>' if num_trailing_stops > 0 else ''}
                     <tr><td>EOD exits</td><td>{eod_exits} ({eod_exits/total_trades*100 if total_trades > 0 else 0:.1f}%)</td></tr>
                 </table>
             </div>

@@ -8,7 +8,7 @@ Trades based on price touching mean reversion levels (red/green lines)
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, time
-from config_trinchera import MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS
+from config_trinchera import MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS, SMA_TRAILING_STOP, TRAILING_STOP_ATR_MULT
 
 # ============================================================================
 # STRATEGY CONFIGURATION
@@ -56,6 +56,10 @@ print(f"  - SMA Filter: {'ENABLED' if FILTER_BY_SMA else 'DISABLED'}")
 if FILTER_BY_SMA:
     print(f"    * Orange dot < SMA at event: ONLY SELL orders")
     print(f"    * Orange dot > SMA at event: ONLY BUY orders")
+    if SMA_TRAILING_STOP:
+        print(f"    * SMA Trailing Stop: ENABLED (follows SMA)")
+    else:
+        print(f"    * SMA Trailing Stop: DISABLED")
 print(f"  - Time Filter: {'ENABLED' if FILTER_TIME_OF_DAY else 'DISABLED'}")
 if FILTER_TIME_OF_DAY:
     print(f"    * Trading hours: {START_TRADING_TIME} to {END_TRADING_TIME}")
@@ -212,7 +216,20 @@ for idx, event in df_bins.iterrows():
             exit_price = None
             exit_sma = None
 
+            # Trailing stop tracking (only for SELL when FILTER_BY_SMA and SMA_TRAILING_STOP are both True)
+            lowest_sma = None
+            trailing_active = FILTER_BY_SMA and SMA_TRAILING_STOP
+
             for _, bar in exit_data.iterrows():
+                # Update trailing stop if enabled (SELL: SL moves DOWN following SMA, never UP)
+                if trailing_active:
+                    current_sma = bar['sma']
+                    if lowest_sma is None or current_sma < lowest_sma:
+                        lowest_sma = current_sma
+                        # Move SL down following SMA (never moves up for SHORT)
+                        if current_sma < sl_price:
+                            sl_price = current_sma
+
                 # Check TP (price goes down to TP)
                 if bar['low'] <= tp_price:
                     exit_reason = 'profit'
@@ -222,7 +239,7 @@ for idx, event in df_bins.iterrows():
                     break
                 # Check SL (price goes up to SL)
                 elif bar['high'] >= sl_price:
-                    exit_reason = 'stop'
+                    exit_reason = 'trailing_stop' if trailing_active else 'stop'
                     exit_time = bar['timestamp']
                     exit_price = sl_price
                     exit_sma = bar['sma']
@@ -357,7 +374,20 @@ for idx, event in df_bins.iterrows():
             exit_price = None
             exit_sma = None
 
+            # Trailing stop tracking (only for BUY when FILTER_BY_SMA and SMA_TRAILING_STOP are both True)
+            highest_sma = None
+            trailing_active = FILTER_BY_SMA and SMA_TRAILING_STOP
+
             for _, bar in exit_data.iterrows():
+                # Update trailing stop if enabled (BUY: SL moves UP following SMA, never DOWN)
+                if trailing_active:
+                    current_sma = bar['sma']
+                    if highest_sma is None or current_sma > highest_sma:
+                        highest_sma = current_sma
+                        # Move SL up following SMA (never moves down for LONG)
+                        if current_sma > sl_price:
+                            sl_price = current_sma
+
                 # Check TP (price goes up to TP)
                 if bar['high'] >= tp_price:
                     exit_reason = 'profit'
@@ -367,7 +397,7 @@ for idx, event in df_bins.iterrows():
                     break
                 # Check SL (price goes down to SL)
                 elif bar['low'] <= sl_price:
-                    exit_reason = 'stop'
+                    exit_reason = 'trailing_stop' if trailing_active else 'stop'
                     exit_time = bar['timestamp']
                     exit_price = sl_price
                     exit_sma = bar['sma']
@@ -417,6 +447,7 @@ if len(trades) > 0:
     # Statistics
     profit_trades = df_trades[df_trades['exit_reason'] == 'profit']
     stop_trades = df_trades[df_trades['exit_reason'] == 'stop']
+    trailing_stop_trades = df_trades[df_trades['exit_reason'] == 'trailing_stop']
 
     total_pnl = df_trades['pnl'].sum()
     total_pnl_usd = df_trades['pnl_usd'].sum()
@@ -427,6 +458,8 @@ if len(trades) > 0:
     print(f"Total trades: {len(df_trades)}")
     print(f"  - PROFIT exits: {len(profit_trades)} ({len(profit_trades)/len(df_trades)*100:.1f}%)")
     print(f"  - STOP exits: {len(stop_trades)} ({len(stop_trades)/len(df_trades)*100:.1f}%)")
+    if len(trailing_stop_trades) > 0:
+        print(f"  - TRAILING STOP exits: {len(trailing_stop_trades)} ({len(trailing_stop_trades)/len(df_trades)*100:.1f}%)")
 
     if FILTER_BY_SMA:
         filtered_trades = df_trades[df_trades['filter_passed'] == True]
@@ -449,6 +482,8 @@ if len(trades) > 0:
         print(f"  - P&L: {buy_pnl:.2f} points (${buy_pnl_usd:,.2f})")
         print(f"  - Profit exits: {len(buy_trades[buy_trades['exit_reason']=='profit'])}")
         print(f"  - Stop exits: {len(buy_trades[buy_trades['exit_reason']=='stop'])}")
+        if len(buy_trades[buy_trades['exit_reason']=='trailing_stop']) > 0:
+            print(f"  - Trailing stop exits: {len(buy_trades[buy_trades['exit_reason']=='trailing_stop'])}")
 
     print(f"\nSELL trades: {len(sell_trades)}")
     if len(sell_trades) > 0:
@@ -457,6 +492,8 @@ if len(trades) > 0:
         print(f"  - P&L: {sell_pnl:.2f} points (${sell_pnl_usd:,.2f})")
         print(f"  - Profit exits: {len(sell_trades[sell_trades['exit_reason']=='profit'])}")
         print(f"  - Stop exits: {len(sell_trades[sell_trades['exit_reason']=='stop'])}")
+        if len(sell_trades[sell_trades['exit_reason']=='trailing_stop']) > 0:
+            print(f"  - Trailing stop exits: {len(sell_trades[sell_trades['exit_reason']=='trailing_stop'])}")
 
 else:
     print("\n[WARN] No trades executed")

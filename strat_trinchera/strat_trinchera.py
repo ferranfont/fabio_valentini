@@ -217,21 +217,24 @@ for idx, event in df_bins.iterrows():
             exit_sma = None
 
             # Trailing stop tracking (only for SELL when FILTER_BY_SMA and SMA_TRAILING_STOP are both True)
-            trailing_active = FILTER_BY_SMA and SMA_TRAILING_STOP
+            trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
             trailing_distance = TRAILING_STOP_ATR_MULT  # Distance in points from SMA
+            initial_sl = sl_price  # Store initial stop loss
+            trailing_has_moved = False  # Track if trailing stop actually moved
 
             for _, bar in exit_data.iterrows():
                 # Update trailing stop if enabled (SELL: SL moves DOWN following SMA + distance, never UP)
-                if trailing_active:
+                if trailing_enabled:
                     current_sma = bar['sma']
                     # For SHORT: SL is above SMA by trailing_distance
                     new_sl = current_sma + trailing_distance
                     # Only move SL down (never up for SHORT)
                     if new_sl < sl_price:
                         sl_price = new_sl
+                        trailing_has_moved = True  # Mark that trailing has taken over
 
                 # Check TP (only if trailing stop is NOT active - let profits run with trailing stop)
-                if not trailing_active and bar['low'] <= tp_price:
+                if not trailing_enabled and bar['low'] <= tp_price:
                     exit_reason = 'profit'
                     exit_time = bar['timestamp']
                     exit_price = tp_price
@@ -239,7 +242,8 @@ for idx, event in df_bins.iterrows():
                     break
                 # Check SL (price goes up to SL)
                 elif bar['high'] >= sl_price:
-                    exit_reason = 'trailing_stop' if trailing_active else 'stop'
+                    # Only mark as trailing_stop if trailing actually moved, otherwise it's initial stop
+                    exit_reason = 'trailing_stop' if (trailing_enabled and trailing_has_moved) else 'stop'
                     exit_time = bar['timestamp']
                     exit_price = sl_price
                     exit_sma = bar['sma']
@@ -375,21 +379,24 @@ for idx, event in df_bins.iterrows():
             exit_sma = None
 
             # Trailing stop tracking (only for BUY when FILTER_BY_SMA and SMA_TRAILING_STOP are both True)
-            trailing_active = FILTER_BY_SMA and SMA_TRAILING_STOP
+            trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
             trailing_distance = TRAILING_STOP_ATR_MULT  # Distance in points from SMA
+            initial_sl = sl_price  # Store initial stop loss
+            trailing_has_moved = False  # Track if trailing stop actually moved
 
             for _, bar in exit_data.iterrows():
                 # Update trailing stop if enabled (BUY: SL moves UP following SMA - distance, never DOWN)
-                if trailing_active:
+                if trailing_enabled:
                     current_sma = bar['sma']
                     # For LONG: SL is below SMA by trailing_distance
                     new_sl = current_sma - trailing_distance
                     # Only move SL up (never down for LONG)
                     if new_sl > sl_price:
                         sl_price = new_sl
+                        trailing_has_moved = True  # Mark that trailing has taken over
 
                 # Check TP (only if trailing stop is NOT active - let profits run with trailing stop)
-                if not trailing_active and bar['high'] >= tp_price:
+                if not trailing_enabled and bar['high'] >= tp_price:
                     exit_reason = 'profit'
                     exit_time = bar['timestamp']
                     exit_price = tp_price
@@ -397,7 +404,8 @@ for idx, event in df_bins.iterrows():
                     break
                 # Check SL (price goes down to SL)
                 elif bar['low'] <= sl_price:
-                    exit_reason = 'trailing_stop' if trailing_active else 'stop'
+                    # Only mark as trailing_stop if trailing actually moved, otherwise it's initial stop
+                    exit_reason = 'trailing_stop' if (trailing_enabled and trailing_has_moved) else 'stop'
                     exit_time = bar['timestamp']
                     exit_price = sl_price
                     exit_sma = bar['sma']

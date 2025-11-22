@@ -48,7 +48,7 @@ MEAN_REVERSE_TIMEOUT_ORDER = 3   # Timeout in minutes for mean reversion order l
 # ============================================================================
 # GRID SYSTEM
 # ============================================================================
-USE_GRID = False  # Enable/disable GRID system (second entry)
+FILTER_USE_GRID = False  # Enable/disable GRID system (second entry)
 GRID_MEAN_REVERS_EXPAND = 5.0  # Distance in points for second entry from first entry
 GRID_TP_POINTS = 4.0  # Take profit distance from average entry price when GRID is active
 GRID_SL_POINTS = 3.0   # Stop loss distance BEYOND second entry level when GRID is active

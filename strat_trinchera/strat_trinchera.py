@@ -8,7 +8,7 @@ Trades based on price touching mean reversion levels (red/green lines)
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, time
-from config_trinchera import MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS, SMA_TRAILING_STOP, TRAILING_STOP_ATR_MULT
+from config_trinchera import MEAN_REVERS_EXPAND, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, FILTER_USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS, SMA_TRAILING_STOP, TRAILING_STOP_ATR_MULT
 
 # ============================================================================
 # STRATEGY CONFIGURATION
@@ -63,8 +63,8 @@ if FILTER_BY_SMA:
 print(f"  - Time Filter: {'ENABLED' if FILTER_TIME_OF_DAY else 'DISABLED'}")
 if FILTER_TIME_OF_DAY:
     print(f"    * Trading hours: {START_TRADING_TIME} to {END_TRADING_TIME}")
-print(f"  - GRID System: {'ENABLED' if USE_GRID else 'DISABLED'}")
-if USE_GRID:
+print(f"  - GRID System: {'ENABLED' if FILTER_USE_GRID else 'DISABLED'}")
+if FILTER_USE_GRID:
     print(f"    * Second entry distance: {GRID_MEAN_REVERS_EXPAND} points")
     print(f"    * GRID TP: {GRID_TP_POINTS} points (${GRID_TP_POINTS * POINT_VALUE:.0f}) from average entry")
     print(f"    * GRID SL: {GRID_SL_POINTS} points (${GRID_SL_POINTS * POINT_VALUE:.0f}) beyond second entry")
@@ -114,8 +114,8 @@ for idx, event in df_bins.iterrows():
         continue
 
     # Check for SELL opportunity (price touches red line - mean_level_up)
-    # If USE_GRID, first entry at MEAN_REVERS_EXPAND, second at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
-    if USE_GRID:
+    # If FILTER_USE_GRID, first entry at MEAN_REVERS_EXPAND, second at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
+    if FILTER_USE_GRID:
         first_entry_level = event_close + MEAN_REVERS_EXPAND
         second_entry_level = event_close + MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
     else:
@@ -154,7 +154,7 @@ for idx, event in df_bins.iterrows():
         first_entry_tp = entry_price - TP_POINTS  # SELL: TP is below entry
         first_entry_sl = entry_price + SL_POINTS  # SELL: SL is above entry
 
-        if USE_GRID and second_entry_level is not None:
+        if FILTER_USE_GRID and second_entry_level is not None:
             # Search for second entry OR TP from first entry (whichever comes first)
             second_entry_data = df_data[(df_data['timestamp'] > entry_time) & (df_data['timestamp'] <= end_ts)].copy()
 
@@ -200,7 +200,7 @@ for idx, event in df_bins.iterrows():
 
         # Calculate TP and SL for SELL (only if not early exit)
         if not early_tp_exit:
-            if USE_GRID and has_second_entry:
+            if FILTER_USE_GRID and has_second_entry:
                 tp_price = avg_entry_price - GRID_TP_POINTS
                 sl_price = event_close + MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND + GRID_SL_POINTS
             else:
@@ -272,8 +272,8 @@ for idx, event in df_bins.iterrows():
             })
 
     # Check for BUY opportunity (price touches green line - mean_level_down)
-    # If USE_GRID, first entry at MEAN_REVERS_EXPAND, second at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
-    if USE_GRID:
+    # If FILTER_USE_GRID, first entry at MEAN_REVERS_EXPAND, second at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
+    if FILTER_USE_GRID:
         first_entry_level = event_close - MEAN_REVERS_EXPAND
         second_entry_level = event_close - MEAN_REVERS_EXPAND - GRID_MEAN_REVERS_EXPAND
     else:
@@ -312,7 +312,7 @@ for idx, event in df_bins.iterrows():
         first_entry_tp = entry_price + TP_POINTS  # BUY: TP is above entry
         first_entry_sl = entry_price - SL_POINTS  # BUY: SL is below entry
 
-        if USE_GRID and second_entry_level is not None:
+        if FILTER_USE_GRID and second_entry_level is not None:
             # Search for second entry OR TP from first entry (whichever comes first)
             second_entry_data = df_data[(df_data['timestamp'] > entry_time) & (df_data['timestamp'] <= end_ts)].copy()
 
@@ -358,7 +358,7 @@ for idx, event in df_bins.iterrows():
 
         # Calculate TP and SL for BUY (only if not early exit)
         if not early_tp_exit:
-            if USE_GRID and has_second_entry:
+            if FILTER_USE_GRID and has_second_entry:
                 tp_price = avg_entry_price + GRID_TP_POINTS
                 sl_price = event_close - MEAN_REVERS_EXPAND - GRID_MEAN_REVERS_EXPAND - GRID_SL_POINTS
             else:

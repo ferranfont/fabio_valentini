@@ -9,13 +9,13 @@ import sys
 
 # Get BIG_VOLUME_TRIGGER from command line argument or use default from config
 try:
-    from config_trinchera import BIG_VOLUME_TRIGGER as DEFAULT_TRIGGER, BIG_VOLUME_TIMEOUT, MEAN_REVERS_EXPAND, MEAN_REVERSE_TIMEOUT_ORDER, USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS
+    from config_trinchera import BIG_VOLUME_TRIGGER as DEFAULT_TRIGGER, BIG_VOLUME_TIMEOUT, MEAN_REVERS_EXPAND, MEAN_REVERSE_TIMEOUT_ORDER, FILTER_USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS
 except ImportError:
     DEFAULT_TRIGGER = 300
     BIG_VOLUME_TIMEOUT = 10
     MEAN_REVERS_EXPAND = 10
     MEAN_REVERSE_TIMEOUT_ORDER = 1
-    USE_GRID = False
+    FILTER_USE_GRID = False
     GRID_MEAN_REVERS_EXPAND = 5.0
     GRID_TP_POINTS = 10.0
     GRID_SL_POINTS = 3.0
@@ -82,7 +82,7 @@ print(f"[INFO] Added timeout window: {BIG_VOLUME_TIMEOUT} minutes per event")
 
 # Calculate mean reversion levels (close price +/- MEAN_REVERS_EXPAND)
 # If GRID is enabled, adjust levels to account for second entry distance
-if USE_GRID:
+if FILTER_USE_GRID:
     # Lines should be drawn at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
     big_volume_df['mean_level_up'] = big_volume_df['close'] + MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND
     big_volume_df['mean_level_down'] = big_volume_df['close'] - MEAN_REVERS_EXPAND - GRID_MEAN_REVERS_EXPAND

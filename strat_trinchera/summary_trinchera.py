@@ -7,7 +7,7 @@ import pandas as pd
 from pathlib import Path
 import webbrowser
 from datetime import datetime
-from config_trinchera import MEAN_REVERS_EXPAND, BIG_VOLUME_TRIGGER, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS, SMA_TRAILING_STOP, TRAILING_STOP_ATR_MULT
+from config_trinchera import MEAN_REVERS_EXPAND, BIG_VOLUME_TRIGGER, TP_POINTS, SL_POINTS, FILTER_BY_SMA, FILTER_TIME_OF_DAY, START_TRADING_TIME, END_TRADING_TIME, FILTER_USE_GRID, GRID_MEAN_REVERS_EXPAND, GRID_TP_POINTS, GRID_SL_POINTS, SMA_TRAILING_STOP, TRAILING_STOP_ATR_MULT
 
 # ============================================================================
 # CONFIGURATION
@@ -252,7 +252,7 @@ html_content = f"""
     <div class="header">
         <h1>TRINCHERA MEAN REVERSION STRATEGY</h1>
         <p>TP: {TP_POINTS} pts (${TP_POINTS * POINT_VALUE:.0f}) | SL: {SL_POINTS} pts (${SL_POINTS * POINT_VALUE:.0f}) | Mean Reversion: ±{MEAN_REVERS_EXPAND} pts | Volume Trigger: {BIG_VOLUME_TRIGGER}</p>
-        <p>GRID: {'ENABLED' if USE_GRID else 'DISABLED'}{' | Distance: ' + str(GRID_MEAN_REVERS_EXPAND) + ' pts | TP: ' + str(GRID_TP_POINTS) + ' pts ($' + str(int(GRID_TP_POINTS * POINT_VALUE)) + ') | SL: ' + str(GRID_SL_POINTS) + ' pts ($' + str(int(GRID_SL_POINTS * POINT_VALUE)) + ')' if USE_GRID else ''}</p>
+        <p>GRID: {'ENABLED' if FILTER_USE_GRID else 'DISABLED'}{' | Distance: ' + str(GRID_MEAN_REVERS_EXPAND) + ' pts | TP: ' + str(GRID_TP_POINTS) + ' pts ($' + str(int(GRID_TP_POINTS * POINT_VALUE)) + ') | SL: ' + str(GRID_SL_POINTS) + ' pts ($' + str(int(GRID_SL_POINTS * POINT_VALUE)) + ')' if FILTER_USE_GRID else ''}</p>
         <p>Period: {period_start.strftime('%Y-%m-%d %H:%M')} to {period_end.strftime('%Y-%m-%d %H:%M')}</p>
         <p>Filters: SMA Filter {'ENABLED' if FILTER_BY_SMA else 'DISABLED'}{' (Trailing Stop: ' + ('ENABLED' if SMA_TRAILING_STOP else 'DISABLED') + ')' if FILTER_BY_SMA else ''} | Time Filter {'ENABLED' if FILTER_TIME_OF_DAY else 'DISABLED'}{' (' + START_TRADING_TIME + ' to ' + END_TRADING_TIME + ')' if FILTER_TIME_OF_DAY else ''}</p>
     </div>

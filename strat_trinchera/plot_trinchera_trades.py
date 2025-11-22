@@ -14,7 +14,7 @@ from plotly.subplots import make_subplots
 from pathlib import Path
 import webbrowser
 from datetime import datetime
-from config_trinchera import BIG_VOLUME_TRIGGER, FILTER_BY_SMA, MEAN_REVERS_EXPAND, USE_GRID, GRID_MEAN_REVERS_EXPAND
+from config_trinchera import BIG_VOLUME_TRIGGER, FILTER_BY_SMA, MEAN_REVERS_EXPAND, FILTER_USE_GRID, GRID_MEAN_REVERS_EXPAND
 
 # ============================================================================
 # FILTER CONFIGURATION
@@ -236,7 +236,7 @@ if len(big_volume_events) > 0 and df_bins is not None:
         # Red line at mean_level_up (only if allowed and GRID is disabled)
         if show_red:
             # Only draw horizontal line if GRID is disabled
-            if not USE_GRID:
+            if not FILTER_USE_GRID:
                 shapes.append(
                     dict(
                         type='line',
@@ -252,7 +252,7 @@ if len(big_volume_events) > 0 and df_bins is not None:
 
             # Add red filled rectangle for GRID zone (SELL zone)
             # From mean_level_up down to (close + MEAN_REVERS_EXPAND)
-            if USE_GRID:
+            if FILTER_USE_GRID:
                 first_entry_level = close_price + MEAN_REVERS_EXPAND
                 shapes.append(
                     dict(
@@ -271,7 +271,7 @@ if len(big_volume_events) > 0 and df_bins is not None:
         # Green line at mean_level_down (only if allowed and GRID is disabled)
         if show_green:
             # Only draw horizontal line if GRID is disabled
-            if not USE_GRID:
+            if not FILTER_USE_GRID:
                 shapes.append(
                     dict(
                         type='line',
@@ -287,7 +287,7 @@ if len(big_volume_events) > 0 and df_bins is not None:
 
             # Add green filled rectangle for GRID zone (BUY zone)
             # From mean_level_down up to (close - MEAN_REVERS_EXPAND)
-            if USE_GRID:
+            if FILTER_USE_GRID:
                 first_entry_level = close_price - MEAN_REVERS_EXPAND
                 shapes.append(
                     dict(
@@ -442,7 +442,7 @@ if df_trades is not None and len(df_trades) > 0:
 
     # Add GRID zone traces (only if GRID is enabled)
     # These will be linked to legend so they can be toggled
-    if USE_GRID:
+    if FILTER_USE_GRID:
         # First, add the actual filled zones as scatter traces (they will be hidden in legend)
         # Then add invisible legend items that control them via legendgroup
 

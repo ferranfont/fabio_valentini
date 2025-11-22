@@ -156,11 +156,13 @@ for idx, event in df_bins.iterrows():
 
         if FILTER_USE_GRID and second_entry_level is not None:
             # Search for second entry OR TP from first entry (whichever comes first)
+            # BUT: Skip TP check if trailing stop is enabled (let profits run)
+            trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
             second_entry_data = df_data[(df_data['timestamp'] > entry_time) & (df_data['timestamp'] <= end_ts)].copy()
 
             for _, bar in second_entry_data.iterrows():
-                # Check if first entry TP is reached BEFORE second entry
-                if bar['low'] <= first_entry_tp:
+                # Check if first entry TP is reached BEFORE second entry (only if NO trailing stop)
+                if not trailing_enabled and bar['low'] <= first_entry_tp:
                     # TP from first entry reached before second entry
                     early_tp_exit = True
                     exit_reason = 'profit'
@@ -318,11 +320,13 @@ for idx, event in df_bins.iterrows():
 
         if FILTER_USE_GRID and second_entry_level is not None:
             # Search for second entry OR TP from first entry (whichever comes first)
+            # BUT: Skip TP check if trailing stop is enabled (let profits run)
+            trailing_enabled = FILTER_BY_SMA and SMA_TRAILING_STOP
             second_entry_data = df_data[(df_data['timestamp'] > entry_time) & (df_data['timestamp'] <= end_ts)].copy()
 
             for _, bar in second_entry_data.iterrows():
-                # Check if first entry TP is reached BEFORE second entry
-                if bar['high'] >= first_entry_tp:
+                # Check if first entry TP is reached BEFORE second entry (only if NO trailing stop)
+                if not trailing_enabled and bar['high'] >= first_entry_tp:
                     # TP from first entry reached before second entry
                     early_tp_exit = True
                     exit_reason = 'profit'

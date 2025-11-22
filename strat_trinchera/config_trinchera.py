@@ -17,8 +17,8 @@ SMA_PERIOD = 200  # Simple Moving Average period
 # ============================================================================
 # TRADING PARAMETERS
 # ============================================================================
-TP_POINTS = 35.0   # Take profit in points, usar 4 oara scalping and 20 for swing
-SL_POINTS = 10.0  # Stop loss in points, usar 9 para scalping
+TP_POINTS = 5.0   # Take profit in points, usar 4 oara scalping and 20 for swing
+SL_POINTS = 9.0  # Stop loss in points, usar 9 para scalping
 
 MEAN_REVERS_EXPAND = 10          # Points to expand mean reversion levels up/down
 MEAN_REVERSE_TIMEOUT_ORDER = 3   # Timeout in minutes for mean reversion order lines (red/green)
@@ -26,7 +26,7 @@ MEAN_REVERSE_TIMEOUT_ORDER = 3   # Timeout in minutes for mean reversion order l
 # ============================================================================
 # FILTERS TRADING SYSTEM
 # ============================================================================
-FILTER_BY_SMA = True  # Enable/disable SMA filter
+FILTER_BY_SMA = False  # Enable/disable SMA filter
 # If True (checks orange dot position at big volume event):
 #   - If orange dot < SMA: ONLY SELL (SHORT) orders allowed
 #   - If orange dot > SMA: ONLY BUY (LONG) orders allowed

@@ -569,7 +569,7 @@ else:
 if FILTER_TIME_OF_DAY:
     filters_status.append("Time Filter: ON")
 
-title_text = f"Trinchera - Trades Visualization | {tp_sl_info} | {' | '.join(filters_status)}"
+title_text = f"Trinchera - Trades Visualization - {DATE} | {tp_sl_info} | {' | '.join(filters_status)}"
 
 # Update layout with shapes
 fig.update_layout(

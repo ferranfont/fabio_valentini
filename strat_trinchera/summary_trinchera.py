@@ -243,7 +243,7 @@ html_content = f"""
 </head>
 <body>
     <div class="header">
-        <h1>TRINCHERA MEAN REVERSION STRATEGY</h1>
+        <h1>TRINCHERA MEAN REVERSION STRATEGY - {DATE}</h1>
         <p>TP: {TP_POINTS} pts (${TP_POINTS * POINT_VALUE:.0f}) | SL: {SL_POINTS} pts (${SL_POINTS * POINT_VALUE:.0f}) | Mean Reversion: ±{MEAN_REVERS_EXPAND} pts | Volume Trigger: {BIG_VOLUME_TRIGGER}</p>
         <p>GRID: {'ENABLED' if FILTER_USE_GRID else 'DISABLED'}{' | Distance: ' + str(GRID_MEAN_REVERS_EXPAND) + ' pts | TP: ' + str(GRID_TP_POINTS) + ' pts ($' + str(int(GRID_TP_POINTS * POINT_VALUE)) + ') | SL: ' + str(GRID_SL_POINTS) + ' pts ($' + str(int(GRID_SL_POINTS * POINT_VALUE)) + ')' if FILTER_USE_GRID else ''}</p>
         <p>Period: {period_start.strftime('%Y-%m-%d %H:%M')} to {period_end.strftime('%Y-%m-%d %H:%M')}</p>

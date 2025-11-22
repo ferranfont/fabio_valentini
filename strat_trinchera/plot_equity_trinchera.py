@@ -127,7 +127,7 @@ fig.update_layout(
     width=1400,
     showlegend=True,
     hovermode='x unified',
-    title_text=f"Trinchera Strategy - Backtest Results ({len(df):,} trades)<br><sub>{filter_info}</sub>",
+    title_text=f"Trinchera Strategy - Backtest Results - {DATE} ({len(df):,} trades)<br><sub>{filter_info}</sub>",
     template='plotly_white'
 )
 

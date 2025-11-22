@@ -217,18 +217,18 @@ for idx, event in df_bins.iterrows():
             exit_sma = None
 
             # Trailing stop tracking (only for SELL when FILTER_BY_SMA and SMA_TRAILING_STOP are both True)
-            lowest_sma = None
             trailing_active = FILTER_BY_SMA and SMA_TRAILING_STOP
+            trailing_distance = TRAILING_STOP_ATR_MULT  # Distance in points from SMA
 
             for _, bar in exit_data.iterrows():
-                # Update trailing stop if enabled (SELL: SL moves DOWN following SMA, never UP)
+                # Update trailing stop if enabled (SELL: SL moves DOWN following SMA + distance, never UP)
                 if trailing_active:
                     current_sma = bar['sma']
-                    if lowest_sma is None or current_sma < lowest_sma:
-                        lowest_sma = current_sma
-                        # Move SL down following SMA (never moves up for SHORT)
-                        if current_sma < sl_price:
-                            sl_price = current_sma
+                    # For SHORT: SL is above SMA by trailing_distance
+                    new_sl = current_sma + trailing_distance
+                    # Only move SL down (never up for SHORT)
+                    if new_sl < sl_price:
+                        sl_price = new_sl
 
                 # Check TP (only if trailing stop is NOT active - let profits run with trailing stop)
                 if not trailing_active and bar['low'] <= tp_price:
@@ -375,18 +375,18 @@ for idx, event in df_bins.iterrows():
             exit_sma = None
 
             # Trailing stop tracking (only for BUY when FILTER_BY_SMA and SMA_TRAILING_STOP are both True)
-            highest_sma = None
             trailing_active = FILTER_BY_SMA and SMA_TRAILING_STOP
+            trailing_distance = TRAILING_STOP_ATR_MULT  # Distance in points from SMA
 
             for _, bar in exit_data.iterrows():
-                # Update trailing stop if enabled (BUY: SL moves UP following SMA, never DOWN)
+                # Update trailing stop if enabled (BUY: SL moves UP following SMA - distance, never DOWN)
                 if trailing_active:
                     current_sma = bar['sma']
-                    if highest_sma is None or current_sma > highest_sma:
-                        highest_sma = current_sma
-                        # Move SL up following SMA (never moves down for LONG)
-                        if current_sma > sl_price:
-                            sl_price = current_sma
+                    # For LONG: SL is below SMA by trailing_distance
+                    new_sl = current_sma - trailing_distance
+                    # Only move SL up (never down for LONG)
+                    if new_sl > sl_price:
+                        sl_price = new_sl
 
                 # Check TP (only if trailing stop is NOT active - let profits run with trailing stop)
                 if not trailing_active and bar['high'] >= tp_price:

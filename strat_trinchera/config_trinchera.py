@@ -23,13 +23,13 @@ FILTER_BY_SMA = False  # Enable/disable SMA filter
 #   - If orange dot > SMA: ONLY BUY (LONG) orders allowed
 
 SMA_TRAILING_STOP = False  # Enable/disable SMA-based trailing stop (only works if FILTER_BY_SMA = True)
-TRAILING_STOP_ATR_MULT = 0.75  # Distance from SMA for trailing stop (in points, or ATR multiplier if using ATR)
+TRAILING_STOP_ATR_MULT = 0.75  # Distance in points from SMA for trailing stop (volatility buffer)
 # If SMA_TRAILING_STOP = True (only when FILTER_BY_SMA is also True):
-#   - DISABLES fixed TP - lets profits run until price crosses back through SMA
-#   - For LONG trades: Move stop loss up following the SMA as it rises (never moves down)
-#   - For SHORT trades: Move stop loss down following the SMA as it falls (never moves up)
-#   - Locks in profits as price moves favorably and SMA follows
-#   - Trade exits when price crosses back through the trailing SMA level
+#   - DISABLES fixed TP - lets profits run with dynamic trailing stop
+#   - For LONG trades: SL = SMA - TRAILING_STOP_ATR_MULT (below SMA), moves UP only (never down)
+#   - For SHORT trades: SL = SMA + TRAILING_STOP_ATR_MULT (above SMA), moves DOWN only (never up)
+#   - Trailing stop follows SMA with a volatility buffer (TRAILING_STOP_ATR_MULT points)
+#   - Exit when price hits the trailing SL (NOT when crossing SMA)
 #   - Exit reason will be 'trailing_stop' instead of 'stop'
 #   - NO fixed TP is used when trailing stop is active (let profits run)
 

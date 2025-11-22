@@ -72,9 +72,9 @@ median_profit_usd = df_trades['pnl_usd'].median()
 std_profit = df_trades['pnl'].std()
 std_profit_usd = df_trades['pnl_usd'].std()
 
-# WIN/LOSS
-winners = df_trades[df_trades['exit_reason'] == 'profit']
-losers = df_trades[(df_trades['exit_reason'] == 'stop') | (df_trades['exit_reason'] == 'trailing_stop')]
+# WIN/LOSS (based on P&L, not exit reason)
+winners = df_trades[df_trades['pnl'] > 0]
+losers = df_trades[df_trades['pnl'] <= 0]
 trailing_stops = df_trades[df_trades['exit_reason'] == 'trailing_stop']
 win_rate = len(winners) / total_trades * 100 if total_trades > 0 else 0
 num_winners = len(winners)
@@ -128,8 +128,8 @@ downside_returns[downside_returns > 0] = 0  # Zero out positive returns
 downside_deviation = ((downside_returns ** 2).mean()) ** 0.5
 sortino_ratio = avg_profit / downside_deviation if downside_deviation != 0 else 0
 
-# Winning/Losing Streaks
-df_trades['win'] = (df_trades['exit_reason'] == 'profit').astype(int)
+# Winning/Losing Streaks (based on P&L, not exit reason)
+df_trades['win'] = (df_trades['pnl'] > 0).astype(int)
 df_trades['streak_id'] = (df_trades['win'] != df_trades['win'].shift()).cumsum()
 streaks = df_trades.groupby('streak_id')['win'].agg(['first', 'count'])
 max_win_streak = streaks[streaks['first'] == 1]['count'].max() if len(streaks[streaks['first'] == 1]) > 0 else 0

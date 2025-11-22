@@ -409,6 +409,23 @@ if df_trades is not None and len(df_trades) > 0:
             showlegend=False
         ), secondary_y=False)
 
+    # Trailing stop exits (square open, orange)
+    trailing_stop_exits = df_trades[df_trades['exit_reason'] == 'trailing_stop']
+    if len(trailing_stop_exits) > 0:
+        fig.add_trace(go.Scatter(
+            x=trailing_stop_exits['exit_time'],
+            y=trailing_stop_exits['exit_price'],
+            mode='markers',
+            name='TRAILING STOP Exit',
+            marker=dict(
+                color='rgba(0,0,0,0)',  # Transparent fill
+                size=10,
+                symbol='square',
+                line=dict(color='orange', width=2)
+            ),
+            showlegend=False
+        ), secondary_y=False)
+
     # Add connection lines from entries to exit
     for _, trade in df_trades.iterrows():
         # Always draw line from first entry to exit
@@ -533,6 +550,7 @@ if df_trades is not None and len(df_trades) > 0:
     print(f"[INFO] Added {len(sell_trades)} SELL entry markers ({sell_grid_count} with GRID)")
     print(f"[INFO] Added {len(profit_exits)} PROFIT exit markers")
     print(f"[INFO] Added {len(stop_exits)} STOP exit markers")
+    print(f"[INFO] Added {len(trailing_stop_exits)} TRAILING STOP exit markers")
     print(f"[INFO] Added {len(df_trades)} connection lines")
 
 # Update layout with shapes

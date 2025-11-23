@@ -308,6 +308,295 @@ html_file.write_text(html_content, encoding='utf-8')
 print(f"[OK] HTML report saved: {html_file.name}")
 
 # ============================================================================
+# STEP 5: GENERATE RATIOS REPORT
+# ============================================================================
+print("\n" + "=" * 80)
+print("STEP 5: GENERATING RATIOS REPORT")
+print("=" * 80)
+
+# Calculate additional ratios
+avg_trade = total_pnl_dollars / total_trades if total_trades > 0 else 0
+expectancy = (win_rate / 100 * avg_win) + ((100 - win_rate) / 100 * avg_loss)
+recovery_factor = abs(total_pnl_dollars / max_drawdown) if max_drawdown != 0 else 0
+sharpe_ratio = (df_all_trades['pnl_usd'].mean() / df_all_trades['pnl_usd'].std()) * (252 ** 0.5) if len(df_all_trades) > 1 else 0
+
+ratios_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Trinchera Strategy - Performance Ratios</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }}
+        .header {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }}
+        h1 {{
+            margin: 0;
+            font-size: 28px;
+        }}
+        .ratios-container {{
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            max-width: 800px;
+            margin: 0 auto;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }}
+        th {{
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-size: 14px;
+        }}
+        td {{
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+            font-size: 13px;
+        }}
+        td:first-child {{
+            font-weight: bold;
+            color: #555;
+        }}
+        td:last-child {{
+            text-align: right;
+            font-size: 16px;
+            font-weight: bold;
+        }}
+        .positive {{
+            color: #28a745;
+        }}
+        .negative {{
+            color: #dc3545;
+        }}
+        .neutral {{
+            color: #6c757d;
+        }}
+        tr:hover {{
+            background-color: #f8f9fa;
+        }}
+        .section-header {{
+            background: #f8f9fa !important;
+            font-weight: bold;
+            color: #333 !important;
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>TRINCHERA STRATEGY - PERFORMANCE RATIOS</h1>
+        <p>Period: {df_stats_by_date['date'].min()} to {df_stats_by_date['date'].max()} ({len(date_folders)} trading days)</p>
+        <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+    </div>
+
+    <div class="ratios-container">
+        <table>
+            <tr>
+                <th colspan="2">GENERAL STATISTICS</th>
+            </tr>
+            <tr>
+                <td>Total Trades</td>
+                <td class="neutral">{total_trades:,}</td>
+            </tr>
+            <tr>
+                <td>Trading Days</td>
+                <td class="neutral">{len(date_folders)}</td>
+            </tr>
+            <tr>
+                <td>Avg Trades per Day</td>
+                <td class="neutral">{total_trades / len(date_folders):.1f}</td>
+            </tr>
+
+            <tr class="section-header">
+                <td colspan="2">PROFITABILITY</td>
+            </tr>
+            <tr>
+                <td>Total P&L</td>
+                <td class="{'positive' if total_pnl_dollars >= 0 else 'negative'}">${total_pnl_dollars:,.2f}</td>
+            </tr>
+            <tr>
+                <td>Total P&L (Points)</td>
+                <td class="{'positive' if total_pnl_points >= 0 else 'negative'}">{total_pnl_points:.2f}</td>
+            </tr>
+            <tr>
+                <td>Average Trade</td>
+                <td class="{'positive' if avg_trade >= 0 else 'negative'}">${avg_trade:.2f}</td>
+            </tr>
+            <tr>
+                <td>Expectancy</td>
+                <td class="{'positive' if expectancy >= 0 else 'negative'}">${expectancy:.2f}</td>
+            </tr>
+
+            <tr class="section-header">
+                <td colspan="2">WIN/LOSS ANALYSIS</td>
+            </tr>
+            <tr>
+                <td>Win Rate</td>
+                <td class="{'positive' if win_rate >= 50 else 'negative'}">{win_rate:.1f}%</td>
+            </tr>
+            <tr>
+                <td>Winners</td>
+                <td class="positive">{num_winners:,} ({num_winners/total_trades*100:.1f}%)</td>
+            </tr>
+            <tr>
+                <td>Losers</td>
+                <td class="negative">{num_losers:,} ({num_losers/total_trades*100:.1f}%)</td>
+            </tr>
+            <tr>
+                <td>Average Win</td>
+                <td class="positive">${avg_win:.2f}</td>
+            </tr>
+            <tr>
+                <td>Average Loss</td>
+                <td class="negative">${avg_loss:.2f}</td>
+            </tr>
+            <tr>
+                <td>Win/Loss Ratio</td>
+                <td class="{'positive' if abs(avg_win/avg_loss) >= 1 else 'negative'}">{abs(avg_win/avg_loss):.2f}</td>
+            </tr>
+
+            <tr class="section-header">
+                <td colspan="2">RISK METRICS</td>
+            </tr>
+            <tr>
+                <td>Profit Factor</td>
+                <td class="{'positive' if profit_factor >= 1 else 'negative'}">{profit_factor:.2f}</td>
+            </tr>
+            <tr>
+                <td>Sharpe Ratio</td>
+                <td class="{'positive' if sharpe_ratio >= 1 else 'negative'}">{sharpe_ratio:.2f}</td>
+            </tr>
+            <tr>
+                <td>Max Drawdown</td>
+                <td class="negative">${max_drawdown:,.2f}</td>
+            </tr>
+            <tr>
+                <td>Recovery Factor</td>
+                <td class="{'positive' if recovery_factor >= 2 else 'negative'}">{recovery_factor:.2f}</td>
+            </tr>
+
+            <tr class="section-header">
+                <td colspan="2">DAILY PERFORMANCE</td>
+            </tr>
+            <tr>
+                <td>Best Day</td>
+                <td class="positive">${best_day['total_pnl']:.2f} ({best_day['date']})</td>
+            </tr>
+            <tr>
+                <td>Worst Day</td>
+                <td class="negative">${worst_day['total_pnl']:.2f} ({worst_day['date']})</td>
+            </tr>
+            <tr>
+                <td>Avg Daily P&L</td>
+                <td class="{'positive' if df_stats_by_date['total_pnl'].mean() >= 0 else 'negative'}">${df_stats_by_date['total_pnl'].mean():.2f}</td>
+            </tr>
+            <tr>
+                <td>Profitable Days</td>
+                <td class="positive">{len(df_stats_by_date[df_stats_by_date['total_pnl'] > 0])} ({len(df_stats_by_date[df_stats_by_date['total_pnl'] > 0])/len(df_stats_by_date)*100:.1f}%)</td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>
+"""
+
+ratios_file = OUTPUT_DIR / f"consolidated_report_ratios_{timestamp}.html"
+ratios_file.write_text(ratios_html, encoding='utf-8')
+print(f"[OK] Ratios report saved: {ratios_file.name}")
+
+# ============================================================================
+# STEP 6: GENERATE EQUITY CURVE CHART
+# ============================================================================
+print("\n" + "=" * 80)
+print("STEP 6: GENERATING EQUITY CURVE CHART")
+print("=" * 80)
+
+import plotly.graph_objs as go
+from plotly.subplots import make_subplots
+
+# Prepare data for equity curve
+df_equity = df_all_trades.sort_values(['date', 'entry_time']).copy()
+df_equity['cumulative_pnl'] = df_equity['pnl_usd'].cumsum()
+df_equity['running_max'] = df_equity['cumulative_pnl'].cummax()
+df_equity['drawdown'] = df_equity['cumulative_pnl'] - df_equity['running_max']
+df_equity['trade_number'] = range(1, len(df_equity) + 1)
+
+# Create subplot figure
+fig = make_subplots(
+    rows=2, cols=1,
+    row_heights=[0.7, 0.3],
+    subplot_titles=('Equity Curve', 'Drawdown'),
+    vertical_spacing=0.1
+)
+
+# Equity curve
+fig.add_trace(
+    go.Scatter(
+        x=df_equity['trade_number'],
+        y=df_equity['cumulative_pnl'],
+        mode='lines',
+        name='Equity',
+        line=dict(color='#667eea', width=2),
+        hovertemplate='<b>Trade #%{x}</b><br>Equity: $%{y:,.2f}<extra></extra>'
+    ),
+    row=1, col=1
+)
+
+# Zero line
+fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5, row=1, col=1)
+
+# Drawdown
+fig.add_trace(
+    go.Scatter(
+        x=df_equity['trade_number'],
+        y=df_equity['drawdown'],
+        mode='lines',
+        name='Drawdown',
+        fill='tozeroy',
+        line=dict(color='#dc3545', width=1),
+        fillcolor='rgba(220, 53, 69, 0.3)',
+        hovertemplate='<b>Trade #%{x}</b><br>Drawdown: $%{y:,.2f}<extra></extra>'
+    ),
+    row=2, col=1
+)
+
+# Update layout
+fig.update_layout(
+    title=dict(
+        text=f'Trinchera Strategy - Equity Curve<br><sub>Period: {df_stats_by_date["date"].min()} to {df_stats_by_date["date"].max()} | {total_trades:,} trades | Total P&L: ${total_pnl_dollars:,.2f}</sub>',
+        x=0.5,
+        xanchor='center'
+    ),
+    height=800,
+    showlegend=True,
+    hovermode='x unified',
+    template='plotly_white'
+)
+
+fig.update_xaxes(title_text="Trade Number", row=2, col=1)
+fig.update_yaxes(title_text="Cumulative P&L ($)", row=1, col=1)
+fig.update_yaxes(title_text="Drawdown ($)", row=2, col=1)
+
+equity_file = OUTPUT_DIR / f"consolidated_equity_{timestamp}.html"
+fig.write_html(str(equity_file))
+print(f"[OK] Equity curve saved: {equity_file.name}")
+
+# ============================================================================
 # FINAL SUMMARY
 # ============================================================================
 print("\n" + "=" * 80)
@@ -318,12 +607,16 @@ print(f"\nFiles generated:")
 print(f"  - {all_trades_file.name} ({len(df_all_trades):,} trades)")
 print(f"  - {stats_file.name} ({len(df_stats_by_date)} dates)")
 print(f"  - {html_file.name}")
+print(f"  - {ratios_file.name}")
+print(f"  - {equity_file.name}")
 
 print("\n" + "=" * 80)
 print("[SUCCESS] Results aggregation completed!")
 print("=" * 80)
 
-# Open HTML report in browser
+# Open HTML reports in browser
 import webbrowser
-webbrowser.open('file://' + str(html_file.absolute()))
-print(f"\n[OK] Opening consolidated report in browser...")
+webbrowser.open('file://' + str(ratios_file.absolute()))
+print(f"\n[OK] Opening ratios report in browser...")
+webbrowser.open('file://' + str(equity_file.absolute()))
+print(f"[OK] Opening equity curve in browser...")

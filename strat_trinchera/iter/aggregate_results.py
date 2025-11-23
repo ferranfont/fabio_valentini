@@ -68,7 +68,7 @@ print("=" * 80)
 # Overall statistics
 total_trades = len(df_all_trades)
 total_pnl_points = df_all_trades['pnl'].sum()
-total_pnl_dollars = df_all_trades['pnl_dollars'].sum()
+total_pnl_dollars = df_all_trades['pnl_usd'].sum()
 
 winning_trades = df_all_trades[df_all_trades['pnl'] > 0]
 losing_trades = df_all_trades[df_all_trades['pnl'] < 0]
@@ -77,17 +77,17 @@ num_winners = len(winning_trades)
 num_losers = len(losing_trades)
 win_rate = (num_winners / total_trades * 100) if total_trades > 0 else 0
 
-avg_win = winning_trades['pnl_dollars'].mean() if num_winners > 0 else 0
-avg_loss = losing_trades['pnl_dollars'].mean() if num_losers > 0 else 0
+avg_win = winning_trades['pnl_usd'].mean() if num_winners > 0 else 0
+avg_loss = losing_trades['pnl_usd'].mean() if num_losers > 0 else 0
 
-total_wins = winning_trades['pnl_dollars'].sum() if num_winners > 0 else 0
-total_losses = abs(losing_trades['pnl_dollars'].sum()) if num_losers > 0 else 0
+total_wins = winning_trades['pnl_usd'].sum() if num_winners > 0 else 0
+total_losses = abs(losing_trades['pnl_usd'].sum()) if num_losers > 0 else 0
 
 profit_factor = (total_wins / total_losses) if total_losses > 0 else 0
 
 # Calculate drawdown
 df_all_trades = df_all_trades.sort_values(['date', 'entry_time'])
-df_all_trades['cumulative_pnl'] = df_all_trades['pnl_dollars'].cumsum()
+df_all_trades['cumulative_pnl'] = df_all_trades['pnl_usd'].cumsum()
 df_all_trades['running_max'] = df_all_trades['cumulative_pnl'].cummax()
 df_all_trades['drawdown'] = df_all_trades['cumulative_pnl'] - df_all_trades['running_max']
 max_drawdown = df_all_trades['drawdown'].min()
@@ -103,8 +103,8 @@ for date in sorted(df_all_trades['date'].unique()):
         'winners': len(date_trades[date_trades['pnl'] > 0]),
         'losers': len(date_trades[date_trades['pnl'] < 0]),
         'win_rate': (len(date_trades[date_trades['pnl'] > 0]) / len(date_trades) * 100) if len(date_trades) > 0 else 0,
-        'total_pnl': date_trades['pnl_dollars'].sum(),
-        'avg_pnl': date_trades['pnl_dollars'].mean(),
+        'total_pnl': date_trades['pnl_usd'].sum(),
+        'avg_pnl': date_trades['pnl_usd'].mean(),
     })
 
 df_stats_by_date = pd.DataFrame(stats_by_date)

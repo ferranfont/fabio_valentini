@@ -346,37 +346,43 @@ ratios_html = f"""
         }}
         .ratios-container {{
             background: white;
-            padding: 30px;
+            padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            max-width: 800px;
+            max-width: 1000px;
             margin: 0 auto;
+        }}
+        .two-column-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
         }}
         table {{
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
         }}
         th {{
             background: #667eea;
             color: white;
-            padding: 15px;
+            padding: 8px 10px;
             text-align: left;
-            font-size: 14px;
+            font-size: 12px;
         }}
         td {{
-            padding: 12px 15px;
+            padding: 6px 10px;
             border-bottom: 1px solid #eee;
-            font-size: 13px;
+            font-size: 11px;
         }}
         td:first-child {{
             font-weight: bold;
             color: #555;
+            width: 60%;
         }}
         td:last-child {{
             text-align: right;
-            font-size: 16px;
+            font-size: 12px;
             font-weight: bold;
+            width: 40%;
         }}
         .positive {{
             color: #28a745;
@@ -405,111 +411,57 @@ ratios_html = f"""
     </div>
 
     <div class="ratios-container">
-        <table>
-            <tr>
-                <th colspan="2">GENERAL STATISTICS</th>
-            </tr>
-            <tr>
-                <td>Total Trades</td>
-                <td class="neutral">{total_trades:,}</td>
-            </tr>
-            <tr>
-                <td>Trading Days</td>
-                <td class="neutral">{len(date_folders)}</td>
-            </tr>
-            <tr>
-                <td>Avg Trades per Day</td>
-                <td class="neutral">{total_trades / len(date_folders):.1f}</td>
-            </tr>
+        <div class="two-column-grid">
+            <!-- Column 1 -->
+            <div>
+                <table>
+                    <tr><th colspan="2">GENERAL</th></tr>
+                    <tr><td>Total Trades</td><td class="neutral">{total_trades:,}</td></tr>
+                    <tr><td>Trading Days</td><td class="neutral">{len(date_folders)}</td></tr>
+                    <tr><td>Avg Trades/Day</td><td class="neutral">{total_trades / len(date_folders):.1f}</td></tr>
+                </table>
 
-            <tr class="section-header">
-                <td colspan="2">PROFITABILITY</td>
-            </tr>
-            <tr>
-                <td>Total P&L</td>
-                <td class="{'positive' if total_pnl_dollars >= 0 else 'negative'}">${total_pnl_dollars:,.2f}</td>
-            </tr>
-            <tr>
-                <td>Total P&L (Points)</td>
-                <td class="{'positive' if total_pnl_points >= 0 else 'negative'}">{total_pnl_points:.2f}</td>
-            </tr>
-            <tr>
-                <td>Average Trade</td>
-                <td class="{'positive' if avg_trade >= 0 else 'negative'}">${avg_trade:.2f}</td>
-            </tr>
-            <tr>
-                <td>Expectancy</td>
-                <td class="{'positive' if expectancy >= 0 else 'negative'}">${expectancy:.2f}</td>
-            </tr>
+                <table style="margin-top:15px;">
+                    <tr><th colspan="2">PROFITABILITY</th></tr>
+                    <tr><td>Total P&L</td><td class="{'positive' if total_pnl_dollars >= 0 else 'negative'}">${total_pnl_dollars:,.2f}</td></tr>
+                    <tr><td>Points</td><td class="{'positive' if total_pnl_points >= 0 else 'negative'}">{total_pnl_points:.2f}</td></tr>
+                    <tr><td>Avg Trade</td><td class="{'positive' if avg_trade >= 0 else 'negative'}">${avg_trade:.2f}</td></tr>
+                    <tr><td>Expectancy</td><td class="{'positive' if expectancy >= 0 else 'negative'}">${expectancy:.2f}</td></tr>
+                </table>
 
-            <tr class="section-header">
-                <td colspan="2">WIN/LOSS ANALYSIS</td>
-            </tr>
-            <tr>
-                <td>Win Rate</td>
-                <td class="{'positive' if win_rate >= 50 else 'negative'}">{win_rate:.1f}%</td>
-            </tr>
-            <tr>
-                <td>Winners</td>
-                <td class="positive">{num_winners:,} ({num_winners/total_trades*100:.1f}%)</td>
-            </tr>
-            <tr>
-                <td>Losers</td>
-                <td class="negative">{num_losers:,} ({num_losers/total_trades*100:.1f}%)</td>
-            </tr>
-            <tr>
-                <td>Average Win</td>
-                <td class="positive">${avg_win:.2f}</td>
-            </tr>
-            <tr>
-                <td>Average Loss</td>
-                <td class="negative">${avg_loss:.2f}</td>
-            </tr>
-            <tr>
-                <td>Win/Loss Ratio</td>
-                <td class="{'positive' if abs(avg_win/avg_loss) >= 1 else 'negative'}">{abs(avg_win/avg_loss):.2f}</td>
-            </tr>
+                <table style="margin-top:15px;">
+                    <tr><th colspan="2">WIN/LOSS</th></tr>
+                    <tr><td>Win Rate</td><td class="{'positive' if win_rate >= 50 else 'negative'}">{win_rate:.1f}%</td></tr>
+                    <tr><td>Winners</td><td class="positive">{num_winners:,}</td></tr>
+                    <tr><td>Losers</td><td class="negative">{num_losers:,}</td></tr>
+                    <tr><td>Avg Win</td><td class="positive">${avg_win:.2f}</td></tr>
+                    <tr><td>Avg Loss</td><td class="negative">${avg_loss:.2f}</td></tr>
+                    <tr><td>Win/Loss Ratio</td><td class="{'positive' if abs(avg_win/avg_loss) >= 1 else 'negative'}">{abs(avg_win/avg_loss):.2f}</td></tr>
+                </table>
+            </div>
 
-            <tr class="section-header">
-                <td colspan="2">RISK METRICS</td>
-            </tr>
-            <tr>
-                <td>Profit Factor</td>
-                <td class="{'positive' if profit_factor >= 1 else 'negative'}">{profit_factor:.2f}</td>
-            </tr>
-            <tr>
-                <td>Sharpe Ratio</td>
-                <td class="{'positive' if sharpe_ratio >= 1 else 'negative'}">{sharpe_ratio:.2f}</td>
-            </tr>
-            <tr>
-                <td>Max Drawdown</td>
-                <td class="negative">${max_drawdown:,.2f}</td>
-            </tr>
-            <tr>
-                <td>Recovery Factor</td>
-                <td class="{'positive' if recovery_factor >= 2 else 'negative'}">{recovery_factor:.2f}</td>
-            </tr>
+            <!-- Column 2 -->
+            <div>
+                <table>
+                    <tr><th colspan="2">RISK METRICS</th></tr>
+                    <tr><td>Profit Factor</td><td class="{'positive' if profit_factor >= 1 else 'negative'}">{profit_factor:.2f}</td></tr>
+                    <tr><td>Sharpe Ratio</td><td class="{'positive' if sharpe_ratio >= 1 else 'negative'}">{sharpe_ratio:.2f}</td></tr>
+                    <tr><td>Max Drawdown</td><td class="negative">${max_drawdown:,.2f}</td></tr>
+                    <tr><td>Recovery Factor</td><td class="{'positive' if recovery_factor >= 2 else 'negative'}">{recovery_factor:.2f}</td></tr>
+                </table>
 
-            <tr class="section-header">
-                <td colspan="2">DAILY PERFORMANCE</td>
-            </tr>
-            <tr>
-                <td>Best Day</td>
-                <td class="positive">${best_day['total_pnl']:.2f} ({best_day['date']})</td>
-            </tr>
-            <tr>
-                <td>Worst Day</td>
-                <td class="negative">${worst_day['total_pnl']:.2f} ({worst_day['date']})</td>
-            </tr>
-            <tr>
-                <td>Avg Daily P&L</td>
-                <td class="{'positive' if df_stats_by_date['total_pnl'].mean() >= 0 else 'negative'}">${df_stats_by_date['total_pnl'].mean():.2f}</td>
-            </tr>
-            <tr>
-                <td>Profitable Days</td>
-                <td class="positive">{len(df_stats_by_date[df_stats_by_date['total_pnl'] > 0])} ({len(df_stats_by_date[df_stats_by_date['total_pnl'] > 0])/len(df_stats_by_date)*100:.1f}%)</td>
-            </tr>
-        </table>
+                <table style="margin-top:15px;">
+                    <tr><th colspan="2">DAILY PERFORMANCE</th></tr>
+                    <tr><td>Best Day</td><td class="positive">${best_day['total_pnl']:.2f}</td></tr>
+                    <tr><td>Best Date</td><td class="neutral">{best_day['date']}</td></tr>
+                    <tr><td>Worst Day</td><td class="negative">${worst_day['total_pnl']:.2f}</td></tr>
+                    <tr><td>Worst Date</td><td class="neutral">{worst_day['date']}</td></tr>
+                    <tr><td>Avg Daily P&L</td><td class="{'positive' if df_stats_by_date['total_pnl'].mean() >= 0 else 'negative'}">${df_stats_by_date['total_pnl'].mean():.2f}</td></tr>
+                    <tr><td>Profitable Days</td><td class="positive">{len(df_stats_by_date[df_stats_by_date['total_pnl'] > 0])}/{len(df_stats_by_date)}</td></tr>
+                    <tr><td>Profit Days %</td><td class="positive">{len(df_stats_by_date[df_stats_by_date['total_pnl'] > 0])/len(df_stats_by_date)*100:.1f}%</td></tr>
+                </table>
+            </div>
+        </div>
     </div>
 </body>
 </html>
@@ -544,14 +496,16 @@ fig = make_subplots(
     vertical_spacing=0.1
 )
 
-# Equity curve
+# Equity curve - Green with fill
 fig.add_trace(
     go.Scatter(
         x=df_equity['trade_number'],
         y=df_equity['cumulative_pnl'],
         mode='lines',
         name='Equity',
-        line=dict(color='#667eea', width=2),
+        fill='tozeroy',
+        line=dict(color='rgba(40, 167, 69, 0.8)', width=2),
+        fillcolor='rgba(40, 167, 69, 0.2)',
         hovertemplate='<b>Trade #%{x}</b><br>Equity: $%{y:,.2f}<extra></extra>'
     ),
     row=1, col=1

@@ -1,7 +1,7 @@
 """
 Batch Process All Dates
 Automatically runs the Trinchera pipeline for all available dates in data/historic/
-Stores results in iter/ organized by date
+Stores results in iter/iter summary outputs/ organized by date
 """
 
 import subprocess
@@ -20,8 +20,9 @@ DATA_DIR = REPO_ROOT / "data" / "historic"
 CONFIG_FILE = REPO_ROOT / "config_trinchera.py"
 MAIN_SCRIPT = REPO_ROOT / "main_trinchera.py"
 
-# Output directory (iter folder itself)
-OUTPUT_DIR = CURRENT_DIR
+# Output directory
+OUTPUT_DIR = CURRENT_DIR / "iter summary outputs"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 print("=" * 80)
 print("TRINCHERA BATCH PROCESSOR - ALL DATES")
@@ -116,7 +117,7 @@ for idx, date in enumerate(dates, 1):
         if result.returncode == 0:
             print(f"\n[OK] Pipeline completed successfully for {date}")
 
-            # Move outputs to iter/{date}/
+            # Move outputs to iter/iter summary outputs/{date}/
             date_output_dir = OUTPUT_DIR / date
             date_output_dir.mkdir(parents=True, exist_ok=True)
 

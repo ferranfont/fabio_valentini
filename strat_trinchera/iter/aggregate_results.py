@@ -11,7 +11,7 @@ from datetime import datetime
 # CONFIGURATION
 # ============================================================================
 CURRENT_DIR = Path(__file__).resolve().parent
-OUTPUT_DIR = CURRENT_DIR
+OUTPUT_DIR = CURRENT_DIR / "iter summary outputs"
 
 print("=" * 80)
 print("TRINCHERA RESULTS AGGREGATOR")

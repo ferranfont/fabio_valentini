@@ -1,6 +1,2 @@
-# Ignore all date folders and generated files in iter/
-202*/
-batch_summary_*.csv
-all_trades_combined_*.csv
-stats_by_date_*.csv
-consolidated_report_*.html
+# Ignore all outputs in iter summary outputs folder
+iter summary outputs/

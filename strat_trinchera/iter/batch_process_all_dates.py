@@ -210,3 +210,34 @@ print("\n" + "=" * 80)
 print(f"[SUCCESS] Batch processing completed!")
 print(f"[SUCCESS] Results stored in: {OUTPUT_DIR}")
 print("=" * 80)
+
+# ============================================================================
+# STEP 4: AGGREGATE RESULTS
+# ============================================================================
+if successful > 0:
+    print("\n" + "=" * 80)
+    print("STEP 4: AGGREGATING RESULTS")
+    print("=" * 80)
+
+    aggregate_script = CURRENT_DIR / "aggregate_results.py"
+    print(f"\n[INFO] Running aggregate_results.py...")
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(aggregate_script)],
+            cwd=str(CURRENT_DIR),
+            capture_output=False,  # Show output in real-time
+            text=True
+        )
+
+        if result.returncode == 0:
+            print("\n[OK] Aggregation completed successfully!")
+        else:
+            print(f"\n[WARNING] Aggregation failed with return code {result.returncode}")
+
+    except Exception as e:
+        print(f"\n[WARNING] Exception during aggregation: {e}")
+
+print("\n" + "=" * 80)
+print("[SUCCESS] Complete workflow finished!")
+print("=" * 80)

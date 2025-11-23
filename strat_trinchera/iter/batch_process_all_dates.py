@@ -15,10 +15,11 @@ from datetime import datetime
 # CONFIGURATION
 # ============================================================================
 CURRENT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = CURRENT_DIR.parent
+STRAT_DIR = CURRENT_DIR.parent  # strat_trinchera folder
+REPO_ROOT = STRAT_DIR.parent  # fabio_valentini folder
 DATA_DIR = REPO_ROOT / "data" / "historic"
-CONFIG_FILE = REPO_ROOT / "config_trinchera.py"
-MAIN_SCRIPT = REPO_ROOT / "main_trinchera.py"
+CONFIG_FILE = STRAT_DIR / "config_trinchera.py"
+MAIN_SCRIPT = STRAT_DIR / "main_trinchera.py"
 
 # Output directory
 OUTPUT_DIR = CURRENT_DIR / "iter summary outputs"
@@ -108,7 +109,7 @@ for idx, date in enumerate(dates, 1):
     try:
         result = subprocess.run(
             [sys.executable, str(MAIN_SCRIPT)],
-            cwd=str(REPO_ROOT),
+            cwd=str(STRAT_DIR),
             capture_output=True,
             text=True,
             timeout=600  # 10 minute timeout
@@ -122,14 +123,14 @@ for idx, date in enumerate(dates, 1):
             date_output_dir.mkdir(parents=True, exist_ok=True)
 
             # Copy CSV outputs
-            outputs_dir = REPO_ROOT / "outputs"
+            outputs_dir = STRAT_DIR / "outputs"
             for csv_file in outputs_dir.glob(f"*_{date}.csv"):
                 dest = date_output_dir / csv_file.name
                 shutil.copy2(csv_file, dest)
                 print(f"[OK] Copied: {csv_file.name} → iter/{date}/")
 
             # Copy HTML charts
-            charts_dir = REPO_ROOT / "charts"
+            charts_dir = STRAT_DIR / "charts"
             for html_file in charts_dir.glob(f"*_{date}.html"):
                 dest = date_output_dir / html_file.name
                 shutil.copy2(html_file, dest)

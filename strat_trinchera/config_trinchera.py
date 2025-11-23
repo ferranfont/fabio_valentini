@@ -25,8 +25,8 @@ SMA_PERIOD = 200  # Simple Moving Average period
 TP_POINTS = 5.0   # Take profit in points, usar 4 oara scalping and 20 for swing
 SL_POINTS = 9.0  # Stop loss in points, usar 9 para scalping
 
-MEAN_REVERS_EXPAND = 10          # Points to expand mean reversion levels up/down
-MEAN_REVERSE_TIMEOUT_ORDER = 3   # Timeout in minutes for mean reversion order lines (red/green)
+MEAN_REVERS_EXPAND = 10         # Points to expand mean reversion levels up/down. 10 standard
+MEAN_REVERSE_TIMEOUT_ORDER = 3   # Timeout in minutes for mean reversion order lines (red/green). 3
 
 # ============================================================================
 # FILTERS TRADING SYSTEM
@@ -51,7 +51,7 @@ SMA_CASH_TRAILING_DISTANCE = 10.0  # Trailing stop distance after activation (e.
 #   - Exit reason: 'cash_trailing' if trailing stop hits, 'profit' if TP hits
 
 SMA_TRAILING_STOP = False  # Enable/disable full trailing stop from entry (only works if FILTER_BY_SMA = True)
-TRAILING_STOP_ATR_MULT = 0.75    # Distance in points from price for trailing stop (volatility buffer)
+TRAILING_STOP_ATR_MULT = 20.75    # Distance in points from price for trailing stop (volatility buffer)
 # If SMA_TRAILING_STOP = True (only when FILTER_BY_SMA is also True):
 #   - DISABLES fixed TP - lets profits run with dynamic trailing stop
 #   - For LONG trades: SL = highest_price - TRAILING_STOP_ATR_MULT, moves UP only (never down)

@@ -320,6 +320,19 @@ expectancy = (win_rate / 100 * avg_win) + ((100 - win_rate) / 100 * avg_loss)
 recovery_factor = abs(total_pnl_dollars / max_drawdown) if max_drawdown != 0 else 0
 sharpe_ratio = (df_all_trades['pnl_usd'].mean() / df_all_trades['pnl_usd'].std()) * (252 ** 0.5) if len(df_all_trades) > 1 else 0
 
+# Sortino Ratio (uses only downside deviation)
+downside_returns = df_all_trades[df_all_trades['pnl_usd'] < 0]['pnl_usd']
+downside_std = downside_returns.std() if len(downside_returns) > 0 else 0
+sortino_ratio = (df_all_trades['pnl_usd'].mean() / downside_std) * (252 ** 0.5) if downside_std > 0 else 0
+
+# Kurtosis (tail risk measure)
+kurtosis = df_all_trades['pnl_usd'].kurtosis() if len(df_all_trades) > 3 else 0
+
+# Ulcer Index (downside volatility measure) - uses drawdown already calculated
+import numpy as np
+ulcer_squared_avg = (df_all_trades['drawdown'] ** 2).mean()
+ulcer_index = np.sqrt(ulcer_squared_avg) if ulcer_squared_avg > 0 else 0
+
 ratios_html = f"""
 <!DOCTYPE html>
 <html>
@@ -446,6 +459,9 @@ ratios_html = f"""
                     <tr><th colspan="2">RISK METRICS</th></tr>
                     <tr><td>Profit Factor</td><td class="{'positive' if profit_factor >= 1 else 'negative'}">{profit_factor:.2f}</td></tr>
                     <tr><td>Sharpe Ratio</td><td class="{'positive' if sharpe_ratio >= 1 else 'negative'}">{sharpe_ratio:.2f}</td></tr>
+                    <tr><td>Sortino Ratio</td><td class="{'positive' if sortino_ratio >= 1 else 'negative'}">{sortino_ratio:.2f}</td></tr>
+                    <tr><td>Kurtosis</td><td class="{'positive' if kurtosis < 0 else 'negative'}">{kurtosis:.2f}</td></tr>
+                    <tr><td>Ulcer Index</td><td class="negative">${ulcer_index:,.2f}</td></tr>
                     <tr><td>Max Drawdown</td><td class="negative">${max_drawdown:,.2f}</td></tr>
                     <tr><td>Recovery Factor</td><td class="{'positive' if recovery_factor >= 2 else 'negative'}">{recovery_factor:.2f}</td></tr>
                 </table>

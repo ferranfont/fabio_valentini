@@ -1,5 +1,6 @@
-# Ignore all iter_summary outputs (large CSV and HTML files)
-iter_summary/
-
-# Keep the directory structure
-!iter_summary/.gitkeep
+# Ignore all date folders and generated files in iter/
+202*/
+batch_summary_*.csv
+all_trades_combined_*.csv
+stats_by_date_*.csv
+consolidated_report_*.html

@@ -11,17 +11,12 @@ from datetime import datetime
 # CONFIGURATION
 # ============================================================================
 CURRENT_DIR = Path(__file__).resolve().parent
-ITER_SUMMARY_DIR = CURRENT_DIR / "iter_summary"
+OUTPUT_DIR = CURRENT_DIR
 
 print("=" * 80)
 print("TRINCHERA RESULTS AGGREGATOR")
 print("=" * 80)
-print(f"\nInput directory: {ITER_SUMMARY_DIR}")
-
-if not ITER_SUMMARY_DIR.exists():
-    print(f"\n[ERROR] Directory not found: {ITER_SUMMARY_DIR}")
-    print("[ERROR] Run batch_process_all_dates.py first")
-    exit(1)
+print(f"\nInput directory: {OUTPUT_DIR}")
 
 # ============================================================================
 # STEP 1: COLLECT ALL TRADES
@@ -31,7 +26,12 @@ print("STEP 1: COLLECTING TRADES FROM ALL DATES")
 print("=" * 80)
 
 all_trades = []
-date_folders = sorted([d for d in ITER_SUMMARY_DIR.iterdir() if d.is_dir() and d.name.isdigit()])
+date_folders = sorted([d for d in OUTPUT_DIR.iterdir() if d.is_dir() and d.name.isdigit()])
+
+if not date_folders:
+    print(f"\n[ERROR] No date folders found in: {OUTPUT_DIR}")
+    print("[ERROR] Run batch_process_all_dates.py first")
+    exit(1)
 
 print(f"\n[INFO] Found {len(date_folders)} date folders")
 
@@ -128,12 +128,12 @@ print("=" * 80)
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Save combined trades CSV
-all_trades_file = ITER_SUMMARY_DIR / f"all_trades_combined_{timestamp}.csv"
+all_trades_file = OUTPUT_DIR / f"all_trades_combined_{timestamp}.csv"
 df_all_trades.to_csv(all_trades_file, sep=';', decimal=',', index=False)
 print(f"\n[OK] All trades saved: {all_trades_file.name}")
 
 # Save statistics by date CSV
-stats_file = ITER_SUMMARY_DIR / f"stats_by_date_{timestamp}.csv"
+stats_file = OUTPUT_DIR / f"stats_by_date_{timestamp}.csv"
 df_stats_by_date.to_csv(stats_file, sep=';', decimal=',', index=False)
 print(f"[OK] Date statistics saved: {stats_file.name}")
 
@@ -303,7 +303,7 @@ html_content += """
 """
 
 # Save HTML report
-html_file = ITER_SUMMARY_DIR / f"consolidated_report_{timestamp}.html"
+html_file = OUTPUT_DIR / f"consolidated_report_{timestamp}.html"
 html_file.write_text(html_content, encoding='utf-8')
 print(f"[OK] HTML report saved: {html_file.name}")
 

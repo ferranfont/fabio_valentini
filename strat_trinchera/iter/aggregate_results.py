@@ -4,6 +4,7 @@ Combines all individual date results into consolidated reports
 """
 
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from datetime import datetime
 
@@ -320,18 +321,19 @@ expectancy = (win_rate / 100 * avg_win) + ((100 - win_rate) / 100 * avg_loss)
 recovery_factor = abs(total_pnl_dollars / max_drawdown) if max_drawdown != 0 else 0
 sharpe_ratio = (df_all_trades['pnl_usd'].mean() / df_all_trades['pnl_usd'].std()) * (252 ** 0.5) if len(df_all_trades) > 1 else 0
 
-# Sortino Ratio (uses only downside deviation)
-downside_returns = df_all_trades[df_all_trades['pnl_usd'] < 0]['pnl_usd']
-downside_std = downside_returns.std() if len(downside_returns) > 0 else 0
-sortino_ratio = (df_all_trades['pnl_usd'].mean() / downside_std) * (252 ** 0.5) if downside_std > 0 else 0
+# Sortino Ratio (uses only downside deviation from zero/target)
+# Calculate downside deviation from zero (negative returns only)
+negative_returns = df_all_trades[df_all_trades['pnl_usd'] < 0]['pnl_usd']
+# For Sortino, use semi-deviation (deviation from zero, not from mean)
+downside_deviation = np.sqrt((negative_returns ** 2).mean()) if len(negative_returns) > 0 else 0
+sortino_ratio = (df_all_trades['pnl_usd'].mean() / downside_deviation) * (252 ** 0.5) if downside_deviation > 0 else 0
 
 # Kurtosis (tail risk measure)
 kurtosis = df_all_trades['pnl_usd'].kurtosis() if len(df_all_trades) > 3 else 0
 
 # Ulcer Index (downside volatility measure) - uses drawdown already calculated
-import numpy as np
 ulcer_squared_avg = (df_all_trades['drawdown'] ** 2).mean()
-ulcer_index = np.sqrt(ulcer_squared_avg) if ulcer_squared_avg > 0 else 0
+ulcer_index = abs(np.sqrt(ulcer_squared_avg)) if ulcer_squared_avg > 0 else 0
 
 ratios_html = f"""
 <!DOCTYPE html>

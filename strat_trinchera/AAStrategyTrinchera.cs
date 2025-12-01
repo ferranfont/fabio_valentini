@@ -1,33 +1,17 @@
 // AAStrategyTrinchera - NinjaTrader Strategy for Trinchera Live Trading
-//
-// PURPOSE:
-// Sends real-time tick data to Python (tick_server_trinchera_bidirect.py)
-// Receives order commands from Python and executes them
-//
-// PORTS:
-// - 5555: Sends tick data TO Python
-// - 5556: Receives order commands FROM Python
-//
-// USAGE:
-// 1. Apply this strategy to your NQ chart in NinjaTrader
-// 2. Run: python tick_server_trinchera_bidirect.py
-// 3. Strategy will automatically connect and start sending ticks
-//
-// DIFFERENCES FROM AAStrategyBiderect:
-// - Uses ports 5555/5556 (instead of 5553/5554)
-// - Designed for Trinchera strategy (big volume + mean reversion)
-// - Can run simultaneously with AAStrategyBiderect on different chart
+// Based on AAStrategyBidirect.cs architecture (working version)
 
 #region Using declarations
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.IO;
-using System.Net;
-using System.Net.Sockets;
+using System.Linq;
 using System.Text;
-using System.Threading;
+using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
+using System.Xml.Serialization;
 using NinjaTrader.Cbi;
 using NinjaTrader.Gui;
 using NinjaTrader.Gui.Chart;
@@ -36,37 +20,34 @@ using NinjaTrader.Gui.Tools;
 using NinjaTrader.Data;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.Core.FloatingPoint;
+using NinjaTrader.NinjaScript.Indicators;
+using NinjaTrader.NinjaScript.DrawingTools;
+
+// TCP/IP networking
+using System.Net.Sockets;
+using System.Threading;
+using System.IO;
 #endregion
 
 namespace NinjaTrader.NinjaScript.Strategies
 {
     public class AAStrategyTrinchera : Strategy
     {
-        // ============================================================================
-        // NETWORK CONFIGURATION
-        // ============================================================================
-        private const int TICK_SEND_PORT = 5555;        // Port to SEND tick data TO Python
-        private const int ORDER_RECEIVE_PORT = 5556;    // Port to RECEIVE orders FROM Python
+        // Tick sender (to Python)
+        private TcpClient tickClient;
+        private NetworkStream tickStream;
+        private StreamWriter tickWriter;
+        private bool tickConnected = false;
 
-        // Socket connections
-        private TcpListener tickDataServer;             // Server for sending tick data
-        private TcpClient tickDataClient;               // Client connection for tick data
-        private NetworkStream tickDataStream;
-        private StreamWriter tickDataWriter;
+        // Order receiver (from Python)
+        private TcpClient orderClient;
+        private NetworkStream orderStream;
+        private StreamReader orderReader;
+        private bool orderConnected = false;
+        private Thread orderListenerThread;
 
-        private TcpListener orderReceiveServer;         // Server for receiving orders
-        private TcpClient orderReceiveClient;           // Client connection for orders
-        private NetworkStream orderReceiveStream;
-        private StreamReader orderReceiveReader;
-        private Thread orderReceiveThread;
+        private object lockObject = new object();
 
-        // Connection state
-        private bool isConnected = false;
-        private bool shouldStop = false;
-
-        // ============================================================================
-        // STRATEGY INITIALIZATION
-        // ============================================================================
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
@@ -87,169 +68,184 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TraceOrders = false;
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
-                BarsRequiredToTrade = 1;
+                BarsRequiredToTrade = 20;
                 IsInstantiatedOnEachOptimizationIteration = true;
+                IsOverlay = true;
+
+                // Parameters
+                TickServerHost = "127.0.0.1";
+                TickServerPort = 5555;
+                OrderServerHost = "127.0.0.1";
+                OrderServerPort = 5556;
             }
             else if (State == State.Configure)
             {
-                // Strategy configuration
             }
             else if (State == State.DataLoaded)
             {
-                Print("═══════════════════════════════════════════════════════════");
-                Print("AAStrategyTrinchera - Initializing");
-                Print("═══════════════════════════════════════════════════════════");
-                Print("Tick Data Server Port: " + TICK_SEND_PORT);
-                Print("Order Receive Port: " + ORDER_RECEIVE_PORT);
-                Print("═══════════════════════════════════════════════════════════");
-
-                // Start network servers
-                StartTickDataServer();
-                StartOrderReceiveServer();
+                // Connect when data is loaded
+                ConnectToTickServer();
+                ConnectToOrderServer();
+            }
+            else if (State == State.Realtime)
+            {
+                // Reconnect if needed
+                if (!tickConnected)
+                    ConnectToTickServer();
+                if (!orderConnected)
+                    ConnectToOrderServer();
             }
             else if (State == State.Terminated)
             {
-                Print("═══════════════════════════════════════════════════════════");
-                Print("AAStrategyTrinchera - Shutting Down");
-                Print("═══════════════════════════════════════════════════════════");
-
-                shouldStop = true;
-
-                // Clean up connections
-                CloseConnections();
+                DisconnectAll();
             }
         }
 
         // ============================================================================
-        // TICK DATA SERVER (SENDS TO PYTHON)
+        // TICK SENDER (TO PYTHON)
         // ============================================================================
-        private void StartTickDataServer()
+        private void ConnectToTickServer()
         {
             try
             {
-                tickDataServer = new TcpListener(IPAddress.Any, TICK_SEND_PORT);
-                tickDataServer.Start();
-                Print("[OK] Tick data server started on port " + TICK_SEND_PORT);
-                Print("[INFO] Waiting for Python connection...");
+                tickClient = new TcpClient();
+                tickClient.Connect(TickServerHost, TickServerPort);
+                tickStream = tickClient.GetStream();
+                tickWriter = new StreamWriter(tickStream, Encoding.UTF8) { AutoFlush = true };
+                tickConnected = true;
 
-                // Accept connection asynchronously
-                tickDataServer.BeginAcceptTcpClient(OnTickDataClientConnected, null);
+                Print(string.Format("[Trinchera] Connected to tick server {0}:{1}", TickServerHost, TickServerPort));
             }
             catch (Exception ex)
             {
-                Print("[ERROR] Failed to start tick data server: " + ex.Message);
-            }
-        }
-
-        private void OnTickDataClientConnected(IAsyncResult ar)
-        {
-            try
-            {
-                tickDataClient = tickDataServer.EndAcceptTcpClient(ar);
-                tickDataStream = tickDataClient.GetStream();
-                tickDataWriter = new StreamWriter(tickDataStream) { AutoFlush = true };
-
-                isConnected = true;
-                Print("[SUCCESS] Python connected for tick data!");
-                Print("═══════════════════════════════════════════════════════════");
-                Print("LIVE TRADING ACTIVE - Sending tick data to Python");
-                Print("═══════════════════════════════════════════════════════════");
-            }
-            catch (Exception ex)
-            {
-                Print("[ERROR] Tick data client connection failed: " + ex.Message);
-                isConnected = false;
+                Print(string.Format("[Trinchera] Failed to connect to tick server: {0}", ex.Message));
+                tickConnected = false;
             }
         }
 
         // ============================================================================
-        // ORDER RECEIVE SERVER (RECEIVES FROM PYTHON)
+        // ORDER RECEIVER (FROM PYTHON)
         // ============================================================================
-        private void StartOrderReceiveServer()
+        private void ConnectToOrderServer()
         {
             try
             {
-                orderReceiveServer = new TcpListener(IPAddress.Any, ORDER_RECEIVE_PORT);
-                orderReceiveServer.Start();
-                Print("[OK] Order receive server started on port " + ORDER_RECEIVE_PORT);
+                orderClient = new TcpClient();
+                orderClient.Connect(OrderServerHost, OrderServerPort);
+                orderStream = orderClient.GetStream();
+                orderReader = new StreamReader(orderStream, Encoding.UTF8);
+                orderConnected = true;
 
-                // Start thread to listen for orders
-                orderReceiveThread = new Thread(OrderReceiveLoop);
-                orderReceiveThread.IsBackground = true;
-                orderReceiveThread.Start();
+                Print(string.Format("[Trinchera] Connected to order server {0}:{1}", OrderServerHost, OrderServerPort));
+
+                // Start listener thread
+                orderListenerThread = new Thread(ListenForOrders);
+                orderListenerThread.IsBackground = true;
+                orderListenerThread.Start();
             }
             catch (Exception ex)
             {
-                Print("[ERROR] Failed to start order receive server: " + ex.Message);
+                Print(string.Format("[Trinchera] Failed to connect to order server: {0}", ex.Message));
+                orderConnected = false;
             }
         }
 
-        private void OrderReceiveLoop()
+        private void ListenForOrders()
         {
-            try
+            while (orderConnected)
             {
-                Print("[INFO] Waiting for Python connection (orders)...");
-                orderReceiveClient = orderReceiveServer.AcceptTcpClient();
-                orderReceiveStream = orderReceiveClient.GetStream();
-                orderReceiveReader = new StreamReader(orderReceiveStream);
-
-                Print("[SUCCESS] Python connected for orders!");
-
-                // Listen for orders
-                while (!shouldStop)
+                try
                 {
-                    try
+                    string line = orderReader.ReadLine();
+                    if (line == null)
                     {
-                        string orderMessage = orderReceiveReader.ReadLine();
-                        if (!string.IsNullOrEmpty(orderMessage))
-                        {
-                            ProcessOrderMessage(orderMessage);
-                        }
+                        Print("[Trinchera] Order server closed connection");
+                        orderConnected = false;
+                        break;
                     }
-                    catch (IOException)
-                    {
-                        // Connection lost
-                        Print("[WARNING] Python connection lost. Reconnecting...");
-                        Thread.Sleep(1000);
 
-                        // Try reconnect
-                        try
-                        {
-                            orderReceiveClient = orderReceiveServer.AcceptTcpClient();
-                            orderReceiveStream = orderReceiveClient.GetStream();
-                            orderReceiveReader = new StreamReader(orderReceiveStream);
-                            Print("[SUCCESS] Python reconnected!");
-                        }
-                        catch
-                        {
-                            // Reconnection failed, will retry on next iteration
-                        }
+                    ProcessOrder(line);
+                }
+                catch (Exception ex)
+                {
+                    if (orderConnected)
+                    {
+                        Print(string.Format("[Trinchera] Error reading from order server: {0}", ex.Message));
                     }
+                    break;
                 }
             }
+        }
+
+        // ============================================================================
+        // DISCONNECT
+        // ============================================================================
+        private void DisconnectAll()
+        {
+            tickConnected = false;
+            orderConnected = false;
+
+            try
+            {
+                // Close tick sender
+                if (tickWriter != null)
+                {
+                    tickWriter.Close();
+                    tickWriter.Dispose();
+                }
+                if (tickStream != null)
+                {
+                    tickStream.Close();
+                    tickStream.Dispose();
+                }
+                if (tickClient != null)
+                {
+                    tickClient.Close();
+                }
+
+                // Close order receiver
+                if (orderReader != null)
+                {
+                    orderReader.Close();
+                    orderReader.Dispose();
+                }
+                if (orderStream != null)
+                {
+                    orderStream.Close();
+                    orderStream.Dispose();
+                }
+                if (orderClient != null)
+                {
+                    orderClient.Close();
+                }
+
+                if (orderListenerThread != null && orderListenerThread.IsAlive)
+                {
+                    orderListenerThread.Join(1000);
+                }
+
+                Print("[Trinchera] Disconnected from servers");
+            }
             catch (Exception ex)
             {
-                Print("[ERROR] Order receive loop error: " + ex.Message);
+                Print(string.Format("[Trinchera] Error disconnecting: {0}", ex.Message));
             }
         }
 
         // ============================================================================
-        // TICK DATA PROCESSING
+        // SEND TICK DATA
         // ============================================================================
         protected override void OnBarUpdate()
         {
-            // Only send on real-time ticks
             if (State != State.Realtime)
                 return;
 
-            if (!isConnected || tickDataWriter == null)
+            if (!tickConnected || tickWriter == null)
                 return;
 
             try
             {
                 // Format: TIMESTAMP;PRICE;VOLUME;SIDE;BID;ASK
-                // Example: 2025-12-01 14:30:25.123;20500.25;50;BUY;20500.00;20500.50
-
                 string timestamp = Time[0].ToString("yyyy-MM-dd HH:mm:ss.fff");
                 double price = Close[0];
                 long volume = (long)Volume[0];
@@ -260,111 +256,90 @@ namespace NinjaTrader.NinjaScript.Strategies
                 string tickData = string.Format("{0};{1:F2};{2};{3};{4:F2};{5:F2}",
                     timestamp, price, volume, side, bid, ask);
 
-                tickDataWriter.WriteLine(tickData);
-            }
-            catch (IOException)
-            {
-                // Connection lost
-                Print("[WARNING] Lost connection to Python. Reconnecting...");
-                isConnected = false;
-
-                // Try to reconnect
-                try
+                lock (lockObject)
                 {
-                    CloseTickDataConnection();
-                    tickDataServer.BeginAcceptTcpClient(OnTickDataClientConnected, null);
-                }
-                catch
-                {
-                    // Will retry later
+                    tickWriter.WriteLine(tickData);
                 }
             }
             catch (Exception ex)
             {
-                Print("[ERROR] Failed to send tick data: " + ex.Message);
+                Print(string.Format("[Trinchera] Error sending tick: {0}", ex.Message));
+                tickConnected = false;
             }
         }
 
         // ============================================================================
-        // ORDER PROCESSING (FROM PYTHON)
+        // PROCESS ORDER (FROM PYTHON)
         // ============================================================================
-        private void ProcessOrderMessage(string message)
+        private void ProcessOrder(string json)
         {
             try
             {
-                Print("[RECEIVED] Order from Python: " + message);
+                Print(string.Format("[Trinchera] Order received: {0}", json));
 
-                // Parse JSON message
-                // Expected format: {"action":"ENTRY","side":"LONG","contracts":1,"entry_price":20500.25,"tp_price":20505.25,"sl_price":20491.25}
-
-                // Simple JSON parsing (alternatively use JSON.NET library)
-                var action = ExtractJsonValue(message, "action");
+                var action = ExtractJsonValue(json, "action");
 
                 if (action == "ENTRY")
                 {
-                    var side = ExtractJsonValue(message, "side");
-                    var contracts = int.Parse(ExtractJsonValue(message, "contracts"));
-                    var entryPrice = double.Parse(ExtractJsonValue(message, "entry_price"));
-                    var tpPrice = double.Parse(ExtractJsonValue(message, "tp_price"));
-                    var slPrice = double.Parse(ExtractJsonValue(message, "sl_price"));
+                    var side = ExtractJsonValue(json, "side");
+                    var contracts = int.Parse(ExtractJsonValue(json, "contracts"));
+                    var entryPrice = double.Parse(ExtractJsonValue(json, "entry_price"));
+                    var tpPrice = double.Parse(ExtractJsonValue(json, "tp_price"));
+                    var slPrice = double.Parse(ExtractJsonValue(json, "sl_price"));
 
                     ExecuteEntryOrder(side, contracts, entryPrice, tpPrice, slPrice);
                 }
                 else if (action == "EXIT")
                 {
-                    var side = ExtractJsonValue(message, "side");
-                    var contracts = int.Parse(ExtractJsonValue(message, "contracts"));
-                    var exitPrice = double.Parse(ExtractJsonValue(message, "exit_price"));
-                    var exitReason = ExtractJsonValue(message, "exit_reason");
+                    var side = ExtractJsonValue(json, "side");
+                    var contracts = int.Parse(ExtractJsonValue(json, "contracts"));
+                    var exitPrice = double.Parse(ExtractJsonValue(json, "exit_price"));
+                    var exitReason = ExtractJsonValue(json, "exit_reason");
 
                     ExecuteExitOrder(side, contracts, exitPrice, exitReason);
                 }
             }
             catch (Exception ex)
             {
-                Print("[ERROR] Failed to process order: " + ex.Message);
+                Print(string.Format("[Trinchera] Error processing order: {0}", ex.Message));
             }
         }
 
         private void ExecuteEntryOrder(string side, int contracts, double entryPrice, double tpPrice, double slPrice)
         {
-            Print("════════════════════════════════════════════════════════════");
-            Print("[ENTRY ORDER] " + side + " " + contracts + " contracts");
-            Print("Entry: " + entryPrice + " | TP: " + tpPrice + " | SL: " + slPrice);
-            Print("════════════════════════════════════════════════════════════");
+            Print("============================================================");
+            Print(string.Format("[ENTRY ORDER] {0} {1} contracts", side, contracts));
+            Print(string.Format("Entry: {0} | TP: {1} | SL: {2}", entryPrice, tpPrice, slPrice));
+            Print("============================================================");
 
             if (side == "LONG")
             {
-                EnterLong(contracts, "TrìncheraLong");
-
-                // Set profit target and stop loss
-                SetProfitTarget("TrìncheraLong", CalculationMode.Price, tpPrice);
-                SetStopLoss("TrìncheraLong", CalculationMode.Price, slPrice, false);
+                EnterLong(contracts, "TrincheraLong");
+                SetProfitTarget("TrincheraLong", CalculationMode.Price, tpPrice);
+                SetStopLoss("TrincheraLong", CalculationMode.Price, slPrice, false);
             }
             else if (side == "SHORT")
             {
-                EnterShort(contracts, "TrìncheraShort");
-
-                // Set profit target and stop loss
-                SetProfitTarget("TrìncheraShort", CalculationMode.Price, tpPrice);
-                SetStopLoss("TrìncheraShort", CalculationMode.Price, slPrice, false);
+                EnterShort(contracts, "TrincheraShort");
+                SetProfitTarget("TrincheraShort", CalculationMode.Price, tpPrice);
+                SetStopLoss("TrincheraShort", CalculationMode.Price, slPrice, false);
             }
         }
 
         private void ExecuteExitOrder(string side, int contracts, double exitPrice, string exitReason)
         {
-            Print("════════════════════════════════════════════════════════════");
-            Print("[EXIT ORDER] " + side + " " + contracts + " contracts");
-            Print("Exit: " + exitPrice + " | Reason: " + exitReason);
-            Print("════════════════════════════════════════════════════════════");
+            Print("============================================================");
+            Print(string.Format("[EXIT ORDER] {0} {1} contracts", side, contracts));
+            Print(string.Format("Exit: {0} | Reason: {1}", exitPrice, exitReason));
+            Print("============================================================");
 
             if (side == "SELL")
             {
-                ExitLong(contracts, "TrìncheraLongExit", "TrìncheraLong");
+                ExitLong(contracts, "TrincheraLongExit", "TrincheraLong");
             }
             else if (side == "BUY")
             {
-                ExitShort(contracts, "TrìncheraShortExit", "TrìncheraShort");
+                ExitShort(contracts, "TrincheraShortExit", "TrincheraShort");
             }
         }
 
@@ -373,7 +348,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         // ============================================================================
         private string ExtractJsonValue(string json, string key)
         {
-            // Simple JSON value extraction
             string searchKey = "\"" + key + "\":";
             int startIndex = json.IndexOf(searchKey);
 
@@ -382,26 +356,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             startIndex += searchKey.Length;
 
-            // Skip whitespace
             while (startIndex < json.Length && (json[startIndex] == ' ' || json[startIndex] == '\t'))
                 startIndex++;
 
-            // Check if value is string (starts with quote)
             bool isString = json[startIndex] == '"';
             if (isString)
-                startIndex++; // Skip opening quote
+                startIndex++;
 
             int endIndex = startIndex;
 
             if (isString)
             {
-                // Find closing quote
                 while (endIndex < json.Length && json[endIndex] != '"')
                     endIndex++;
             }
             else
             {
-                // Find comma or closing brace
                 while (endIndex < json.Length && json[endIndex] != ',' && json[endIndex] != '}')
                     endIndex++;
             }
@@ -409,77 +379,41 @@ namespace NinjaTrader.NinjaScript.Strategies
             return json.Substring(startIndex, endIndex - startIndex).Trim();
         }
 
-        private void CloseConnections()
+        private double GetCurrentBid()
         {
-            try
+            if (Bars != null && Bars.Instrument != null && Bars.Instrument.MarketData != null)
             {
-                CloseTickDataConnection();
-                CloseOrderReceiveConnection();
-
-                if (tickDataServer != null)
-                    tickDataServer.Stop();
-
-                if (orderReceiveServer != null)
-                    orderReceiveServer.Stop();
-
-                Print("[OK] All connections closed");
+                return Bars.Instrument.MarketData.Bid.Price;
             }
-            catch (Exception ex)
-            {
-                Print("[ERROR] Error closing connections: " + ex.Message);
-            }
+            return 0;
         }
 
-        private void CloseTickDataConnection()
+        private double GetCurrentAsk()
         {
-            try
+            if (Bars != null && Bars.Instrument != null && Bars.Instrument.MarketData != null)
             {
-                if (tickDataWriter != null)
-                {
-                    tickDataWriter.Close();
-                    tickDataWriter = null;
-                }
-
-                if (tickDataStream != null)
-                {
-                    tickDataStream.Close();
-                    tickDataStream = null;
-                }
-
-                if (tickDataClient != null)
-                {
-                    tickDataClient.Close();
-                    tickDataClient = null;
-                }
-
-                isConnected = false;
+                return Bars.Instrument.MarketData.Ask.Price;
             }
-            catch { }
+            return 0;
         }
 
-        private void CloseOrderReceiveConnection()
-        {
-            try
-            {
-                if (orderReceiveReader != null)
-                {
-                    orderReceiveReader.Close();
-                    orderReceiveReader = null;
-                }
+        // ============================================================================
+        // PROPERTIES
+        // ============================================================================
+        [NinjaScriptProperty]
+        [Display(Name = "Tick Server Host", Order = 1, GroupName = "Connection")]
+        public string TickServerHost { get; set; }
 
-                if (orderReceiveStream != null)
-                {
-                    orderReceiveStream.Close();
-                    orderReceiveStream = null;
-                }
+        [NinjaScriptProperty]
+        [Display(Name = "Tick Server Port", Order = 2, GroupName = "Connection")]
+        public int TickServerPort { get; set; }
 
-                if (orderReceiveClient != null)
-                {
-                    orderReceiveClient.Close();
-                    orderReceiveClient = null;
-                }
-            }
-            catch { }
-        }
+        [NinjaScriptProperty]
+        [Display(Name = "Order Server Host", Order = 3, GroupName = "Connection")]
+        public string OrderServerHost { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Order Server Port", Order = 4, GroupName = "Connection")]
+        public int OrderServerPort { get; set; }
     }
 }

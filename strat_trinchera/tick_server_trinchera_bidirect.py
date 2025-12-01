@@ -265,17 +265,25 @@ def process_tick_data(tick_str):
 # ORDER SENDER (TO NINJATRADER)
 # ============================================================================
 order_socket = None
+order_server = None
 
-def connect_order_sender():
-    """Connect to NinjaTrader for sending orders"""
-    global order_socket
+def start_order_server():
+    """Start server to accept NinjaTrader connection for sending orders"""
+    global order_socket, order_server
 
-    logger.info(f"🔌 Connecting to NinjaTrader order handler on localhost:{ORDER_SERVER_PORT}")
+    logger.info(f"🔌 Starting order server on localhost:{ORDER_SERVER_PORT}")
 
-    order_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    order_socket.connect(('127.0.0.1', ORDER_SERVER_PORT))
+    order_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    order_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    order_server.bind(('127.0.0.1', ORDER_SERVER_PORT))
+    order_server.listen(1)
 
-    logger.info(f"✅ Connected to NinjaTrader order handler")
+    logger.info(f"✅ Order server listening on port {ORDER_SERVER_PORT}")
+    logger.info(f"⏳ Waiting for NinjaTrader to connect...")
+
+    # Accept connection from NinjaTrader
+    order_socket, addr = order_server.accept()
+    logger.info(f"✅ NinjaTrader connected from {addr}")
 
 def send_order(order_dict):
     """Send order to NinjaTrader"""
@@ -297,13 +305,12 @@ def send_order(order_dict):
         logger.info(f"📤 Order sent: {order_dict}")
     except Exception as e:
         logger.error(f"❌ Error sending order: {e}")
-        # Reconnect
+        # Try to send again (connection should be persistent)
         try:
-            connect_order_sender()
             order_socket.sendall(message.encode('utf-8'))
-            logger.info(f"📤 Order sent after reconnection")
+            logger.info(f"📤 Order sent on retry")
         except:
-            logger.error(f"❌ Failed to reconnect and send order")
+            logger.error(f"❌ Failed to send order on retry")
 
 def send_entry_order(side, entry_price):
     """Send entry order (LONG or SHORT)"""
@@ -461,18 +468,12 @@ def main():
     logger.info(f"   Max Daily Loss: ${MAX_DAILY_LOSS}")
     logger.info(f"   Max Daily Trades: {MAX_DAILY_TRADES}")
 
-    if not PAPER_TRADING_MODE:
-        confirm = input(f"\n🚨 REAL TRADING MODE! Type 'START' to continue: ")
-        if confirm != 'START':
-            logger.error("❌ Startup cancelled")
-            return
-
-    # Connect to NinjaTrader for sending orders
+    # Start order server (NinjaTrader will connect to us)
     try:
-        connect_order_sender()
+        start_order_server()
     except Exception as e:
-        logger.error(f"❌ Failed to connect to NinjaTrader order handler: {e}")
-        logger.info("ℹ️  Make sure AAStrategyBiderect is running in NinjaTrader")
+        logger.error(f"❌ Failed to start order server: {e}")
+        logger.info("ℹ️  Make sure port 5556 is not in use")
         return
 
     # Start tick receiver thread

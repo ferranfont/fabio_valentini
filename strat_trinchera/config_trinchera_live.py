@@ -77,5 +77,5 @@ CSV_OUTPUT_DIR = "live_trades"   # Directory for trade logs
 # ============================================================================
 # LIVE TRADING SAFETY
 # ============================================================================
-PAPER_TRADING_MODE = True        # Set to False for REAL trading
+PAPER_TRADING_MODE = False        # Set to False for REAL trading
 REQUIRE_CONFIRMATION = False      # Require manual confirmation before sending orders

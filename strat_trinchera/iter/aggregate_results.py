@@ -7,12 +7,23 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime
+import sys
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 CURRENT_DIR = Path(__file__).resolve().parent
+STRAT_DIR = CURRENT_DIR.parent
 OUTPUT_DIR = CURRENT_DIR / "iter summary outputs"
+
+# Import config to get trading parameters
+sys.path.insert(0, str(STRAT_DIR))
+from config_trinchera import (
+    TP_POINTS, SL_POINTS,
+    FILTER_BY_SMA, FILTER_TIME_OF_DAY, FILTER_USE_GRID,
+    SMA_TRAILING_STOP, SMA_CASH_TRAILING_ENABLED,
+    BIG_VOLUME_TRIGGER, MEAN_REVERS_EXPAND
+)
 
 print("=" * 80)
 print("TRINCHERA RESULTS AGGREGATOR")
@@ -231,6 +242,8 @@ html_content = f"""
     <div class="header">
         <h1>TRINCHERA STRATEGY - CONSOLIDATED RESULTS</h1>
         <p>Period: {df_stats_by_date['date'].min()} to {df_stats_by_date['date'].max()} ({len(date_folders)} trading days)</p>
+        <p><strong>TP: {TP_POINTS} pts | SL: {SL_POINTS} pts | Big Vol: {BIG_VOLUME_TRIGGER} | Entry: ±{MEAN_REVERS_EXPAND} pts</strong></p>
+        <p><strong>Filters:</strong> SMA: {'ON' if FILTER_BY_SMA else 'OFF'} | Time: {'ON' if FILTER_TIME_OF_DAY else 'OFF'} | Grid: {'ON' if FILTER_USE_GRID else 'OFF'} | Trailing: {'ON' if SMA_TRAILING_STOP else ('Cash+Trail' if SMA_CASH_TRAILING_ENABLED else 'OFF')}</p>
         <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
     </div>
 
@@ -319,19 +332,25 @@ print("=" * 80)
 avg_trade = total_pnl_dollars / total_trades if total_trades > 0 else 0
 expectancy = (win_rate / 100 * avg_win) + ((100 - win_rate) / 100 * avg_loss)
 recovery_factor = abs(total_pnl_dollars / max_drawdown) if max_drawdown != 0 else 0
-sharpe_ratio = (df_all_trades['pnl_usd'].mean() / df_all_trades['pnl_usd'].std()) * (252 ** 0.5) if len(df_all_trades) > 1 else 0
 
-# Sortino Ratio (uses only downside deviation from zero/target)
-# Calculate downside deviation from zero (negative returns only)
-negative_returns = df_all_trades[df_all_trades['pnl_usd'] < 0]['pnl_usd']
-# For Sortino, use semi-deviation (deviation from zero, not from mean)
-downside_deviation = np.sqrt((negative_returns ** 2).mean()) if len(negative_returns) > 0 else 0
-sortino_ratio = (df_all_trades['pnl_usd'].mean() / downside_deviation) * (252 ** 0.5) if downside_deviation > 0 else 0
+# Sharpe Ratio - CORRECT METHOD: Based on DAILY P&L (not individual trades)
+# Each day is one observation; measures consistency of daily returns
+mean_daily_pnl = df_stats_by_date['total_pnl'].mean()
+std_daily_pnl = df_stats_by_date['total_pnl'].std()
+sharpe_ratio = (mean_daily_pnl / std_daily_pnl) if std_daily_pnl > 0 else 0
 
-# Kurtosis (tail risk measure)
-kurtosis = df_all_trades['pnl_usd'].kurtosis() if len(df_all_trades) > 3 else 0
+# Sortino Ratio - CORRECT METHOD: Based on DAILY P&L (not individual trades)
+# Uses only downside deviation from zero for negative daily P&L
+negative_daily_pnl = df_stats_by_date[df_stats_by_date['total_pnl'] < 0]['total_pnl']
+# Calculate downside deviation from zero (RMS of negative daily returns)
+downside_deviation = np.sqrt((negative_daily_pnl ** 2).mean()) if len(negative_daily_pnl) > 0 else 0
+sortino_ratio = (mean_daily_pnl / downside_deviation) if downside_deviation > 0 else 0
+
+# Kurtosis (tail risk measure) - Based on DAILY P&L for consistency
+kurtosis = df_stats_by_date['total_pnl'].kurtosis() if len(df_stats_by_date) > 3 else 0
 
 # Ulcer Index (downside volatility measure) - uses drawdown already calculated
+# This one correctly uses all trades for drawdown calculation
 ulcer_squared_avg = (df_all_trades['drawdown'] ** 2).mean()
 ulcer_index = abs(np.sqrt(ulcer_squared_avg)) if ulcer_squared_avg > 0 else 0
 
@@ -422,6 +441,8 @@ ratios_html = f"""
     <div class="header">
         <h1>TRINCHERA STRATEGY - PERFORMANCE RATIOS</h1>
         <p>Period: {df_stats_by_date['date'].min()} to {df_stats_by_date['date'].max()} ({len(date_folders)} trading days)</p>
+        <p><strong>TP: {TP_POINTS} pts | SL: {SL_POINTS} pts | Big Vol: {BIG_VOLUME_TRIGGER} | Entry: ±{MEAN_REVERS_EXPAND} pts</strong></p>
+        <p><strong>Filters:</strong> SMA: {'ON' if FILTER_BY_SMA else 'OFF'} | Time: {'ON' if FILTER_TIME_OF_DAY else 'OFF'} | Grid: {'ON' if FILTER_USE_GRID else 'OFF'} | Trailing: {'ON' if SMA_TRAILING_STOP else ('Cash+Trail' if SMA_CASH_TRAILING_ENABLED else 'OFF')}</p>
         <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
     </div>
 
@@ -440,6 +461,7 @@ ratios_html = f"""
                     <tr><th colspan="2">PROFITABILITY</th></tr>
                     <tr><td>Total P&L</td><td class="{'positive' if total_pnl_dollars >= 0 else 'negative'}">${total_pnl_dollars:,.2f}</td></tr>
                     <tr><td>Points</td><td class="{'positive' if total_pnl_points >= 0 else 'negative'}">{total_pnl_points:.2f}</td></tr>
+                    <tr><td>Max Drawdown</td><td class="negative">${max_drawdown:,.2f}</td></tr>
                     <tr><td>Avg Trade</td><td class="{'positive' if avg_trade >= 0 else 'negative'}">${avg_trade:.2f}</td></tr>
                     <tr><td>Expectancy</td><td class="{'positive' if expectancy >= 0 else 'negative'}">${expectancy:.2f}</td></tr>
                 </table>
@@ -460,12 +482,11 @@ ratios_html = f"""
                 <table>
                     <tr><th colspan="2">RISK METRICS</th></tr>
                     <tr><td>Profit Factor</td><td class="{'positive' if profit_factor >= 1 else 'negative'}">{profit_factor:.2f}</td></tr>
+                    <tr><td>Recovery Factor</td><td class="{'positive' if recovery_factor >= 2 else 'negative'}">{recovery_factor:.2f}</td></tr>
                     <tr><td>Sharpe Ratio</td><td class="{'positive' if sharpe_ratio >= 1 else 'negative'}">{sharpe_ratio:.2f}</td></tr>
                     <tr><td>Sortino Ratio</td><td class="{'positive' if sortino_ratio >= 1 else 'negative'}">{sortino_ratio:.2f}</td></tr>
                     <tr><td>Kurtosis</td><td class="{'positive' if kurtosis < 0 else 'negative'}">{kurtosis:.2f}</td></tr>
                     <tr><td>Ulcer Index</td><td class="negative">${ulcer_index:,.2f}</td></tr>
-                    <tr><td>Max Drawdown</td><td class="negative">${max_drawdown:,.2f}</td></tr>
-                    <tr><td>Recovery Factor</td><td class="{'positive' if recovery_factor >= 2 else 'negative'}">{recovery_factor:.2f}</td></tr>
                 </table>
 
                 <table style="margin-top:15px;">
@@ -510,7 +531,7 @@ df_equity['trade_number'] = range(1, len(df_equity) + 1)
 fig = make_subplots(
     rows=2, cols=1,
     row_heights=[0.7, 0.3],
-    subplot_titles=('Equity Curve', 'Drawdown'),
+    subplot_titles=('', 'Drawdown'),  # Remove 'Equity Curve' subtitle
     vertical_spacing=0.1
 )
 
@@ -548,9 +569,10 @@ fig.add_trace(
 )
 
 # Update layout
+trailing_status = 'Trailing ON' if SMA_TRAILING_STOP else ('Cash+Trail' if SMA_CASH_TRAILING_ENABLED else 'Fixed')
 fig.update_layout(
     title=dict(
-        text=f'Trinchera Strategy - Equity Curve<br><sub>Period: {df_stats_by_date["date"].min()} to {df_stats_by_date["date"].max()} | {total_trades:,} trades | Total P&L: ${total_pnl_dollars:,.2f}</sub>',
+        text=f'Trinchera Strategy - Equity Curve<br><sub>Period: {df_stats_by_date["date"].min()} to {df_stats_by_date["date"].max()} | {total_trades:,} trades | Total P&L: ${total_pnl_dollars:,.2f}<br>TP: {TP_POINTS}pts | SL: {SL_POINTS}pts | BigVol: {BIG_VOLUME_TRIGGER} | Entry: ±{MEAN_REVERS_EXPAND}pts | {trailing_status}</sub>',
         x=0.5,
         xanchor='center'
     ),

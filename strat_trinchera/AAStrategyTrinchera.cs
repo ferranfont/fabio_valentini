@@ -357,17 +357,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Draw.Dot(this, dotTag, true, 0, orangeDotPrice, Brushes.Orange);
             }
 
-            // Draw entry levels (horizontal lines)
+            // Draw entry levels (horizontal lines from current bar extending left)
             if (buyLevel > 0)
             {
                 string buyTag = "BuyLevel_Entry_" + DateTime.Now.Ticks;
-                Draw.Line(this, buyTag, 10, buyLevel, 0, buyLevel, Brushes.Green);
+                Draw.Line(this, buyTag, 0, buyLevel, 1, buyLevel, Brushes.Green);
             }
 
             if (sellLevel > 0)
             {
                 string sellTag = "SellLevel_Entry_" + DateTime.Now.Ticks;
-                Draw.Line(this, sellTag, 10, sellLevel, 0, sellLevel, Brushes.Red);
+                Draw.Line(this, sellTag, 0, sellLevel, 1, sellLevel, Brushes.Red);
             }
 
             if (side == "LONG")
@@ -401,19 +401,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Print(string.Format("[Trinchera] Drew ORANGE dot at price {0:F2}", orangeDotPrice));
             }
 
-            // Draw BUY level line (green horizontal line)
+            // Draw BUY level line (green horizontal line from current bar extending left)
             if (buyLevel > 0)
             {
                 string buyTag = "BuyLevel_" + DateTime.Now.Ticks;
-                Draw.Line(this, buyTag, 10, buyLevel, 0, buyLevel, Brushes.Green);
+                Draw.Line(this, buyTag, 0, buyLevel, 1, buyLevel, Brushes.Green);
                 Print(string.Format("[Trinchera] Drew GREEN line at BUY level {0:F2}", buyLevel));
             }
 
-            // Draw SELL level line (red horizontal line)
+            // Draw SELL level line (red horizontal line from current bar extending left)
             if (sellLevel > 0)
             {
                 string sellTag = "SellLevel_" + DateTime.Now.Ticks;
-                Draw.Line(this, sellTag, 10, sellLevel, 0, sellLevel, Brushes.Red);
+                Draw.Line(this, sellTag, 0, sellLevel, 1, sellLevel, Brushes.Red);
                 Print(string.Format("[Trinchera] Drew RED line at SELL level {0:F2}", sellLevel));
             }
         }

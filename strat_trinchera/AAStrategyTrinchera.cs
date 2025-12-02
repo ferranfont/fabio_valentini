@@ -63,7 +63,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
                 OrderFillResolution = OrderFillResolution.Standard;
                 Slippage = 0;
-                StartBehavior = StartBehavior.WaitUntilFlat;
+                StartBehavior = StartBehavior.Immediately;
                 TimeInForce = TimeInForce.Gtc;
                 TraceOrders = false;
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
@@ -344,6 +344,13 @@ namespace NinjaTrader.NinjaScript.Strategies
         private void ExecuteEntryOrder(string side, int contracts, double entryPrice, double tpPrice, double slPrice,
                                         double orangeDotPrice, double buyLevel, double sellLevel)
         {
+            // Check if already in a position - prevent Order rejected errors
+            if (Position.MarketPosition != MarketPosition.Flat)
+            {
+                Print(string.Format("[Trinchera] Already in position {0}, ignoring new entry", Position.MarketPosition));
+                return;
+            }
+
             Print("============================================================");
             Print(string.Format("[ENTRY ORDER] {0} {1} contracts", side, contracts));
             Print(string.Format("Entry: {0} | TP: {1} | SL: {2}", entryPrice, tpPrice, slPrice));
@@ -351,23 +358,23 @@ namespace NinjaTrader.NinjaScript.Strategies
             Print("============================================================");
 
             // Draw orange dot on chart
-            if (orangeDotPrice > 0)
+            if (orangeDotPrice > 0 && State == State.Realtime)
             {
                 string dotTag = "OrangeDot_Entry_" + DateTime.Now.Ticks;
-                Draw.Dot(this, dotTag, true, 0, orangeDotPrice, Brushes.Orange);
+                Draw.Dot(this, dotTag, false, 0, orangeDotPrice, Brushes.Orange);
             }
 
             // Draw entry level markers (dots instead of lines to avoid barsAgo errors)
-            if (buyLevel > 0)
+            if (buyLevel > 0 && State == State.Realtime)
             {
                 string buyTag = "BuyLevel_Entry_" + DateTime.Now.Ticks;
-                Draw.Dot(this, buyTag, true, 0, buyLevel, Brushes.Green);
+                Draw.Dot(this, buyTag, false, 0, buyLevel, Brushes.Green);
             }
 
-            if (sellLevel > 0)
+            if (sellLevel > 0 && State == State.Realtime)
             {
                 string sellTag = "SellLevel_Entry_" + DateTime.Now.Ticks;
-                Draw.Dot(this, sellTag, true, 0, sellLevel, Brushes.Red);
+                Draw.Dot(this, sellTag, false, 0, sellLevel, Brushes.Red);
             }
 
             if (side == "LONG")
@@ -388,6 +395,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void DrawOrangeDotAndLevels(double orangeDotPrice, double buyLevel, double sellLevel)
         {
+            if (State != State.Realtime)
+                return;
+
             Print("============================================================");
             Print(string.Format("[DRAW] Orange Dot: {0} | Buy Level: {1} | Sell Level: {2}",
                 orangeDotPrice, buyLevel, sellLevel));
@@ -397,7 +407,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (orangeDotPrice > 0)
             {
                 string dotTag = "OrangeDot_" + DateTime.Now.Ticks;
-                Draw.Dot(this, dotTag, true, 0, orangeDotPrice, Brushes.Orange);
+                Draw.Dot(this, dotTag, false, 0, orangeDotPrice, Brushes.Orange);
                 Print(string.Format("[Trinchera] Drew ORANGE dot at price {0:F2}", orangeDotPrice));
             }
 
@@ -405,7 +415,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (buyLevel > 0)
             {
                 string buyTag = "BuyLevel_" + DateTime.Now.Ticks;
-                Draw.Dot(this, buyTag, true, 0, buyLevel, Brushes.Green);
+                Draw.Dot(this, buyTag, false, 0, buyLevel, Brushes.Green);
                 Print(string.Format("[Trinchera] Drew GREEN dot at BUY level {0:F2}", buyLevel));
             }
 
@@ -413,7 +423,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (sellLevel > 0)
             {
                 string sellTag = "SellLevel_" + DateTime.Now.Ticks;
-                Draw.Dot(this, sellTag, true, 0, sellLevel, Brushes.Red);
+                Draw.Dot(this, sellTag, false, 0, sellLevel, Brushes.Red);
                 Print(string.Format("[Trinchera] Drew RED dot at SELL level {0:F2}", sellLevel));
             }
         }

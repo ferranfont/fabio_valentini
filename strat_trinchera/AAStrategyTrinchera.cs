@@ -485,15 +485,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                             Print(string.Format("[Trinchera] Drew RED triangle (SHORT fill) at {0:F2}", price + 3 * TickSize));
                         }
 
-                        // NOW place TP and SL orders using EXACT AAStrategyBidirect pattern
+                        // NOW place TP and SL orders with EXPLICIT QUANTITY parameter
                         if (pendingDirection == "LONG")
                         {
-                            Print(string.Format("[Trinchera] Placing LONG TP/SL: TP @ {0:F2}, SL @ {1:F2}",
-                                pendingTpPrice, pendingSlPrice));
+                            Print(string.Format("[Trinchera] Placing LONG TP/SL: TP @ {0:F2}, SL @ {1:F2}, Qty={2}",
+                                pendingTpPrice, pendingSlPrice, quantity));
 
-                            // Place explicit exit orders (OCO) - EXACT AAStrategyBidirect signature
-                            takeProfitOrder = ExitLongLimit(pendingTpPrice, "TP_LONG", "TrincheraLong");
-                            stopLossOrder = ExitLongStopMarket(pendingSlPrice, "SL_LONG", "TrincheraLong");
+                            // Place explicit exit orders (OCO) - Using quantity-based overload
+                            // Signature: ExitLongLimit(int barsInProgressIndex, bool isLiveUntilCancelled, int quantity, double limitPrice, string signalName, string fromEntrySignal)
+                            takeProfitOrder = ExitLongLimit(0, true, quantity, pendingTpPrice, "TP_LONG", "TrincheraLong");
+                            stopLossOrder = ExitLongStopMarket(0, true, quantity, pendingSlPrice, "SL_LONG", "TrincheraLong");
 
                             Print(string.Format("[Trinchera] Orders placed: TP={0}, SL={1}",
                                 takeProfitOrder != null ? "OK" : "FAIL",
@@ -501,12 +502,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         else if (pendingDirection == "SHORT")
                         {
-                            Print(string.Format("[Trinchera] Placing SHORT TP/SL: TP @ {0:F2}, SL @ {1:F2}",
-                                pendingTpPrice, pendingSlPrice));
+                            Print(string.Format("[Trinchera] Placing SHORT TP/SL: TP @ {0:F2}, SL @ {1:F2}, Qty={2}",
+                                pendingTpPrice, pendingSlPrice, quantity));
 
-                            // Place explicit exit orders (OCO) - EXACT AAStrategyBidirect signature
-                            takeProfitOrder = ExitShortLimit(pendingTpPrice, "TP_SHORT", "TrincheraShort");
-                            stopLossOrder = ExitShortStopMarket(pendingSlPrice, "SL_SHORT", "TrincheraShort");
+                            // Place explicit exit orders (OCO) - Using quantity-based overload
+                            // Signature: ExitShortLimit(int barsInProgressIndex, bool isLiveUntilCancelled, int quantity, double limitPrice, string signalName, string fromEntrySignal)
+                            takeProfitOrder = ExitShortLimit(0, true, quantity, pendingTpPrice, "TP_SHORT", "TrincheraShort");
+                            stopLossOrder = ExitShortStopMarket(0, true, quantity, pendingSlPrice, "SL_SHORT", "TrincheraShort");
 
                             Print(string.Format("[Trinchera] Orders placed: TP={0}, SL={1}",
                                 takeProfitOrder != null ? "OK" : "FAIL",

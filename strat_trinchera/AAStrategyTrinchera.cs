@@ -303,12 +303,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                     string buyLevelStr = ExtractJsonValue(json, "buy_level");
                     string sellLevelStr = ExtractJsonValue(json, "sell_level");
 
+                    // FIX: Use InvariantCulture to parse dots correctly
                     if (!string.IsNullOrEmpty(orangeDotStr))
-                        double.TryParse(orangeDotStr, out orangeDotPrice);
+                        double.TryParse(orangeDotStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out orangeDotPrice);
                     if (!string.IsNullOrEmpty(buyLevelStr))
-                        double.TryParse(buyLevelStr, out buyLevel);
+                        double.TryParse(buyLevelStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out buyLevel);
                     if (!string.IsNullOrEmpty(sellLevelStr))
-                        double.TryParse(sellLevelStr, out sellLevel);
+                        double.TryParse(sellLevelStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out sellLevel);
 
                     DrawOrangeDotAndLevels(orangeDotPrice, buyLevel, sellLevel);
                 }
@@ -316,9 +317,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     var side = ExtractJsonValue(json, "side");
                     var contracts = int.Parse(ExtractJsonValue(json, "contracts"));
-                    var entryPrice = double.Parse(ExtractJsonValue(json, "entry_price"));
-                    var tpPrice = double.Parse(ExtractJsonValue(json, "tp_price"));
-                    var slPrice = double.Parse(ExtractJsonValue(json, "sl_price"));
+
+                    // FIX: Use InvariantCulture to parse all prices correctly
+                    var entryPrice = double.Parse(ExtractJsonValue(json, "entry_price"), System.Globalization.CultureInfo.InvariantCulture);
+                    var tpPrice = double.Parse(ExtractJsonValue(json, "tp_price"), System.Globalization.CultureInfo.InvariantCulture);
+                    var slPrice = double.Parse(ExtractJsonValue(json, "sl_price"), System.Globalization.CultureInfo.InvariantCulture);
 
                     // Extract orange dot and levels for drawing
                     double orangeDotPrice = 0;
@@ -329,12 +332,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                     string buyLevelStr = ExtractJsonValue(json, "buy_level");
                     string sellLevelStr = ExtractJsonValue(json, "sell_level");
 
+                    // FIX: Use InvariantCulture
                     if (!string.IsNullOrEmpty(orangeDotStr))
-                        double.TryParse(orangeDotStr, out orangeDotPrice);
+                        double.TryParse(orangeDotStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out orangeDotPrice);
                     if (!string.IsNullOrEmpty(buyLevelStr))
-                        double.TryParse(buyLevelStr, out buyLevel);
+                        double.TryParse(buyLevelStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out buyLevel);
                     if (!string.IsNullOrEmpty(sellLevelStr))
-                        double.TryParse(sellLevelStr, out sellLevel);
+                        double.TryParse(sellLevelStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out sellLevel);
 
                     ExecuteEntryOrder(side, contracts, entryPrice, tpPrice, slPrice, orangeDotPrice, buyLevel, sellLevel);
                 }
@@ -342,7 +346,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     var side = ExtractJsonValue(json, "side");
                     var contracts = int.Parse(ExtractJsonValue(json, "contracts"));
-                    var exitPrice = double.Parse(ExtractJsonValue(json, "exit_price"));
+
+                    // FIX: Use InvariantCulture
+                    var exitPrice = double.Parse(ExtractJsonValue(json, "exit_price"), System.Globalization.CultureInfo.InvariantCulture);
                     var exitReason = ExtractJsonValue(json, "exit_reason");
 
                     ExecuteExitOrder(side, contracts, exitPrice, exitReason);

@@ -27,7 +27,7 @@ SMA_PERIOD = 200  # Simple Moving Average period (needs 200 ticks to initialize)
 TP_POINTS = 5.0   # Take profit in points
 SL_POINTS = 9.0   # Stop loss in points
 
-MEAN_REVERS_EXPAND = 10        # Points to expand mean reversion levels up/down
+MEAN_REVERS_EXPAND = 3        # Antes 10, Points to expand mean reversion levels up/down
 MEAN_REVERSE_TIMEOUT_ORDER = 3 # Timeout in minutes for mean reversion order lines
 
 # ============================================================================

@@ -1,5 +1,5 @@
 // AAStrategyTrinchera - NinjaTrader Strategy for Trinchera Live Trading
-// Based on AAStrategyBidirect.cs architecture (working version)
+// FIXED VERSION - Based on working AAStrategyBidirect.cs patterns
 
 #region Using declarations
 using System;
@@ -48,13 +48,26 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private object lockObject = new object();
 
+        // Order tracking (like AAStrategyBidirect)
+        private Order entryOrder = null;
+        private Order stopLossOrder = null;
+        private Order takeProfitOrder = null;
+        private bool waitingForFill = false;
+        private string pendingDirection = "";  // "LONG" or "SHORT"
+        private int signalCounter = 0;  // Unique ID for drawing objects
+        private double pendingTpPrice = 0.0;
+        private double pendingSlPrice = 0.0;
+        private double pendingOrangeDotPrice = 0.0;
+        private double pendingBuyLevel = 0.0;
+        private double pendingSellLevel = 0.0;
+
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
             {
                 Description = @"Trinchera Live Trading - Bidirectional NinjaTrader Integration";
                 Name = "AAStrategyTrinchera";
-                Calculate = Calculate.OnEachTick;
+                Calculate = Calculate.OnEachTick;  // CRITICAL: Same as AAStrategyBidirect
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.AllEntries;
                 IsExitOnSessionCloseStrategy = true;
@@ -70,7 +83,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade = 20;
                 IsInstantiatedOnEachOptimizationIteration = true;
-                IsOverlay = true;
+                IsOverlay = true;  // CRITICAL: Draw on price panel
 
                 // Parameters
                 TickServerHost = "127.0.0.1";
@@ -83,13 +96,13 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (State == State.DataLoaded)
             {
-                // Connect when data is loaded
+                // Connect when data is loaded (same as AAStrategyBidirect)
                 ConnectToTickServer();
                 ConnectToOrderServer();
             }
             else if (State == State.Realtime)
             {
-                // Reconnect if needed
+                // Reconnect if needed (same as AAStrategyBidirect)
                 if (!tickConnected)
                     ConnectToTickServer();
                 if (!orderConnected)
@@ -237,8 +250,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         // ============================================================================
         protected override void OnBarUpdate()
         {
-            if (State != State.Realtime)
-                return;
+            // FIX: Remove State.Realtime check to allow drawing during historical data
+            // Strategy logic handled in ProcessOrder and OnExecutionUpdate
 
             if (!tickConnected || tickWriter == null)
                 return;
@@ -344,86 +357,93 @@ namespace NinjaTrader.NinjaScript.Strategies
         private void ExecuteEntryOrder(string side, int contracts, double entryPrice, double tpPrice, double slPrice,
                                         double orangeDotPrice, double buyLevel, double sellLevel)
         {
-            // Check if already in a position - prevent Order rejected errors
-            if (Position.MarketPosition != MarketPosition.Flat)
+            // FIX: Use lock and check like AAStrategyBidirect
+            lock (lockObject)
             {
-                Print(string.Format("[Trinchera] Already in position {0}, ignoring new entry", Position.MarketPosition));
-                return;
-            }
+                // Check if already in a position or waiting for fill
+                if (Position.MarketPosition != MarketPosition.Flat || waitingForFill)
+                {
+                    Print(string.Format("[Trinchera] Already in position {0} or waiting for fill, ignoring new entry", Position.MarketPosition));
+                    return;
+                }
 
-            Print("============================================================");
-            Print(string.Format("[ENTRY ORDER] {0} {1} contracts", side, contracts));
-            Print(string.Format("Entry: {0} | TP: {1} | SL: {2}", entryPrice, tpPrice, slPrice));
-            Print(string.Format("Orange Dot: {0} | Buy Level: {1} | Sell Level: {2}", orangeDotPrice, buyLevel, sellLevel));
-            Print("============================================================");
+                Print("============================================================");
+                Print(string.Format("[ENTRY ORDER] {0} {1} contracts", side, contracts));
+                Print(string.Format("Entry: {0} | TP: {1} | SL: {2}", entryPrice, tpPrice, slPrice));
+                Print(string.Format("Orange Dot: {0} | Buy Level: {1} | Sell Level: {2}", orangeDotPrice, buyLevel, sellLevel));
+                Print("============================================================");
 
-            // Draw orange dot on chart (EXACTLY like AAStrategyBidirect: autoScale=true)
-            if (orangeDotPrice > 0 && State == State.Realtime)
-            {
-                string dotTag = "OrangeDot_Entry_" + DateTime.Now.Ticks;
-                Draw.Dot(this, dotTag, true, 0, orangeDotPrice, Brushes.Orange);
-            }
+                // Store pending information for OnExecutionUpdate
+                pendingDirection = side;
+                pendingTpPrice = tpPrice;
+                pendingSlPrice = slPrice;
+                pendingOrangeDotPrice = orangeDotPrice;
+                pendingBuyLevel = buyLevel;
+                pendingSellLevel = sellLevel;
+                waitingForFill = true;
+                signalCounter++;
 
-            // Draw entry level markers (EXACTLY like AAStrategyBidirect: autoScale=true)
-            if (buyLevel > 0 && State == State.Realtime)
-            {
-                string buyTag = "BuyLevel_Entry_" + DateTime.Now.Ticks;
-                Draw.Dot(this, buyTag, true, 0, buyLevel, Brushes.Green);
-            }
+                // FIX: Draw dots EXACTLY like AAStrategyBidirect (NO State.Realtime check)
+                // Draw orange dot on chart
+                if (orangeDotPrice > 0)
+                {
+                    Draw.Dot(this, "OrangeDot_" + signalCounter, true, 0, orangeDotPrice, Brushes.Orange);
+                    Print(string.Format("[Trinchera] Drew ORANGE dot at price {0:F2}", orangeDotPrice));
+                }
 
-            if (sellLevel > 0 && State == State.Realtime)
-            {
-                string sellTag = "SellLevel_Entry_" + DateTime.Now.Ticks;
-                Draw.Dot(this, sellTag, true, 0, sellLevel, Brushes.Red);
-            }
+                // Draw entry level markers
+                if (buyLevel > 0)
+                {
+                    Draw.Dot(this, "BuyLevel_" + signalCounter, true, 0, buyLevel, Brushes.Lime);
+                    Print(string.Format("[Trinchera] Drew GREEN dot at BUY level {0:F2}", buyLevel));
+                }
 
-            if (side == "LONG")
-            {
-                // Use MARKET order for immediate execution at current price
-                EnterLong(contracts, "TrincheraLong");
-                SetProfitTarget("TrincheraLong", CalculationMode.Price, tpPrice);
-                SetStopLoss("TrincheraLong", CalculationMode.Price, slPrice, false);
-            }
-            else if (side == "SHORT")
-            {
-                // Use MARKET order for immediate execution at current price
-                EnterShort(contracts, "TrincheraShort");
-                SetProfitTarget("TrincheraShort", CalculationMode.Price, tpPrice);
-                SetStopLoss("TrincheraShort", CalculationMode.Price, slPrice, false);
+                if (sellLevel > 0)
+                {
+                    Draw.Dot(this, "SellLevel_" + signalCounter, true, 0, sellLevel, Brushes.Red);
+                    Print(string.Format("[Trinchera] Drew RED dot at SELL level {0:F2}", sellLevel));
+                }
+
+                // FIX: Enter orders like AAStrategyBidirect - let OnExecutionUpdate handle TP/SL
+                if (side == "LONG")
+                {
+                    entryOrder = EnterLong(contracts, "TrincheraLong");
+                }
+                else if (side == "SHORT")
+                {
+                    entryOrder = EnterShort(contracts, "TrincheraShort");
+                }
             }
         }
 
         private void DrawOrangeDotAndLevels(double orangeDotPrice, double buyLevel, double sellLevel)
         {
-            if (State != State.Realtime)
-                return;
-
+            // FIX: Remove State.Realtime check like AAStrategyBidirect
             Print("============================================================");
             Print(string.Format("[DRAW] Orange Dot: {0} | Buy Level: {1} | Sell Level: {2}",
                 orangeDotPrice, buyLevel, sellLevel));
             Print("============================================================");
 
-            // Draw orange dot on chart (EXACTLY like AAStrategyBidirect)
+            signalCounter++;
+
+            // Draw orange dot on chart (EXACTLY like AAStrategyBidirect: NO State check)
             if (orangeDotPrice > 0)
             {
-                string dotTag = "OrangeDot_" + DateTime.Now.Ticks;
-                Draw.Dot(this, dotTag, true, 0, orangeDotPrice, Brushes.Orange);
+                Draw.Dot(this, "OrangeDot_" + signalCounter, true, 0, orangeDotPrice, Brushes.Orange);
                 Print(string.Format("[Trinchera] Drew ORANGE dot at price {0:F2}", orangeDotPrice));
             }
 
             // Draw BUY level marker (green dot at buy level)
             if (buyLevel > 0)
             {
-                string buyTag = "BuyLevel_" + DateTime.Now.Ticks;
-                Draw.Dot(this, buyTag, true, 0, buyLevel, Brushes.Green);
+                Draw.Dot(this, "BuyLevel_" + signalCounter, true, 0, buyLevel, Brushes.Lime);
                 Print(string.Format("[Trinchera] Drew GREEN dot at BUY level {0:F2}", buyLevel));
             }
 
             // Draw SELL level marker (red dot at sell level)
             if (sellLevel > 0)
             {
-                string sellTag = "SellLevel_" + DateTime.Now.Ticks;
-                Draw.Dot(this, sellTag, true, 0, sellLevel, Brushes.Red);
+                Draw.Dot(this, "SellLevel_" + signalCounter, true, 0, sellLevel, Brushes.Red);
                 Print(string.Format("[Trinchera] Drew RED dot at SELL level {0:F2}", sellLevel));
             }
         }
@@ -442,6 +462,127 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (side == "BUY")
             {
                 ExitShort(contracts, "TrincheraShortExit", "TrincheraShort");
+            }
+        }
+
+        // ============================================================================
+        // EXECUTION UPDATE - CRITICAL FIX: Handle order fills like AAStrategyBidirect
+        // ============================================================================
+        protected override void OnExecutionUpdate(Execution execution, string executionId,
+            double price, int quantity, MarketPosition marketPosition, string orderId, DateTime time)
+        {
+            lock (lockObject)
+            {
+                // Log all executions for debugging
+                Print(string.Format("[Trinchera] Execution: {0} | Order: {1} | State: {2} | Price: {3}",
+                    execution.Name,
+                    execution.Order != null ? execution.Order.Name : "NULL",
+                    execution.Order != null ? execution.Order.OrderState.ToString() : "NULL",
+                    price));
+
+                // Check if this is our entry order being filled
+                if (execution.Order != null && execution.Order == entryOrder && waitingForFill)
+                {
+                    if (execution.Order.OrderState == OrderState.Filled)
+                    {
+                        Print(string.Format("[Trinchera] *** ENTRY FILLED at {0}, placing TP/SL ***", price));
+
+                        // Draw entry fill marker (TRIANGLE for order fills)
+                        if (pendingDirection == "LONG")
+                        {
+                            Draw.TriangleUp(this, "EntryFill_" + signalCounter, true, 0, price - 3 * TickSize, Brushes.LimeGreen);
+                            Print(string.Format("[Trinchera] Drew GREEN triangle (LONG fill) at {0}", price - 3 * TickSize));
+                        }
+                        else if (pendingDirection == "SHORT")
+                        {
+                            Draw.TriangleDown(this, "EntryFill_" + signalCounter, true, 0, price + 3 * TickSize, Brushes.OrangeRed);
+                            Print(string.Format("[Trinchera] Drew RED triangle (SHORT fill) at {0}", price + 3 * TickSize));
+                        }
+
+                        // NOW place TP and SL orders using EXPLICIT orders (EXACTLY like AAStrategyBidirect)
+                        if (pendingDirection == "LONG")
+                        {
+                            Print(string.Format("[Trinchera] Placing LONG TP/SL: TP @ {0:F2}, SL @ {1:F2}",
+                                pendingTpPrice, pendingSlPrice));
+
+                            // Place explicit exit orders (OCO)
+                            takeProfitOrder = ExitLongLimit(pendingTpPrice, "TP_LONG", "TrincheraLong");
+                            stopLossOrder = ExitLongStopMarket(pendingSlPrice, "SL_LONG", "TrincheraLong");
+
+                            Print(string.Format("[Trinchera] Orders placed: TP={0}, SL={1}",
+                                takeProfitOrder != null ? "OK" : "FAIL",
+                                stopLossOrder != null ? "OK" : "FAIL"));
+                        }
+                        else if (pendingDirection == "SHORT")
+                        {
+                            Print(string.Format("[Trinchera] Placing SHORT TP/SL: TP @ {0:F2}, SL @ {1:F2}",
+                                pendingTpPrice, pendingSlPrice));
+
+                            // Place explicit exit orders (OCO)
+                            takeProfitOrder = ExitShortLimit(pendingTpPrice, "TP_SHORT", "TrincheraShort");
+                            stopLossOrder = ExitShortStopMarket(pendingSlPrice, "SL_SHORT", "TrincheraShort");
+
+                            Print(string.Format("[Trinchera] Orders placed: TP={0}, SL={1}",
+                                takeProfitOrder != null ? "OK" : "FAIL",
+                                stopLossOrder != null ? "OK" : "FAIL"));
+                        }
+
+                        waitingForFill = false;
+                        pendingDirection = "";
+                    }
+                }
+
+                // Check for exit executions (TP or SL hit)
+                if (execution.Order != null &&
+                    (execution.Order.OrderType == OrderType.Limit || execution.Order.OrderType == OrderType.StopMarket))
+                {
+                    if (execution.Order.OrderState == OrderState.Filled)
+                    {
+                        string exitTag = execution.Order.OrderType == OrderType.Limit ? "TARGET" : "STOP";
+                        Print(string.Format("[Trinchera] *** EXIT FILLED at {0} ({1}) ***", price, exitTag));
+
+                        // Draw exit marker
+                        if (exitTag == "TARGET")
+                        {
+                            Draw.Diamond(this, "ExitTarget_" + signalCounter, true, 0, price, Brushes.LimeGreen);
+                            Print(string.Format("[Trinchera] Drew GREEN diamond (TARGET) at {0}", price));
+                        }
+                        else // STOP
+                        {
+                            Draw.Diamond(this, "ExitStop_" + signalCounter, true, 0, price, Brushes.Red);
+                            Print(string.Format("[Trinchera] Drew RED diamond (STOP) at {0}", price));
+                        }
+
+                        // Send exit info to Python server
+                        SendExitToServer(price, exitTag);
+                    }
+                }
+            }
+        }
+
+        private void SendExitToServer(double price, string tag)
+        {
+            if (!orderConnected || orderStream == null)
+                return;
+
+            try
+            {
+                string json = string.Format(
+                    "{{\"command\":\"EXIT\",\"price\":{0},\"tag\":\"{1}\",\"timestamp\":\"{2}\"}}",
+                    price.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    tag,
+                    DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff")
+                );
+
+                byte[] data = Encoding.UTF8.GetBytes(json + "\n");
+                orderStream.Write(data, 0, data.Length);
+                orderStream.Flush();
+
+                Print(string.Format("[Trinchera] Sent EXIT to server: {0} @ {1}", tag, price));
+            }
+            catch (Exception ex)
+            {
+                Print(string.Format("[Trinchera] Error sending exit to server: {0}", ex.Message));
             }
         }
 

@@ -369,40 +369,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 Print("============================================================");
                 Print(string.Format("[ENTRY ORDER] {0} {1} contracts", side, contracts));
-                Print(string.Format("Entry: {0} | TP: {1} | SL: {2}", entryPrice, tpPrice, slPrice));
-                Print(string.Format("Orange Dot: {0} | Buy Level: {1} | Sell Level: {2}", orangeDotPrice, buyLevel, sellLevel));
+                Print(string.Format("Entry Price: {0:F2}", entryPrice));
+                Print(string.Format("TP Price:    {0:F2} (Diff: {1:F2})", tpPrice, Math.Abs(tpPrice - entryPrice)));
+                Print(string.Format("SL Price:    {0:F2} (Diff: {1:F2})", slPrice, Math.Abs(slPrice - entryPrice)));
+                Print(string.Format("Orange Dot: {0:F2} | Buy: {1:F2} | Sell: {2:F2}", orangeDotPrice, buyLevel, sellLevel));
                 Print("============================================================");
 
                 // Store pending information for OnExecutionUpdate
                 pendingDirection = side;
                 pendingTpPrice = tpPrice;
                 pendingSlPrice = slPrice;
-                pendingOrangeDotPrice = orangeDotPrice;
-                pendingBuyLevel = buyLevel;
-                pendingSellLevel = sellLevel;
                 waitingForFill = true;
-                signalCounter++;
 
-                // FIX: Draw dots EXACTLY like AAStrategyBidirect (NO State.Realtime check)
-                // Draw orange dot on chart
-                if (orangeDotPrice > 0)
-                {
-                    Draw.Dot(this, "OrangeDot_" + signalCounter, true, 0, orangeDotPrice, Brushes.Orange);
-                    Print(string.Format("[Trinchera] Drew ORANGE dot at price {0:F2}", orangeDotPrice));
-                }
-
-                // Draw entry level markers
-                if (buyLevel > 0)
-                {
-                    Draw.Dot(this, "BuyLevel_" + signalCounter, true, 0, buyLevel, Brushes.Lime);
-                    Print(string.Format("[Trinchera] Drew GREEN dot at BUY level {0:F2}", buyLevel));
-                }
-
-                if (sellLevel > 0)
-                {
-                    Draw.Dot(this, "SellLevel_" + signalCounter, true, 0, sellLevel, Brushes.Red);
-                    Print(string.Format("[Trinchera] Drew RED dot at SELL level {0:F2}", sellLevel));
-                }
+                // NOTE: Dots already drawn when DRAW action received
+                // NO need to draw again here (avoids duplicate signalCounter issues)
 
                 // FIX: Enter orders like AAStrategyBidirect - let OnExecutionUpdate handle TP/SL
                 if (side == "LONG")
@@ -485,25 +465,29 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (execution.Order.OrderState == OrderState.Filled)
                     {
-                        Print(string.Format("[Trinchera] *** ENTRY FILLED at {0}, placing TP/SL ***", price));
+                        Print(string.Format("[Trinchera] *** ENTRY FILLED at {0:F2} ***", price));
 
                         // Draw entry fill marker (TRIANGLE for order fills)
                         if (pendingDirection == "LONG")
                         {
                             Draw.TriangleUp(this, "EntryFill_" + signalCounter, true, 0, price - 3 * TickSize, Brushes.LimeGreen);
-                            Print(string.Format("[Trinchera] Drew GREEN triangle (LONG fill) at {0}", price - 3 * TickSize));
+                            Print(string.Format("[Trinchera] Drew GREEN triangle (LONG fill) at {0:F2}", price - 3 * TickSize));
                         }
                         else if (pendingDirection == "SHORT")
                         {
                             Draw.TriangleDown(this, "EntryFill_" + signalCounter, true, 0, price + 3 * TickSize, Brushes.OrangeRed);
-                            Print(string.Format("[Trinchera] Drew RED triangle (SHORT fill) at {0}", price + 3 * TickSize));
+                            Print(string.Format("[Trinchera] Drew RED triangle (SHORT fill) at {0:F2}", price + 3 * TickSize));
                         }
 
                         // NOW place TP and SL orders using EXPLICIT orders (EXACTLY like AAStrategyBidirect)
                         if (pendingDirection == "LONG")
                         {
-                            Print(string.Format("[Trinchera] Placing LONG TP/SL: TP @ {0:F2}, SL @ {1:F2}",
-                                pendingTpPrice, pendingSlPrice));
+                            Print("------------------------------------------------------------");
+                            Print("[Trinchera] LONG Position - Placing TP/SL:");
+                            Print(string.Format("  Fill:  {0:F2}", price));
+                            Print(string.Format("  TP:    {0:F2} (Distance: +{1:F2})", pendingTpPrice, pendingTpPrice - price));
+                            Print(string.Format("  SL:    {0:F2} (Distance: -{1:F2})", pendingSlPrice, price - pendingSlPrice));
+                            Print("------------------------------------------------------------");
 
                             // Place explicit exit orders (OCO)
                             takeProfitOrder = ExitLongLimit(pendingTpPrice, "TP_LONG", "TrincheraLong");
@@ -515,8 +499,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         else if (pendingDirection == "SHORT")
                         {
-                            Print(string.Format("[Trinchera] Placing SHORT TP/SL: TP @ {0:F2}, SL @ {1:F2}",
-                                pendingTpPrice, pendingSlPrice));
+                            Print("------------------------------------------------------------");
+                            Print("[Trinchera] SHORT Position - Placing TP/SL:");
+                            Print(string.Format("  Fill:  {0:F2}", price));
+                            Print(string.Format("  TP:    {0:F2} (Distance: -{1:F2})", pendingTpPrice, price - pendingTpPrice));
+                            Print(string.Format("  SL:    {0:F2} (Distance: +{1:F2})", pendingSlPrice, pendingSlPrice - price));
+                            Print("------------------------------------------------------------");
 
                             // Place explicit exit orders (OCO)
                             takeProfitOrder = ExitShortLimit(pendingTpPrice, "TP_SHORT", "TrincheraShort");

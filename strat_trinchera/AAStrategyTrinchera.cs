@@ -484,14 +484,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                         {
                             Print("------------------------------------------------------------");
                             Print("[Trinchera] LONG Position - Placing TP/SL:");
-                            Print(string.Format("  Fill:  {0:F2}", price));
-                            Print(string.Format("  TP:    {0:F2} (Distance: +{1:F2})", pendingTpPrice, pendingTpPrice - price));
-                            Print(string.Format("  SL:    {0:F2} (Distance: -{1:F2})", pendingSlPrice, price - pendingSlPrice));
+                            Print(string.Format("  Fill:      {0:F2}", price));
+                            Print(string.Format("  Quantity:  {0}", quantity));
+                            Print(string.Format("  TP:        {0:F2} (Distance: +{1:F2})", pendingTpPrice, pendingTpPrice - price));
+                            Print(string.Format("  SL:        {0:F2} (Distance: -{1:F2})", pendingSlPrice, price - pendingSlPrice));
                             Print("------------------------------------------------------------");
 
-                            // Place explicit exit orders (OCO)
-                            takeProfitOrder = ExitLongLimit(pendingTpPrice, "TP_LONG", "TrincheraLong");
-                            stopLossOrder = ExitLongStopMarket(pendingSlPrice, "SL_LONG", "TrincheraLong");
+                            // Place explicit exit orders (OCO) - WITH QUANTITY PARAMETER
+                            takeProfitOrder = ExitLongLimit(0, true, quantity, pendingTpPrice, "TP_LONG", "TrincheraLong");
+                            stopLossOrder = ExitLongStopMarket(0, true, quantity, pendingSlPrice, "SL_LONG", "TrincheraLong");
 
                             Print(string.Format("[Trinchera] Orders placed: TP={0}, SL={1}",
                                 takeProfitOrder != null ? "OK" : "FAIL",
@@ -501,14 +502,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                         {
                             Print("------------------------------------------------------------");
                             Print("[Trinchera] SHORT Position - Placing TP/SL:");
-                            Print(string.Format("  Fill:  {0:F2}", price));
-                            Print(string.Format("  TP:    {0:F2} (Distance: -{1:F2})", pendingTpPrice, price - pendingTpPrice));
-                            Print(string.Format("  SL:    {0:F2} (Distance: +{1:F2})", pendingSlPrice, pendingSlPrice - price));
+                            Print(string.Format("  Fill:      {0:F2}", price));
+                            Print(string.Format("  Quantity:  {0}", quantity));
+                            Print(string.Format("  TP:        {0:F2} (Distance: -{1:F2})", pendingTpPrice, price - pendingTpPrice));
+                            Print(string.Format("  SL:        {0:F2} (Distance: +{1:F2})", pendingSlPrice, pendingSlPrice - price));
                             Print("------------------------------------------------------------");
 
-                            // Place explicit exit orders (OCO)
-                            takeProfitOrder = ExitShortLimit(pendingTpPrice, "TP_SHORT", "TrincheraShort");
-                            stopLossOrder = ExitShortStopMarket(pendingSlPrice, "SL_SHORT", "TrincheraShort");
+                            // Place explicit exit orders (OCO) - WITH QUANTITY PARAMETER
+                            takeProfitOrder = ExitShortLimit(0, true, quantity, pendingTpPrice, "TP_SHORT", "TrincheraShort");
+                            stopLossOrder = ExitShortStopMarket(0, true, quantity, pendingSlPrice, "SL_SHORT", "TrincheraShort");
 
                             Print(string.Format("[Trinchera] Orders placed: TP={0}, SL={1}",
                                 takeProfitOrder != null ? "OK" : "FAIL",

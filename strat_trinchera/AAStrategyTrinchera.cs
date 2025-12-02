@@ -361,13 +361,13 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (buyLevel > 0)
             {
                 string buyTag = "BuyLevel_Entry_" + DateTime.Now.Ticks;
-                Draw.Line(this, buyTag, 10, buyLevel, 0, buyLevel, Brushes.Green, DashStyleHelper.Solid, 2);
+                Draw.Line(this, buyTag, 10, buyLevel, 0, buyLevel, Brushes.Green);
             }
 
             if (sellLevel > 0)
             {
                 string sellTag = "SellLevel_Entry_" + DateTime.Now.Ticks;
-                Draw.Line(this, sellTag, 10, sellLevel, 0, sellLevel, Brushes.Red, DashStyleHelper.Solid, 2);
+                Draw.Line(this, sellTag, 10, sellLevel, 0, sellLevel, Brushes.Red);
             }
 
             if (side == "LONG")
@@ -405,7 +405,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (buyLevel > 0)
             {
                 string buyTag = "BuyLevel_" + DateTime.Now.Ticks;
-                Draw.Line(this, buyTag, 10, buyLevel, 0, buyLevel, Brushes.Green, DashStyleHelper.Solid, 2);
+                Draw.Line(this, buyTag, 10, buyLevel, 0, buyLevel, Brushes.Green);
                 Print(string.Format("[Trinchera] Drew GREEN line at BUY level {0:F2}", buyLevel));
             }
 
@@ -413,7 +413,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (sellLevel > 0)
             {
                 string sellTag = "SellLevel_" + DateTime.Now.Ticks;
-                Draw.Line(this, sellTag, 10, sellLevel, 0, sellLevel, Brushes.Red, DashStyleHelper.Solid, 2);
+                Draw.Line(this, sellTag, 10, sellLevel, 0, sellLevel, Brushes.Red);
                 Print(string.Format("[Trinchera] Drew RED line at SELL level {0:F2}", sellLevel));
             }
         }

@@ -324,6 +324,9 @@ def send_entry_order(side, entry_price):
         'entry_price': entry_price,
         'tp_price': tp_price,
         'sl_price': sl_price,
+        'orange_dot_price': state.last_orange_dot_price,  # Send orange dot for chart drawing
+        'buy_level': state.buy_level,
+        'sell_level': state.sell_level,
         'timestamp': datetime.now().isoformat()
     }
 

@@ -287,7 +287,23 @@ namespace NinjaTrader.NinjaScript.Strategies
                     var tpPrice = double.Parse(ExtractJsonValue(json, "tp_price"));
                     var slPrice = double.Parse(ExtractJsonValue(json, "sl_price"));
 
-                    ExecuteEntryOrder(side, contracts, entryPrice, tpPrice, slPrice);
+                    // Extract orange dot and levels for drawing
+                    double orangeDotPrice = 0;
+                    double buyLevel = 0;
+                    double sellLevel = 0;
+
+                    string orangeDotStr = ExtractJsonValue(json, "orange_dot_price");
+                    string buyLevelStr = ExtractJsonValue(json, "buy_level");
+                    string sellLevelStr = ExtractJsonValue(json, "sell_level");
+
+                    if (!string.IsNullOrEmpty(orangeDotStr))
+                        double.TryParse(orangeDotStr, out orangeDotPrice);
+                    if (!string.IsNullOrEmpty(buyLevelStr))
+                        double.TryParse(buyLevelStr, out buyLevel);
+                    if (!string.IsNullOrEmpty(sellLevelStr))
+                        double.TryParse(sellLevelStr, out sellLevel);
+
+                    ExecuteEntryOrder(side, contracts, entryPrice, tpPrice, slPrice, orangeDotPrice, buyLevel, sellLevel);
                 }
                 else if (action == "EXIT")
                 {
@@ -305,22 +321,46 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
         }
 
-        private void ExecuteEntryOrder(string side, int contracts, double entryPrice, double tpPrice, double slPrice)
+        private void ExecuteEntryOrder(string side, int contracts, double entryPrice, double tpPrice, double slPrice,
+                                        double orangeDotPrice, double buyLevel, double sellLevel)
         {
             Print("============================================================");
             Print(string.Format("[ENTRY ORDER] {0} {1} contracts", side, contracts));
             Print(string.Format("Entry: {0} | TP: {1} | SL: {2}", entryPrice, tpPrice, slPrice));
+            Print(string.Format("Orange Dot: {0} | Buy Level: {1} | Sell Level: {2}", orangeDotPrice, buyLevel, sellLevel));
             Print("============================================================");
+
+            // Draw orange dot on chart
+            if (orangeDotPrice > 0)
+            {
+                string dotTag = "OrangeDot_" + DateTime.Now.Ticks;
+                Draw.Dot(this, dotTag, true, 0, orangeDotPrice, Brushes.Orange);
+            }
+
+            // Draw entry levels (BUY and SELL horizontal lines)
+            if (buyLevel > 0)
+            {
+                string buyTag = "BuyLevel_" + DateTime.Now.Ticks;
+                Draw.HorizontalLine(this, buyTag, buyLevel, Brushes.Green);
+            }
+
+            if (sellLevel > 0)
+            {
+                string sellTag = "SellLevel_" + DateTime.Now.Ticks;
+                Draw.HorizontalLine(this, sellTag, sellLevel, Brushes.Red);
+            }
 
             if (side == "LONG")
             {
-                EnterLong(contracts, "TrincheraLong");
+                // Place LIMIT order at specific entry price (visible on chart)
+                EnterLongLimit(0, true, contracts, entryPrice, "TrincheraLong");
                 SetProfitTarget("TrincheraLong", CalculationMode.Price, tpPrice);
                 SetStopLoss("TrincheraLong", CalculationMode.Price, slPrice, false);
             }
             else if (side == "SHORT")
             {
-                EnterShort(contracts, "TrincheraShort");
+                // Place LIMIT order at specific entry price (visible on chart)
+                EnterShortLimit(0, true, contracts, entryPrice, "TrincheraShort");
                 SetProfitTarget("TrincheraShort", CalculationMode.Price, tpPrice);
                 SetStopLoss("TrincheraShort", CalculationMode.Price, slPrice, false);
             }

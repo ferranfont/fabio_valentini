@@ -13,7 +13,7 @@ ORDER_SERVER_PORT = 5556         # Port to SEND orders to NinjaTrader
 # ============================================================================
 # BIG VOLUME DETECTION
 # ============================================================================
-BIG_VOLUME_TRIGGER = 200  # Minimum volume to detect as "big volume"
+BIG_VOLUME_TRIGGER = 10  # Minimum volume to detect as "big volume" antes 200
 BIG_VOLUME_TIMEOUT = 10   # Timeout in minutes for big volume effect
 
 # ============================================================================

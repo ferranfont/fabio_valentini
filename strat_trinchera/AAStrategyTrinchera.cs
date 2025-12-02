@@ -353,21 +353,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Draw orange dot on chart
             if (orangeDotPrice > 0)
             {
-                string dotTag = "OrangeDot_" + DateTime.Now.Ticks;
+                string dotTag = "OrangeDot_Entry_" + DateTime.Now.Ticks;
                 Draw.Dot(this, dotTag, true, 0, orangeDotPrice, Brushes.Orange);
             }
 
-            // Draw entry levels (BUY and SELL horizontal lines)
+            // Draw entry levels (horizontal lines using Ray)
             if (buyLevel > 0)
             {
-                string buyTag = "BuyLevel_" + DateTime.Now.Ticks;
-                Draw.HorizontalLine(this, buyTag, buyLevel, Brushes.Green);
+                string buyTag = "BuyLevel_Entry_" + DateTime.Now.Ticks;
+                Draw.Ray(this, buyTag, 0, buyLevel, -10, buyLevel, Brushes.Green, DashStyleHelper.Solid, 2);
             }
 
             if (sellLevel > 0)
             {
-                string sellTag = "SellLevel_" + DateTime.Now.Ticks;
-                Draw.HorizontalLine(this, sellTag, sellLevel, Brushes.Red);
+                string sellTag = "SellLevel_Entry_" + DateTime.Now.Ticks;
+                Draw.Ray(this, sellTag, 0, sellLevel, -10, sellLevel, Brushes.Red, DashStyleHelper.Solid, 2);
             }
 
             if (side == "LONG")
@@ -393,24 +393,28 @@ namespace NinjaTrader.NinjaScript.Strategies
                 orangeDotPrice, buyLevel, sellLevel));
             Print("============================================================");
 
-            // Draw orange dot on chart
+            // Draw orange dot on chart (similar to AAStrategyBidirect pattern dots)
             if (orangeDotPrice > 0)
             {
                 string dotTag = "OrangeDot_" + DateTime.Now.Ticks;
                 Draw.Dot(this, dotTag, true, 0, orangeDotPrice, Brushes.Orange);
+                Print(string.Format("[Trinchera] Drew ORANGE dot at price {0:F2}", orangeDotPrice));
             }
 
-            // Draw entry levels (BUY and SELL horizontal lines)
+            // Draw BUY level line (green horizontal line extending right)
             if (buyLevel > 0)
             {
                 string buyTag = "BuyLevel_" + DateTime.Now.Ticks;
-                Draw.HorizontalLine(this, buyTag, buyLevel, Brushes.Green);
+                Draw.Ray(this, buyTag, 0, buyLevel, -10, buyLevel, Brushes.Green, DashStyleHelper.Solid, 2);
+                Print(string.Format("[Trinchera] Drew GREEN line at BUY level {0:F2}", buyLevel));
             }
 
+            // Draw SELL level line (red horizontal line extending right)
             if (sellLevel > 0)
             {
                 string sellTag = "SellLevel_" + DateTime.Now.Ticks;
-                Draw.HorizontalLine(this, sellTag, sellLevel, Brushes.Red);
+                Draw.Ray(this, sellTag, 0, sellLevel, -10, sellLevel, Brushes.Red, DashStyleHelper.Solid, 2);
+                Print(string.Format("[Trinchera] Drew RED line at SELL level {0:F2}", sellLevel));
             }
         }
 

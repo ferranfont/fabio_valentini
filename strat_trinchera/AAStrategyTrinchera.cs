@@ -279,7 +279,27 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 var action = ExtractJsonValue(json, "action");
 
-                if (action == "ENTRY")
+                if (action == "DRAW")
+                {
+                    // Draw orange dot and levels without placing orders
+                    double orangeDotPrice = 0;
+                    double buyLevel = 0;
+                    double sellLevel = 0;
+
+                    string orangeDotStr = ExtractJsonValue(json, "orange_dot_price");
+                    string buyLevelStr = ExtractJsonValue(json, "buy_level");
+                    string sellLevelStr = ExtractJsonValue(json, "sell_level");
+
+                    if (!string.IsNullOrEmpty(orangeDotStr))
+                        double.TryParse(orangeDotStr, out orangeDotPrice);
+                    if (!string.IsNullOrEmpty(buyLevelStr))
+                        double.TryParse(buyLevelStr, out buyLevel);
+                    if (!string.IsNullOrEmpty(sellLevelStr))
+                        double.TryParse(sellLevelStr, out sellLevel);
+
+                    DrawOrangeDotAndLevels(orangeDotPrice, buyLevel, sellLevel);
+                }
+                else if (action == "ENTRY")
                 {
                     var side = ExtractJsonValue(json, "side");
                     var contracts = int.Parse(ExtractJsonValue(json, "contracts"));
@@ -363,6 +383,34 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnterShortLimit(0, true, contracts, entryPrice, "TrincheraShort");
                 SetProfitTarget("TrincheraShort", CalculationMode.Price, tpPrice);
                 SetStopLoss("TrincheraShort", CalculationMode.Price, slPrice, false);
+            }
+        }
+
+        private void DrawOrangeDotAndLevels(double orangeDotPrice, double buyLevel, double sellLevel)
+        {
+            Print("============================================================");
+            Print(string.Format("[DRAW] Orange Dot: {0} | Buy Level: {1} | Sell Level: {2}",
+                orangeDotPrice, buyLevel, sellLevel));
+            Print("============================================================");
+
+            // Draw orange dot on chart
+            if (orangeDotPrice > 0)
+            {
+                string dotTag = "OrangeDot_" + DateTime.Now.Ticks;
+                Draw.Dot(this, dotTag, true, 0, orangeDotPrice, Brushes.Orange);
+            }
+
+            // Draw entry levels (BUY and SELL horizontal lines)
+            if (buyLevel > 0)
+            {
+                string buyTag = "BuyLevel_" + DateTime.Now.Ticks;
+                Draw.HorizontalLine(this, buyTag, buyLevel, Brushes.Green);
+            }
+
+            if (sellLevel > 0)
+            {
+                string sellTag = "SellLevel_" + DateTime.Now.Ticks;
+                Draw.HorizontalLine(this, sellTag, sellLevel, Brushes.Red);
             }
         }
 

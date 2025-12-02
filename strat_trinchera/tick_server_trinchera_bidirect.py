@@ -218,6 +218,9 @@ def process_tick_data(tick_str):
             # Calculate mean reversion levels
             state.calculate_mean_reversion_levels(orange_dot_price)
 
+            # Send drawing to NinjaTrader immediately
+            send_orange_dot_drawing(orange_dot_price, state.buy_level, state.sell_level)
+
             # Check SMA filter
             if FILTER_BY_SMA:
                 if orange_dot_price > state.current_sma:
@@ -311,6 +314,17 @@ def send_order(order_dict):
             logger.info(f"📤 Order sent on retry")
         except:
             logger.error(f"❌ Failed to send order on retry")
+
+def send_orange_dot_drawing(orange_dot_price, buy_level, sell_level):
+    """Send orange dot and levels for immediate drawing on chart"""
+    draw_message = {
+        'action': 'DRAW',
+        'orange_dot_price': orange_dot_price,
+        'buy_level': buy_level,
+        'sell_level': sell_level,
+        'timestamp': datetime.now().isoformat()
+    }
+    send_order(draw_message)
 
 def send_entry_order(side, entry_price):
     """Send entry order (LONG or SHORT)"""

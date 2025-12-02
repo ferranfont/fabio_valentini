@@ -244,7 +244,7 @@ def process_tick_data(tick_str):
                 return  # Filter blocks LONG when orange dot below SMA
 
             logger.info(f"🟢 BUY SIGNAL at {price:.2f} (Level: {state.buy_level:.2f})")
-            send_entry_order('LONG', price)
+            send_entry_order('LONG', state.buy_level)  # Use exact level, not current price
 
         # Check SELL level
         elif price >= state.sell_level:
@@ -253,7 +253,7 @@ def process_tick_data(tick_str):
                 return  # Filter blocks SHORT when orange dot above SMA
 
             logger.info(f"🔴 SELL SIGNAL at {price:.2f} (Level: {state.sell_level:.2f})")
-            send_entry_order('SHORT', price)
+            send_entry_order('SHORT', state.sell_level)  # Use exact level, not current price
 
         # ====================================================================
         # EXIT MANAGEMENT (If position open)

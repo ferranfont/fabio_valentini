@@ -372,15 +372,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (side == "LONG")
             {
-                // Place LIMIT order at specific entry price (visible on chart)
-                EnterLongLimit(0, true, contracts, entryPrice, "TrincheraLong");
+                // Use MARKET order for immediate execution at current price
+                EnterLong(contracts, "TrincheraLong");
                 SetProfitTarget("TrincheraLong", CalculationMode.Price, tpPrice);
                 SetStopLoss("TrincheraLong", CalculationMode.Price, slPrice, false);
             }
             else if (side == "SHORT")
             {
-                // Place LIMIT order at specific entry price (visible on chart)
-                EnterShortLimit(0, true, contracts, entryPrice, "TrincheraShort");
+                // Use MARKET order for immediate execution at current price
+                EnterShort(contracts, "TrincheraShort");
                 SetProfitTarget("TrincheraShort", CalculationMode.Price, tpPrice);
                 SetStopLoss("TrincheraShort", CalculationMode.Price, slPrice, false);
             }

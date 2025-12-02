@@ -63,9 +63,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
                 OrderFillResolution = OrderFillResolution.Standard;
                 Slippage = 0;
-                StartBehavior = StartBehavior.ImmediatelySubmit;
+                StartBehavior = StartBehavior.WaitUntilFlat;
                 TimeInForce = TimeInForce.Gtc;
-                TraceOrders = false;
+                TraceOrders = true;
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade = 20;
@@ -357,24 +357,24 @@ namespace NinjaTrader.NinjaScript.Strategies
             Print(string.Format("Orange Dot: {0} | Buy Level: {1} | Sell Level: {2}", orangeDotPrice, buyLevel, sellLevel));
             Print("============================================================");
 
-            // Draw orange dot on chart
+            // Draw orange dot on chart (EXACTLY like AAStrategyBidirect: autoScale=true)
             if (orangeDotPrice > 0 && State == State.Realtime)
             {
                 string dotTag = "OrangeDot_Entry_" + DateTime.Now.Ticks;
-                Draw.Dot(this, dotTag, false, 0, orangeDotPrice, Brushes.Orange);
+                Draw.Dot(this, dotTag, true, 0, orangeDotPrice, Brushes.Orange);
             }
 
-            // Draw entry level markers (dots instead of lines to avoid barsAgo errors)
+            // Draw entry level markers (EXACTLY like AAStrategyBidirect: autoScale=true)
             if (buyLevel > 0 && State == State.Realtime)
             {
                 string buyTag = "BuyLevel_Entry_" + DateTime.Now.Ticks;
-                Draw.Dot(this, buyTag, false, 0, buyLevel, Brushes.Green);
+                Draw.Dot(this, buyTag, true, 0, buyLevel, Brushes.Green);
             }
 
             if (sellLevel > 0 && State == State.Realtime)
             {
                 string sellTag = "SellLevel_Entry_" + DateTime.Now.Ticks;
-                Draw.Dot(this, sellTag, false, 0, sellLevel, Brushes.Red);
+                Draw.Dot(this, sellTag, true, 0, sellLevel, Brushes.Red);
             }
 
             if (side == "LONG")
@@ -403,11 +403,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 orangeDotPrice, buyLevel, sellLevel));
             Print("============================================================");
 
-            // Draw orange dot on chart (similar to AAStrategyBidirect pattern dots)
+            // Draw orange dot on chart (EXACTLY like AAStrategyBidirect)
             if (orangeDotPrice > 0)
             {
                 string dotTag = "OrangeDot_" + DateTime.Now.Ticks;
-                Draw.Dot(this, dotTag, false, 0, orangeDotPrice, Brushes.Orange);
+                Draw.Dot(this, dotTag, true, 0, orangeDotPrice, Brushes.Orange);
                 Print(string.Format("[Trinchera] Drew ORANGE dot at price {0:F2}", orangeDotPrice));
             }
 
@@ -415,7 +415,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (buyLevel > 0)
             {
                 string buyTag = "BuyLevel_" + DateTime.Now.Ticks;
-                Draw.Dot(this, buyTag, false, 0, buyLevel, Brushes.Green);
+                Draw.Dot(this, buyTag, true, 0, buyLevel, Brushes.Green);
                 Print(string.Format("[Trinchera] Drew GREEN dot at BUY level {0:F2}", buyLevel));
             }
 
@@ -423,7 +423,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (sellLevel > 0)
             {
                 string sellTag = "SellLevel_" + DateTime.Now.Ticks;
-                Draw.Dot(this, sellTag, false, 0, sellLevel, Brushes.Red);
+                Draw.Dot(this, sellTag, true, 0, sellLevel, Brushes.Red);
                 Print(string.Format("[Trinchera] Drew RED dot at SELL level {0:F2}", sellLevel));
             }
         }

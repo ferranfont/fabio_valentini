@@ -228,29 +228,28 @@ class TickReceiverClientLive:
         if volume > self.big_volume_trigger:
             self.big_volume_events += 1
 
-            print(f"\n{'='*70}")
-            print(f"[BIG VOLUME DETECTED] Event #{self.big_volume_events}")
-            print(f"{'='*70}")
-            print(f"Timestamp: {timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-            print(f"Total Volume: {volume} (Trigger: {self.big_volume_trigger})")
-            print(f"Bid Volume: {bid_volume}")
-            print(f"Ask Volume: {ask_volume}")
-            print(f"Close Price: {close_price:.2f}")
-
             # Calculate mean reversion levels
             if self.filter_use_grid:
-                mean_level_up = close_price + self.mean_revers_expand + self.grid_mean_revers_expand
-                mean_level_down = close_price - self.mean_revers_expand - self.grid_mean_revers_expand
-                print(f"Mean Level UP (GRID): {mean_level_up:.2f} (+{self.mean_revers_expand + self.grid_mean_revers_expand:.2f} pts)")
-                print(f"Mean Level DOWN (GRID): {mean_level_down:.2f} (-{self.mean_revers_expand + self.grid_mean_revers_expand:.2f} pts)")
+                sell_limit_level = close_price + self.mean_revers_expand + self.grid_mean_revers_expand
+                buy_limit_level = close_price - self.mean_revers_expand - self.grid_mean_revers_expand
+                expand_total = self.mean_revers_expand + self.grid_mean_revers_expand
             else:
-                mean_level_up = close_price + self.mean_revers_expand
-                mean_level_down = close_price - self.mean_revers_expand
-                print(f"Mean Level UP: {mean_level_up:.2f} (+{self.mean_revers_expand:.2f} pts)")
-                print(f"Mean Level DOWN: {mean_level_down:.2f} (-{self.mean_revers_expand:.2f} pts)")
+                sell_limit_level = close_price + self.mean_revers_expand
+                buy_limit_level = close_price - self.mean_revers_expand
+                expand_total = self.mean_revers_expand
 
-            print(f"Timeout: {self.big_volume_timeout} minutes")
-            print(f"{'='*70}")
+            # Print compact horizontal alert with emoji icons
+            grid_text = " | GRID" if self.filter_use_grid else ""
+            print(f"\n{'='*100}")
+            print(f"\U0001F6A8 ALERT #{self.big_volume_events} | "
+                  f"\U0001F55B {timestamp.strftime('%H:%M:%S.%f')[:-3]} | "
+                  f"\U0001F4CA {close_price:.2f} | "
+                  f"\U0001F4C8 VOL {volume}/{self.big_volume_trigger} (Bid:{bid_volume} Ask:{ask_volume})")
+            print(f"\U0001F4CB ORDERS: \U0001F534 SELL:{sell_limit_level:.2f} (+{expand_total:.1f}) | "
+                  f"\U0001F7E2 BUY:{buy_limit_level:.2f} (-{expand_total:.1f}) | "
+                  f"\u23F1 {self.big_volume_timeout}m{grid_text} | "
+                  f"\U0001F7E0 Sending orange_dot...")
+            print(f"{'='*100}\n")
 
             # Send "orange_dot" signal to NinjaTrader
             self.send_signal("orange_dot", close_price, volume)

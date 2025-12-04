@@ -218,9 +218,6 @@ def process_tick_data(tick_str):
             # Calculate mean reversion levels
             state.calculate_mean_reversion_levels(orange_dot_price)
 
-            # Send drawing to NinjaTrader immediately
-            send_orange_dot_drawing(orange_dot_price, state.buy_level, state.sell_level)
-
             # Check SMA filter
             if FILTER_BY_SMA:
                 if orange_dot_price > state.current_sma:
@@ -244,7 +241,7 @@ def process_tick_data(tick_str):
                 return  # Filter blocks LONG when orange dot below SMA
 
             logger.info(f"🟢 BUY SIGNAL at {price:.2f} (Level: {state.buy_level:.2f})")
-            send_entry_order('LONG', state.buy_level)  # Use exact level, not current price
+            send_entry_order('LONG', price)
 
         # Check SELL level
         elif price >= state.sell_level:
@@ -253,7 +250,7 @@ def process_tick_data(tick_str):
                 return  # Filter blocks SHORT when orange dot above SMA
 
             logger.info(f"🔴 SELL SIGNAL at {price:.2f} (Level: {state.sell_level:.2f})")
-            send_entry_order('SHORT', state.sell_level)  # Use exact level, not current price
+            send_entry_order('SHORT', price)
 
         # ====================================================================
         # EXIT MANAGEMENT (If position open)
@@ -315,17 +312,6 @@ def send_order(order_dict):
         except:
             logger.error(f"❌ Failed to send order on retry")
 
-def send_orange_dot_drawing(orange_dot_price, buy_level, sell_level):
-    """Send orange dot and levels for immediate drawing on chart"""
-    draw_message = {
-        'action': 'DRAW',
-        'orange_dot_price': orange_dot_price,
-        'buy_level': buy_level,
-        'sell_level': sell_level,
-        'timestamp': datetime.now().isoformat()
-    }
-    send_order(draw_message)
-
 def send_entry_order(side, entry_price):
     """Send entry order (LONG or SHORT)"""
     tp_price = entry_price + TP_POINTS if side == 'LONG' else entry_price - TP_POINTS
@@ -338,9 +324,6 @@ def send_entry_order(side, entry_price):
         'entry_price': entry_price,
         'tp_price': tp_price,
         'sl_price': sl_price,
-        'orange_dot_price': state.last_orange_dot_price,  # Send orange dot for chart drawing
-        'buy_level': state.buy_level,
-        'sell_level': state.sell_level,
         'timestamp': datetime.now().isoformat()
     }
 

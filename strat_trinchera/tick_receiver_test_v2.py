@@ -20,7 +20,7 @@ BIG_VOLUME_TRIGGER = 1        # Minimum volume to detect as "big volume"
 BIG_VOLUME_TIMEOUT = 1        # Timeout in minutes for big volume effect
 SMA_PERIOD = 10               # Simple Moving Average period
 MEAN_REVERS_EXPAND = 3        # Points to expand mean reversion levels up/down
-MEAN_REVERSE_TIMEOUT_TIMER = 30  # Seconds - Auto-remove drawings in NinjaTrader (controlled by NinjaTrader indicator)
+MEAN_REVERSE_TIMEOUT_TIMER = 25  # Seconds - Auto-remove drawings in NinjaTrader (controlled by NinjaTrader indicator)
 
 # Global state
 tick_count = 0

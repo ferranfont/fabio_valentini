@@ -20,6 +20,7 @@ BIG_VOLUME_TRIGGER = 1        # Minimum volume to detect as "big volume"
 BIG_VOLUME_TIMEOUT = 1        # Timeout in minutes for big volume effect
 SMA_PERIOD = 10               # Simple Moving Average period
 MEAN_REVERS_EXPAND = 3        # Points to expand mean reversion levels up/down
+MEAN_REVERSE_TIMEOUT_TIMER = 30  # Seconds - Auto-remove drawings in NinjaTrader (controlled by NinjaTrader indicator)
 
 # Global state
 tick_count = 0
@@ -242,10 +243,11 @@ def main():
     print("=" * 70)
     print()
     print("Configuration:")
-    print(f"  BIG_VOLUME_TRIGGER:     {BIG_VOLUME_TRIGGER}")
-    print(f"  BIG_VOLUME_TIMEOUT:     {BIG_VOLUME_TIMEOUT} minutes")
-    print(f"  SMA_PERIOD:             {SMA_PERIOD}")
-    print(f"  MEAN_REVERS_EXPAND:     {MEAN_REVERS_EXPAND} points")
+    print(f"  BIG_VOLUME_TRIGGER:          {BIG_VOLUME_TRIGGER}")
+    print(f"  BIG_VOLUME_TIMEOUT:          {BIG_VOLUME_TIMEOUT} minutes")
+    print(f"  SMA_PERIOD:                  {SMA_PERIOD}")
+    print(f"  MEAN_REVERS_EXPAND:          {MEAN_REVERS_EXPAND} points")
+    print(f"  MEAN_REVERSE_TIMEOUT_TIMER:  {MEAN_REVERSE_TIMEOUT_TIMER} seconds (NinjaTrader auto-remove)")
     print()
     print("Architecture:")
     print("  Port 5555: NinjaTrader -> Python (tick streaming)")

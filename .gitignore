@@ -180,4 +180,4 @@ data/time_and_sales_*.csv
 data/historic/time_and_sales_nq_all.csv
 outputs/
 
-*.mp4
+*.mp4nul

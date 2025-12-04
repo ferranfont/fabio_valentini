@@ -183,8 +183,8 @@ class TickReceiverClientLive:
 
         print(f"\n[CONNECTION] Disconnected from all servers")
 
-    def send_signal(self, signal_name="orange_dot", price=0.0, volume=0):
-        """Send signal to NinjaTrader"""
+    def send_signal(self, signal_name="orange_dot"):
+        """Send signal to NinjaTrader (info already printed in check_big_volume)"""
         try:
             # Format: just the signal name with newline (as expected by C# ReadLine())
             message = f"{signal_name}\n"
@@ -193,17 +193,6 @@ class TickReceiverClientLive:
                 self.signal_socket.sendall(message.encode('utf-8'))
                 self.signals_sent += 1
                 self.last_signal_time = datetime.now()
-
-                print(f"\n{'*'*70}")
-                print(f"[SIGNAL SENT] {signal_name}")
-                print(f"{'*'*70}")
-                print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-                print(f"Price: {price:.2f}")
-                print(f"Volume: {volume}")
-                print(f"Total signals sent: {self.signals_sent}")
-                print(f"Total big volume events: {self.big_volume_events}")
-                print(f"{'*'*70}\n")
-
                 return True
             else:
                 print(f"[WARNING] Cannot send signal - not connected to signal server")
@@ -252,7 +241,7 @@ class TickReceiverClientLive:
             print(f"{'='*100}\n")
 
             # Send "orange_dot" signal to NinjaTrader
-            self.send_signal("orange_dot", close_price, volume)
+            self.send_signal("orange_dot")
 
     def process_tick(self, tick_data):
         """Process incoming tick data and aggregate by time window"""

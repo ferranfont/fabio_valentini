@@ -33,6 +33,10 @@ namespace NinjaTrader.NinjaScript.Indicators
         private bool drawConnected = false;
         private int signalCounter = 0;
 
+        // Queue for pending draw commands (when CurrentBar = -1)
+        private System.Collections.Generic.Queue<string> pendingCommands = new System.Collections.Generic.Queue<string>();
+        private bool barsLoaded = false;
+
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
@@ -96,6 +100,8 @@ namespace NinjaTrader.NinjaScript.Indicators
         {
             try
             {
+                Print("[DRAW] Waiting for Python connection...");
+
                 // Wait for Python to connect
                 drawClient = drawServer.AcceptTcpClient();
                 drawStream = drawClient.GetStream();
@@ -103,27 +109,30 @@ namespace NinjaTrader.NinjaScript.Indicators
                 drawConnected = true;
 
                 Print("[DRAW] Python connected! Ready to receive drawing commands");
+                Print(string.Format("[DRAW] Current State: {0}", State));
 
-                // Read commands continuously while connected AND in realtime
-                while (drawConnected && State == State.Realtime)
+                // Read commands continuously while connected
+                while (drawConnected)
                 {
+                    Print("[DRAW] Waiting for next command...");
                     string line = drawReader.ReadLine();
                     if (line == null)
                     {
-                        Print("[DRAW] Python disconnected");
+                        Print("[DRAW] Python disconnected (ReadLine returned null)");
                         drawConnected = false;
                         break;
                     }
 
+                    Print(string.Format("[DRAW] Raw line received: '{0}' (length={1})", line, line.Length));
                     ProcessDrawCommand(line);
                 }
+
+                Print("[DRAW] Listener loop exited");
             }
             catch (Exception ex)
             {
-                if (drawConnected)
-                {
-                    Print(string.Format("[DRAW] Error in listener: {0}", ex.Message));
-                }
+                Print(string.Format("[DRAW] EXCEPTION in listener: {0}", ex.Message));
+                Print(string.Format("[DRAW] Stack trace: {0}", ex.StackTrace));
             }
         }
 
@@ -158,10 +167,12 @@ namespace NinjaTrader.NinjaScript.Indicators
                 if (ChartControl != null && ChartControl.Dispatcher != null)
                 {
                     Print("[DRAW] Invoking on UI thread...");
+                    // Capture command in local variable for lambda
+                    string cmdForQueue = command;
                     ChartControl.Dispatcher.InvokeAsync(() =>
                     {
                         Print("[DRAW] Now on UI thread, calling DrawSignalLevels...");
-                        DrawSignalLevels(orangePrice, buyLevel, sellLevel, signalTime);
+                        DrawSignalLevels(orangePrice, buyLevel, sellLevel, signalTime, cmdForQueue);
                     });
                 }
                 else
@@ -176,7 +187,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             }
         }
 
-        private void DrawSignalLevels(double orangePrice, double buyLevel, double sellLevel, DateTime signalTime)
+        private void DrawSignalLevels(double orangePrice, double buyLevel, double sellLevel, DateTime signalTime, string originalCommand)
         {
             try
             {
@@ -192,40 +203,93 @@ namespace NinjaTrader.NinjaScript.Indicators
                 // Check if we have bar data before drawing
                 if (CurrentBar < 0 || Count == 0)
                 {
-                    Print("[DRAW] ERROR: No bar data available yet (CurrentBar=-1). Skipping draw.");
+                    Print("[DRAW] No bars loaded yet. Queueing command for later processing.");
+                    pendingCommands.Enqueue(originalCommand);
+                    Print(string.Format("[DRAW] Queue size: {0}", pendingCommands.Count));
                     return;
                 }
 
-                // Draw ORANGE horizontal line (extends across entire chart)
-                Print(string.Format("[DRAW] Drawing ORANGE line at price {0:F2}", orangePrice));
-                Print(string.Format("[DRAW] CurrentBar: {0}, Count: {1}", CurrentBar, Count));
+                Print(string.Format("[DRAW] CurrentBar: {0}, Count: {1}, Time[0]: {2}",
+                    CurrentBar, Count, Time[0].ToString("HH:mm:ss")));
 
-                Draw.HorizontalLine(this, tag + "_Orange", orangePrice, Brushes.Orange, DashStyleHelper.Solid, 1);
-                Print("[DRAW] ORANGE line drawn");
+                // Find the bar index (barsAgo) for the signal time
+                // Bars.GetBar returns absolute index, we need to convert to barsAgo
+                Print(string.Format("[DRAW] Calling Bars.GetBar for time: {0}", signalTime.ToString("yyyy-MM-dd HH:mm:ss.fff")));
+                int absoluteIndex = -1;
+                try
+                {
+                    absoluteIndex = Bars.GetBar(signalTime);
+                    Print(string.Format("[DRAW] Bars.GetBar returned: {0}", absoluteIndex));
+                }
+                catch (Exception ex)
+                {
+                    Print(string.Format("[DRAW] ERROR in Bars.GetBar: {0}", ex.Message));
+                    absoluteIndex = CurrentBar; // Fallback to current bar
+                }
 
-                // Draw GREEN horizontal line (BUY level)
-                Print(string.Format("[DRAW] Drawing GREEN line at price {0:F2}", buyLevel));
-                Draw.HorizontalLine(this, tag + "_Buy", buyLevel, Brushes.LimeGreen, DashStyleHelper.Dash, 1);
-                Print("[DRAW] GREEN line drawn");
+                int barsAgo = CurrentBar - absoluteIndex;
+                Print(string.Format("[DRAW] CurrentBar={0}, absoluteIndex={1}, barsAgo={2}",
+                    CurrentBar, absoluteIndex, barsAgo));
 
-                // Draw RED horizontal line (SELL level)
-                Print(string.Format("[DRAW] Drawing RED line at price {0:F2}", sellLevel));
-                Draw.HorizontalLine(this, tag + "_Sell", sellLevel, Brushes.Red, DashStyleHelper.Dash, 1);
-                Print("[DRAW] RED line drawn");
+                // Ensure barsAgo is not negative (if signal is in future or current bar)
+                if (barsAgo < 0)
+                {
+                    Print(string.Format("[DRAW] WARNING: barsAgo was negative ({0}), setting to 0", barsAgo));
+                    barsAgo = 0;
+                }
 
-                // Draw text labels (size 12) - using yPixelOffset instead of barsAgo offset
+                // Draw ORANGE ray starting at signal bar, extending to the right
+                Print(string.Format("[DRAW] Drawing ORANGE ray at barsAgo={0}, price={1:F2}", barsAgo, orangePrice));
+                try
+                {
+                    Draw.Ray(this, tag + "_Orange", false, barsAgo, orangePrice, barsAgo - 1, orangePrice,
+                        Brushes.Orange, DashStyleHelper.Solid, 1);
+                    Print("[DRAW] ORANGE ray drawn successfully");
+                }
+                catch (Exception ex)
+                {
+                    Print(string.Format("[DRAW] ERROR drawing ORANGE ray: {0}", ex.Message));
+                }
+
+                // Draw GREEN ray (BUY level)
+                Print(string.Format("[DRAW] Drawing GREEN ray at barsAgo={0}, price={1:F2}", barsAgo, buyLevel));
+                try
+                {
+                    Draw.Ray(this, tag + "_Buy", false, barsAgo, buyLevel, barsAgo - 1, buyLevel,
+                        Brushes.LimeGreen, DashStyleHelper.Dash, 1);
+                    Print("[DRAW] GREEN ray drawn successfully");
+                }
+                catch (Exception ex)
+                {
+                    Print(string.Format("[DRAW] ERROR drawing GREEN ray: {0}", ex.Message));
+                }
+
+                // Draw RED ray (SELL level)
+                Print(string.Format("[DRAW] Drawing RED ray at barsAgo={0}, price={1:F2}", barsAgo, sellLevel));
+                try
+                {
+                    Draw.Ray(this, tag + "_Sell", false, barsAgo, sellLevel, barsAgo - 1, sellLevel,
+                        Brushes.Red, DashStyleHelper.Dash, 1);
+                    Print("[DRAW] RED ray drawn successfully");
+                }
+                catch (Exception ex)
+                {
+                    Print(string.Format("[DRAW] ERROR drawing RED ray: {0}", ex.Message));
+                }
+
+                // Draw text labels at signal bar
                 Print("[DRAW] Drawing TEXT labels...");
-                Draw.Text(this, tag + "_OrangeTxt", true, "ORANGE", 0, orangePrice, 0,
+                Draw.Text(this, tag + "_OrangeTxt", true, "ORANGE", barsAgo, orangePrice, 10,
                     Brushes.Orange, new SimpleFont("Arial", 12), System.Windows.TextAlignment.Left,
-                    Brushes.Transparent, Brushes.Transparent, 10);
+                    Brushes.Transparent, Brushes.Transparent, 0);
 
-                Draw.Text(this, tag + "_BuyTxt", true, "BUY", 0, buyLevel, 0,
+                Draw.Text(this, tag + "_BuyTxt", true, "BUY", barsAgo, buyLevel, 10,
                     Brushes.LimeGreen, new SimpleFont("Arial", 12), System.Windows.TextAlignment.Left,
-                    Brushes.Transparent, Brushes.Transparent, 10);
+                    Brushes.Transparent, Brushes.Transparent, 0);
 
-                Draw.Text(this, tag + "_SellTxt", true, "SELL", 0, sellLevel, 0,
+                Draw.Text(this, tag + "_SellTxt", true, "SELL", barsAgo, sellLevel, 10,
                     Brushes.Red, new SimpleFont("Arial", 12), System.Windows.TextAlignment.Left,
-                    Brushes.Transparent, Brushes.Transparent, 10);
+                    Brushes.Transparent, Brushes.Transparent, 0);
                 Print("[DRAW] TEXT labels drawn");
 
                 Print("[DRAW] Calling ForceRefresh()...");
@@ -268,7 +332,20 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         protected override void OnBarUpdate()
         {
-            // Nothing to do here - all drawing is triggered by Python commands
+            // Process pending commands once bars are loaded
+            if (!barsLoaded && CurrentBar >= 0 && Count > 0)
+            {
+                barsLoaded = true;
+                Print(string.Format("[DRAW] Bars loaded! CurrentBar={0}, Count={1}. Processing {2} pending commands...",
+                    CurrentBar, Count, pendingCommands.Count));
+
+                while (pendingCommands.Count > 0)
+                {
+                    string cmd = pendingCommands.Dequeue();
+                    Print(string.Format("[DRAW] Processing queued command: {0}", cmd));
+                    ProcessDrawCommand(cmd);
+                }
+            }
         }
 
         #region Properties

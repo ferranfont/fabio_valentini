@@ -10,11 +10,11 @@
 │                 AAIndicatorTrinchera_Draw                   │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  📤 TCP SERVER #1 (Port 5555)                              │
-│     └─> SENDS ticks to Python                              │
+│  📤 TCP SERVER #1 (Port 5555)                               │
+│     └─> SENDS ticks to Python                               │
 │                                                             │
-│  📥 TCP SERVER #2 (Port 5556)                              │
-│     └─> RECEIVES signals from Python                       │
+│  📥 TCP SERVER #2 (Port 5556)                               │
+│     └─> RECEIVES signals from Python                        │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
                     ↕                    ↕
@@ -27,11 +27,11 @@
 │            main_tick_receiver_client_live.py                │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  📥 TCP CLIENT #1 (Port 5555)                              │
-│     └─> RECEIVES ticks from NinjaTrader                    │
+│  📥 TCP CLIENT #1 (Port 5555)                               │
+│     └─> RECEIVES ticks from NinjaTrader                     │
 │                                                             │
-│  📤 TCP CLIENT #2 (Port 5556)                              │
-│     └─> SENDS signals to NinjaTrader                       │
+│  📤 TCP CLIENT #2 (Port 5556)                               │
+│     └─> SENDS signals to NinjaTrader                        │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -89,40 +89,40 @@ Python (CLIENT) ──────> NinjaTrader (SERVER)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. TICK OCCURS IN NINJATRADER                              │
+│ 1. TICK OCCURS IN NINJATRADER                               │
 └─────────────────────────────────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 2. NinjaTrader sends tick via port 5555                    │
-│    "2025-12-04 17:52:19;25634.25;..."                     │
+│ 2. NinjaTrader sends tick via port 5555                     │
+│    "2025-12-04 17:52:19;25634.25;..."                       │
 └─────────────────────────────────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. Python receives the tick                                │
-│    - Aggregates in 500ms window                            │
-│    - Counts total volume                                   │
+│ 3. Python receives the tick                                 │
+│    - Aggregates in 500ms window                             │
+│    - Counts total volume                                    │
 └─────────────────────────────────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. Python detects: volume > BIG_VOLUME_TRIGGER (200)      │
-│    ¡Big volume event detected!                            │
+│ 4. Python detects: volume > BIG_VOLUME_TRIGGER (200)        │
+│    ¡Big volume event detected!                              │
 └─────────────────────────────────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 5. Python sends via port 5556                              │
-│    "orange_dot\n"                                          │
+│ 5. Python sends via port 5556                               │
+│    "orange_dot\n"                                           │
 └─────────────────────────────────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 6. NinjaTrader receives "orange_dot"                       │
-│    Listener thread: signalReader.ReadLine()                │
+│ 6. NinjaTrader receives "orange_dot"                        │
+│    Listener thread: signalReader.ReadLine()                 │
 └─────────────────────────────────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 7. NinjaTrader executes: DrawOrangeDotSafe()               │
-│    - Gets current price                                    │
-│    - Draws orange circle on chart                          │
-│    - Shows "🟠 Spike" text                                 │
+│ 7. NinjaTrader executes: DrawOrangeDotSafe()                │
+│    - Gets current price                                     │
+│    - Draws orange circle on chart                           │
+│    - Shows "🟠 Spike" text                                  │
 └─────────────────────────────────────────────────────────────┘
 ```
 

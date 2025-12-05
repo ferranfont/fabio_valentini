@@ -11,22 +11,26 @@ DATE = "20251104"  # Date for time_and_sales_nq_{DATE}.csv file
 # ============================================================================
 # BIG VOLUME DETECTION
 # ============================================================================
-BIG_VOLUME_TRIGGER = 200  # Minimum volume to detect as "big volume" antes 200
+BIG_VOLUME_TRIGGER = 200   # Minimum volume to detect as "big volume" antes 200
 BIG_VOLUME_TIMEOUT = 10   # Timeout in minutes for big volume effect antes 10
 
 # ============================================================================
 # INDICATORS
-# ============================================================================
+# ========================================)===================================
+
 SMA_PERIOD = 200  # Simple Moving Average period antes 200
 
 # ============================================================================
 # TRADING PARAMETERS
 # ============================================================================
-TP_POINTS = 5.0   # Take profit in points, usar 4 oara scalping and 20 for swing
-SL_POINTS = 9.0  # Stop loss in points, usar 9 para scalping
+TP_POINTS = 4.0   # Take profit in points, usar 4 oara scalping and 20 for swing
+SL_POINTS = 5.0   # Stop loss in points, usar 9 para scalping
 
 MEAN_REVERS_EXPAND = 4       # Points to expand mean reversion levels up/down. 10 standard
 MEAN_REVERSE_TIMEOUT_ORDER = 3   # Timeout in minutes for mean reversion order lines (red/green). 3
+
+BOTH_SIDES_MEAN_REVERSE = False # If True, place both BUY and SELL mean reversion orders at the same time
+
 
 # ============================================================================
 # FILTERS TRADING SYSTEM
@@ -96,4 +100,10 @@ GRID_SL_POINTS = 3.0   # Stop loss distance BEYOND second entry level when GRID 
 #
 #   - Filled zones drawn at MEAN_REVERS_EXPAND + GRID_MEAN_REVERS_EXPAND (where second entry would be)
 
-
+# ============================================================================
+# NETWORKING
+# ============================================================================
+HOST = '127.0.0.1'
+PORT_TICK_RECEIVER = 5555
+PORT_SIGNAL_SENDER = 5556
+PORT_ORDER_EXECUTION = 5557

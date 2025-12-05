@@ -203,6 +203,28 @@ class TickReceiverClientLive:
             self.signal_connected = False
             return False
 
+    def send_signal_with_levels(self, signal_name, sell_level, buy_level, timeout_minutes, timestamp):
+        """Send signal with price levels and timeout to NinjaTrader"""
+        try:
+            # Format: orange_dot;SELL_LEVEL;BUY_LEVEL;TIMEOUT_MINUTES;TIMESTAMP
+            # Use InvariantCulture format (dot as decimal separator)
+            timestamp_str = timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+            message = f"{signal_name};{sell_level:.2f};{buy_level:.2f};{timeout_minutes};{timestamp_str}\n"
+
+            if self.signal_connected and self.signal_socket:
+                self.signal_socket.sendall(message.encode('utf-8'))
+                self.signals_sent += 1
+                self.last_signal_time = datetime.now()
+                return True
+            else:
+                print(f"[WARNING] Cannot send signal - not connected to signal server")
+                return False
+
+        except Exception as e:
+            print(f"[ERROR] Failed to send signal: {e}")
+            self.signal_connected = False
+            return False
+
     def check_big_volume(self, timestamp, volume, bid_volume, ask_volume, close_price):
         """
         Check if current window has big volume and send signal if detected
@@ -236,12 +258,14 @@ class TickReceiverClientLive:
                   f"\U0001F4C8 VOL {volume}/{self.big_volume_trigger} (Bid:{bid_volume} Ask:{ask_volume})")
             print(f"\U0001F4CB ORDERS: \U0001F534 SELL:{sell_limit_level:.2f} (+{expand_total:.1f}) | "
                   f"\U0001F7E2 BUY:{buy_limit_level:.2f} (-{expand_total:.1f}) | "
-                  f"\u23F1 {self.big_volume_timeout}m{grid_text} | "
+                  f"\u23F3 {self.mean_reverse_timeout_order}m{grid_text} | "
                   f"\U0001F7E0 Sending orange_dot...")
             print(f"{'='*100}\n")
 
-            # Send "orange_dot" signal to NinjaTrader
-            self.send_signal("orange_dot")
+            # Send "orange_dot" signal with price levels and timeout to NinjaTrader
+            # Format: orange_dot;SELL_LEVEL;BUY_LEVEL;TIMEOUT_MINUTES;TIMESTAMP
+            self.send_signal_with_levels("orange_dot", sell_limit_level, buy_limit_level,
+                                        self.mean_reverse_timeout_order, timestamp)
 
     def process_tick(self, tick_data):
         """Process incoming tick data and aggregate by time window"""

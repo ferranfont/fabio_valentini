@@ -193,12 +193,45 @@ namespace NinjaTrader.NinjaScript.Indicators
 
                     Print(string.Format("[SIGNAL RECEIVER] Received: '{0}'", line));
 
-                    // Process "orange_dot" signal
-                    if (line.Trim().ToLower() == "orange_dot")
+                    // Process signal (can be simple "orange_dot" or with levels)
+                    string[] parts = line.Split(';');
+
+                    if (parts[0].Trim().ToLower() == "orange_dot")
                     {
                         signalCounter++;
-                        Print(string.Format("[SIGNAL RECEIVER] ✓ SIGNAL #{0} - Triggering draw...", signalCounter));
-                        DrawOrangeDotSafe();
+
+                        if (parts.Length >= 5)
+                        {
+                            // New format: orange_dot;SELL_LEVEL;BUY_LEVEL;TIMEOUT_MINUTES;TIMESTAMP
+                            try
+                            {
+                                double sellLevel = double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);
+                                double buyLevel = double.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture);
+                                int timeoutMinutes = int.Parse(parts[3]);
+                                DateTime startTime = DateTime.Parse(parts[4]);
+                                DateTime endTime = startTime.AddMinutes(timeoutMinutes);
+
+                                Print(string.Format("[SIGNAL #{0}] ========================================", signalCounter));
+                                Print(string.Format("  SELL_LIMIT_AT: {0:F2}", sellLevel));
+                                Print(string.Format("  BUY_LIMIT_AT: {0:F2}", buyLevel));
+                                Print(string.Format("  START AT TIME: {0}", startTime.ToString("HH:mm:ss")));
+                                Print(string.Format("  END AT TIME: {0} (+{1}m)", endTime.ToString("HH:mm:ss"), timeoutMinutes));
+                                Print("========================================");
+
+                                DrawOrangeDotSafe();
+                            }
+                            catch (Exception parseEx)
+                            {
+                                Print(string.Format("[SIGNAL RECEIVER] Error parsing levels: {0}", parseEx.Message));
+                                DrawOrangeDotSafe(); // Draw anyway
+                            }
+                        }
+                        else
+                        {
+                            // Old format: just "orange_dot"
+                            Print(string.Format("[SIGNAL RECEIVER] ✓ SIGNAL #{0} - Triggering draw...", signalCounter));
+                            DrawOrangeDotSafe();
+                        }
                     }
                 }
             }

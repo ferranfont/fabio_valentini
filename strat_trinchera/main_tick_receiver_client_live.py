@@ -479,20 +479,7 @@ class TickReceiverClientLive:
 
 def main():
     """Main entry point"""
-    print("\n" + "="*70)
-    print("LIVE BIG VOLUME DETECTOR")
-    print("="*70)
-    print(f"\nLoaded parameters:")
-    print(f"  BIG_VOLUME_TRIGGER: {BIG_VOLUME_TRIGGER}")
-    print(f"  BIG_VOLUME_TIMEOUT: {BIG_VOLUME_TIMEOUT} minutes")
-    print(f"  MEAN_REVERS_EXPAND: {MEAN_REVERS_EXPAND} points")
-    print(f"  MEAN_REVERSE_TIMEOUT_ORDER: {MEAN_REVERSE_TIMEOUT_ORDER} minutes")
-    print(f"  FILTER_USE_GRID: {FILTER_USE_GRID}")
-    if FILTER_USE_GRID:
-        print(f"  GRID_MEAN_REVERS_EXPAND: {GRID_MEAN_REVERS_EXPAND} points")
-    print("="*70)
-
-    # Create and start receiver
+    # Create and start receiver (config details printed in receiver.start())
     receiver = TickReceiverClientLive(
         host='127.0.0.1',
         tick_port=5555,           # NinjaTrader sends ticks on this port

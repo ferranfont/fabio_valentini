@@ -487,14 +487,84 @@ MEAN_REVERSE_TIMEOUT_ORDER = 5  # 5 minutes instead of 3
 
 ---
 
+## Technical Implementation Details
+
+### Strategy: Unmanaged Mode Architecture
+
+The **AAStrategyTradingLive.cs** uses **Unmanaged mode** (`IsUnmanaged = true`) to enable full control over order placement:
+
+**Why Unmanaged Mode?**
+- **NinjaTrader Managed Mode Limitation**: `EnterShortLimit()` and `EnterLongLimit()` have built-in restrictions:
+  - `EnterShortLimit()` only accepts prices BELOW current market (designed for closing long positions)
+  - `EnterLongLimit()` only accepts prices ABOVE current market (designed for closing short positions)
+- **Mean Reversion Requirements**: Our strategy needs to:
+  - Place SELL Limit orders ABOVE current market price (anticipating drop after spike)
+  - Place BUY Limit orders BELOW current market price (anticipating bounce after drop)
+- **Solution**: Unmanaged mode with `SubmitOrderUnmanaged()` allows placing limit orders at ANY price level
+
+**Order Submission Methods:**
+```csharp
+// ENTRY ORDERS (Pure Limit Orders)
+// SELL Short - Place limit order ABOVE market
+SubmitOrderUnmanaged(0, OrderAction.SellShort, OrderType.Limit,
+    quantity, entryPrice, 0, orderId, orderId);
+
+// BUY Long - Place limit order BELOW market
+SubmitOrderUnmanaged(0, OrderAction.Buy, OrderType.Limit,
+    quantity, entryPrice, 0, orderId, orderId);
+
+// TAKE PROFIT (Limit Orders)
+// For SHORT: Buy to cover at lower price (profit)
+SubmitOrderUnmanaged(0, OrderAction.BuyToCover, OrderType.Limit,
+    quantity, tpPrice, 0, tpTag, tpTag);
+
+// For LONG: Sell at higher price (profit)
+SubmitOrderUnmanaged(0, OrderAction.Sell, OrderType.Limit,
+    quantity, tpPrice, 0, tpTag, tpTag);
+
+// STOP LOSS (Stop Market Orders)
+// For SHORT: Buy to cover at higher price (loss protection)
+SubmitOrderUnmanaged(0, OrderAction.BuyToCover, OrderType.StopMarket,
+    quantity, 0, slPrice, slTag, slTag);
+
+// For LONG: Sell at lower price (loss protection)
+SubmitOrderUnmanaged(0, OrderAction.Sell, OrderType.StopMarket,
+    quantity, 0, slPrice, slTag, slTag);
+```
+
+**Key Configuration:**
+```csharp
+// State.SetDefaults
+IsUnmanaged = true;              // Enable Unmanaged mode
+StartBehavior = StartBehavior.ImmediatelySubmit;
+TraceOrders = true;              // Enable detailed order logging
+```
+
+**Order Lifecycle:**
+1. **Entry Order Placed**: Limit order at specified price (working)
+2. **Entry Order Filled**: Position opened at limit price
+3. **TP/SL Orders Placed**: Automatically submitted after fill
+4. **Exit**: Either TP limit hit (profit) or SL stop hit (loss)
+5. **Expiration**: Unfilled entry orders cancelled after timeout
+
+**Benefits of This Approach:**
+- ✅ Can place SELL Limit orders above market (mean reversion from top)
+- ✅ Can place BUY Limit orders below market (mean reversion from bottom)
+- ✅ Entry uses pure Limit orders (no stop orders)
+- ✅ Stop Loss uses Stop Market for protection (industry standard)
+- ✅ Full control over order placement timing
+- ✅ No automatic cancellations by NinjaTrader
+
+---
+
 ## Files Summary
 
 | File | Location | Purpose |
 |------|----------|---------|
 | `main_trading_client_live.py` | `strat_trinchera/` | Main Python client (3-port architecture) |
 | `config_trinchera_live.py` | `strat_trinchera/` | Configuration parameters |
-| `AAIndicatorTrinchera_Draw.cs` | NinjaTrader Indicators | Visual signals (ports 5555, 5556) |
-| `AAStrategyTradingLive.cs` | NinjaTrader Strategies | Order execution (port 5557) |
+| `AAIndicatorTrinchera_Draw.cs` | `strat_trinchera/` (copy)<br>`c:\Users\ferra\Documents\NinjaTrader 8\bin\Custom\Indicators\` (live) | Visual signals (ports 5555, 5556) |
+| `AAStrategyTradingLive.cs` | `strat_trinchera/` (copy)<br>`c:\Users\ferra\Documents\NinjaTrader 8\bin\Custom\Strategies\` (live) | Order execution (port 5557) - Unmanaged mode |
 
 ---
 

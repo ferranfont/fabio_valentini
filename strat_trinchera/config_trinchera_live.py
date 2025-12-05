@@ -23,10 +23,10 @@ SMA_PERIOD = 200  # Simple Moving Average period antes 200
 # ============================================================================
 # TRADING PARAMETERS
 # ============================================================================
-TP_POINTS = 4.0   # Take profit in points, usar 4 oara scalping and 20 for swing
-SL_POINTS = 5.0   # Stop loss in points, usar 9 para scalping
+TP_POINTS = 5.0   # Take profit in points, usar 4 oara scalping and 20 for swing
+SL_POINTS = 9.0   # Stop loss in points, usar 9 para scalping
 
-MEAN_REVERS_EXPAND = 4       # Points to expand mean reversion levels up/down. 10 standard
+MEAN_REVERS_EXPAND = 10       # Points to expand mean reversion levels up/down. 10 standard
 MEAN_REVERSE_TIMEOUT_ORDER = 3   # Timeout in minutes for mean reversion order lines (red/green). 3
 
 BOTH_SIDES_MEAN_REVERSE = False # If True, place both BUY and SELL mean reversion orders at the same time

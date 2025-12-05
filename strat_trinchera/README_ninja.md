@@ -1,8 +1,17 @@
-# README - NinjaTrader Integration
+# README - NinjaTrader Integration v2.0
+
+> **Note**: This document describes the original 2-port system. For the new **3-port architecture with order execution**, see [NINJATRADER_INTEGRATION.md](NINJATRADER_INTEGRATION.md)
 
 ## 📡 Communication Architecture: NinjaTrader ↔ Python
 
-### 🏗️ General Architecture
+### System Versions
+
+| Version | Ports | Components | Purpose |
+|---------|-------|------------|---------|
+| **v1.0** (This file) | 2 ports | Indicator only | Visual signals (orange dots + lines) |
+| **v2.0** (See NINJATRADER_INTEGRATION.md) | 3 ports | Indicator + Strategy | Visual signals + Order execution |
+
+### 🏗️ Architecture v1.0 (Visual Only)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -35,6 +44,13 @@
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+**What's Missing in v1.0:**
+- ❌ No automatic order placement
+- ❌ No TP/SL management
+- ❌ Manual trading required
+
+**→ For automatic trading, upgrade to v2.0** (see NINJATRADER_INTEGRATION.md)
 
 ---
 
@@ -412,11 +428,71 @@ When running correctly, you should see:
 
 ## 📚 Related Documentation
 
+- **NINJATRADER_INTEGRATION.md** - Complete v2.0 documentation (3-port system with order execution)
 - **CLAUDE.md** - Complete project documentation
 - **config_trinchera_live.py** - Live configuration parameters
 - **main_trinchera.py** - Backtest pipeline workflow
 
 ---
 
-*Last updated: 2025-12-04*
-*System Version: 3.0 (Live NinjaTrader Integration)*
+## 🚀 Upgrading to v2.0 (Automatic Trading)
+
+### What You Get in v2.0:
+
+| Feature | v1.0 (Current) | v2.0 (Upgrade) |
+|---------|----------------|----------------|
+| Visual Signals | ✅ Orange dots + lines | ✅ Orange dots + lines |
+| Order Placement | ❌ Manual | ✅ Automatic |
+| TP/SL Management | ❌ Manual | ✅ Automatic |
+| Order Expiration | ❌ None | ✅ Auto-cancel after timeout |
+| Python Script | `main_tick_receiver_client_live.py` | `main_trading_client_live.py` |
+| NinjaTrader Components | 1 (Indicator) | 2 (Indicator + Strategy) |
+| Ports | 2 (5555, 5556) | 3 (5555, 5556, 5557) |
+
+### Quick Upgrade Steps:
+
+1. **Copy Strategy file** to NinjaTrader:
+   ```
+   Copy: strat_trinchera/AAStrategyTradingLive.cs
+   To:   c:\Users\ferra\Documents\NinjaTrader 8\bin\Custom\Strategies\
+   ```
+
+2. **Compile Strategy** in NinjaTrader (F5)
+
+3. **Add Strategy to chart**:
+   - Right-click chart → Strategies → AAStrategyTradingLive
+   - Set `ExecutionPort = 5557`
+   - **Check "Enabled" box!**
+
+4. **Switch Python script**:
+   ```bash
+   # Stop old script (Ctrl+C)
+
+   # Start new script
+   python strat_trinchera/main_trading_client_live.py
+   ```
+
+5. **Done!** Now the system will:
+   - ✅ Draw orange dots (visual)
+   - ✅ Place SELL/BUY limit orders automatically
+   - ✅ Manage TP/SL automatically
+   - ✅ Cancel expired orders
+
+### Configuration:
+
+Edit `config_trinchera_live.py`:
+```python
+# Order Management (NEW in v2.0)
+TP_POINTS = 5.0                    # Take profit
+SL_POINTS = 9.0                    # Stop loss
+BOTH_SIDES_MEAN_REVERSE = False    # Place both SELL + BUY
+```
+
+### Full Documentation:
+
+See **[NINJATRADER_INTEGRATION.md](NINJATRADER_INTEGRATION.md)** for complete v2.0 documentation.
+
+---
+
+*Last updated: 2025-12-05*
+*System Version: v1.0 (Visual Only) - Upgrade available to v2.0 (Automatic Trading)*

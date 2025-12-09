@@ -24,19 +24,17 @@ using NinjaTrader.NinjaScript.DrawingTools;
 using System.Net.Sockets;
 using System.IO;
 #endregion
-
 namespace NinjaTrader.NinjaScript.Strategies
 {
     public class AAStrategyTradingLive : Strategy
     {
         // ==============================================================
-        // STRATEGY: Receives execution commands from Python
-        // Python sends: EXECUTE;SELL_PRICE;BUY_PRICE;TIMEOUT;TP;SL;BOTH_SIDES
+        // ESTRATEGIA UNMANAGED: Control Total
+        // Recibe comandos de Python y gestiona órdenes manualmente
+        // CORREGIDO: Ruta CSV original y Dispatcher seguro
         // ==============================================================
-
         #region Variables
-
-        // TCP Server to receive execution commands from Python (Port 5557)
+        // TCP Server (Puerto 5557)
         private System.Net.Sockets.TcpListener executionServer;
         private TcpClient executionClient;
         private NetworkStream executionStream;
@@ -44,38 +42,42 @@ namespace NinjaTrader.NinjaScript.Strategies
         private Thread listenerThread;
         private bool connected = false;
         private bool running = false;
-
-        // Active Orders Management
+        // Gestión de Órdenes
         private Dictionary<string, OrderInfo> activeOrders;
         private int orderCounter = 0;
         private object orderLock = new object();
-
+        // Variables OCO (Para vincular Buy y Sell del mismo grupo)
+        private string currentOcoGroupId = "";
+        // CSV Tracking
+        private string csvFilePath;
+        private object csvLock = new object();
+        private DateTime strategyStartTime;
         #endregion
-
         #region OrderInfo Class
-
         private class OrderInfo
         {
-            public int OrderId { get; set; }
+            public int InternalId { get; set; }
+            public string OcoGroupId { get; set; } // ID compartido entre Buy y Sell del mismo comando
             public string Side { get; set; }  // "SELL" or "BUY"
             public double EntryPrice { get; set; }
             public double TpPrice { get; set; }
             public double SlPrice { get; set; }
             public DateTime ExpirationTime { get; set; }
+            public DateTime FillTime { get; set; } // Hora de llenado para calcular duración
+            
             public Order EntryOrder { get; set; }
             public Order TpOrder { get; set; }
             public Order SlOrder { get; set; }
+            
             public bool IsActive { get; set; }
-            public bool IsExpired { get; set; }
+            public bool BothSidesAllowed { get; set; }
         }
-
         #endregion
-
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
             {
-                Description = @"Strategy receives execution commands from Python and places limit orders with TP/SL";
+                Description = @"Estrategia UNMANAGED para Trinchera Live";
                 Name = "AAStrategyTradingLive";
                 Calculate = Calculate.OnEachTick;
                 EntriesPerDirection = 1;
@@ -87,25 +89,34 @@ namespace NinjaTrader.NinjaScript.Strategies
                 OrderFillResolution = OrderFillResolution.Standard;
                 Slippage = 0;
                 StartBehavior = StartBehavior.ImmediatelySubmit;
-                TimeInForce = TimeInForce.Gtc;
+                TimeInForce = TimeInForce.Day;
                 TraceOrders = true;
-                RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
+                RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade = 1;
-                IsUnmanaged = true;  // CRITICAL: Unmanaged mode required for limit orders above/below market
-
+                
+                // CRÍTICO: Modo Unmanaged activado
+                IsUnmanaged = true;
                 // Parameters
                 ExecutionPort = 5557;
                 DefaultQuantity = 1;
             }
             else if (State == State.Configure)
             {
-                // Initialize active orders dictionary
                 activeOrders = new Dictionary<string, OrderInfo>();
+                // Initialize tracking CSV
+                strategyStartTime = DateTime.Now;
+                string timestamp = strategyStartTime.ToString("yyyyMMdd_HHmmss");
+                
+                // RESTAURADA RUTA ORIGINAL
+                string outputDir = @"D:\PYTHON\ALGOS\fabio_valentini\strat_trinchera\outputs";
+                csvFilePath = Path.Combine(outputDir, string.Format("tracking_record_live_{0}.csv", timestamp));
+                
+                InitializeCSV();
             }
             else if (State == State.DataLoaded)
             {
-                Print("[STRATEGY] DataLoaded - Starting execution server...");
+                Print("[STRATEGY] DataLoaded - Starting UNMANAGED execution server...");
                 StartExecutionServer();
             }
             else if (State == State.Terminated)
@@ -114,17 +125,102 @@ namespace NinjaTrader.NinjaScript.Strategies
                 DisconnectAll();
             }
         }
-
+        #region CSV Helpers
+        private void InitializeCSV()
+        {
+            try
+            {
+                // Ensure directory exists
+                string directory = Path.GetDirectoryName(csvFilePath);
+                if (!Directory.Exists(directory))
+                {
+                    Print(string.Format("[CSV] Creating directory: {0}", directory));
+                    Directory.CreateDirectory(directory);
+                }
+                
+                // Create CSV with headers
+                lock (csvLock)
+                {
+                    using (StreamWriter writer = new StreamWriter(csvFilePath, false))
+                    {
+                        writer.WriteLine("timestamp,event_type,order_id,action,order_type,price,quantity,status,pnl,exit_reason,duration_sec,current_position,market_price,notes");
+                    }
+                }
+                
+                Print(string.Format("[CSV] Tracking file created: {0}", csvFilePath));
+            }
+            catch (Exception ex)
+            {
+                Print(string.Format("[CSV] Error initializing: {0}", ex.Message));
+            }
+        }
+        private void WriteToCSV(string eventType, string orderId, string action, string orderType,
+            double price, int quantity, string status, double pnl = 0, string exitReason = "",
+            double durationSec = 0, string notes = "")
+        {
+            try
+            {
+                lock (csvLock)
+                {
+                    using (StreamWriter writer = new StreamWriter(csvFilePath, true)) // append mode
+                    {
+                        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+                        string currentPos = Position.MarketPosition.ToString();
+                        double marketPrice = Close[0];
+                        
+                        // CSV line
+                        string line = string.Format("{0},{1},{2},{3},{4},{5:F2},{6},{7},{8:F2},{9},{10:F3},{11},{12:F2},{13}",
+                            timestamp,           // 0
+                            eventType,          // 1
+                            orderId,            // 2
+                            action,             // 3
+                            orderType,          // 4
+                            price,              // 5
+                            quantity,           // 6
+                            status,             // 7
+                            pnl,                // 8
+                            exitReason,         // 9
+                            durationSec,        // 10
+                            currentPos,         // 11
+                            marketPrice,        // 12
+                            notes               // 13
+                        );
+                        
+                        writer.WriteLine(line);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Print(string.Format("[CSV] Write error: {0}", ex.Message));
+            }
+        }
+        private double CalculatePnL(OrderInfo orderInfo, double exitPrice)
+        {
+            double entryPrice = orderInfo.EntryPrice;
+            int quantity = DefaultQuantity;
+            double pointValue = 20.0; // NQ point value (Adjust if trading other instruments)
+            
+            if (orderInfo.Side == "SELL")
+            {
+                // SHORT: profit when exit price < entry price
+                return (entryPrice - exitPrice) * pointValue * quantity;
+            }
+            else
+            {
+                // LONG: profit when exit price > entry price
+                return (exitPrice - entryPrice) * pointValue * quantity;
+            }
+        }
+        #endregion
         #region Execution Server (Port 5557)
-
         private void StartExecutionServer()
         {
             try
             {
-                executionServer = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, ExecutionPort);
+                executionServer = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Any, ExecutionPort);
                 executionServer.Start();
                 Print(string.Format("[EXEC SERVER] Started on port {0}, waiting for Python...", ExecutionPort));
-
                 listenerThread = new Thread(ListenForCommands);
                 listenerThread.IsBackground = true;
                 listenerThread.Start();
@@ -135,7 +231,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Print(string.Format("[EXEC SERVER] Error starting server: {0}", ex.Message));
             }
         }
-
         private void ListenForCommands()
         {
             try
@@ -144,9 +239,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 executionStream = executionClient.GetStream();
                 executionReader = new StreamReader(executionStream, Encoding.UTF8);
                 connected = true;
-
                 Print("[EXEC SERVER] Python connected! Listening for execution commands...");
-
                 while (connected && running)
                 {
                     string line = executionReader.ReadLine();
@@ -156,11 +249,23 @@ namespace NinjaTrader.NinjaScript.Strategies
                         connected = false;
                         break;
                     }
-
                     Print(string.Format("[EXEC SERVER] << RECEIVED: '{0}'", line));
-
-                    // Process command
-                    ProcessExecutionCommand(line);
+                    
+                    // Asegurar ejecución en el hilo principal de manera robusta
+                    if (ChartControl != null)
+                    {
+                        ChartControl.Dispatcher.InvokeAsync(() => ProcessExecutionCommand(line));
+                    }
+                    else if (System.Windows.Application.Current != null)
+                    {
+                        // Fallback si no hay ChartControl (ej. Strategy Analyzer o Headless)
+                        Print("[WARNING] ChartControl is null. Using App Dispatcher.");
+                        System.Windows.Application.Current.Dispatcher.InvokeAsync(() => ProcessExecutionCommand(line));
+                    }
+                    else
+                    {
+                         Print("[ERROR] No Dispatcher available to process command!");
+                    }
                 }
             }
             catch (Exception ex)
@@ -169,26 +274,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                 connected = false;
             }
         }
-
         private void ProcessExecutionCommand(string command)
         {
             try
             {
+                // DEBUG LOG
+                Print(string.Format("[DEBUG] Processing: {0}", command));
                 // Format: EXECUTE;SELL_PRICE;BUY_PRICE;TIMEOUT;TP;SL;BOTH_SIDES
                 string[] parts = command.Split(';');
-
-                if (parts.Length < 7)
+                if (parts.Length < 7) 
                 {
-                    Print(string.Format("[EXEC SERVER] Invalid command format: {0}", command));
+                    Print("[ERROR] Invalid command length.");
                     return;
                 }
-
-                if (parts[0].Trim().ToUpper() != "EXECUTE")
-                {
-                    Print(string.Format("[EXEC SERVER] Unknown command: {0}", parts[0]));
-                    return;
-                }
-
+                if (parts[0].Trim().ToUpper() != "EXECUTE") return;
                 // Parse parameters
                 double sellPrice = double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);
                 double buyPrice = double.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture);
@@ -196,268 +295,290 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double tpPoints = double.Parse(parts[4], System.Globalization.CultureInfo.InvariantCulture);
                 double slPoints = double.Parse(parts[5], System.Globalization.CultureInfo.InvariantCulture);
                 bool bothSides = parts[6].Trim() == "1";
-
                 DateTime expirationTime = DateTime.Now.AddMinutes(timeoutMinutes);
-
-                Print(string.Format("[EXEC] ========================================"));
-                Print(string.Format("[EXEC] NEW EXECUTION COMMAND"));
-                Print(string.Format("[EXEC]   SELL @ {0:F2} | TP: -{1:F2} | SL: +{2:F2}", sellPrice, tpPoints, slPoints));
-                Print(string.Format("[EXEC]   BUY  @ {0:F2} | TP: +{1:F2} | SL: -{2:F2}", buyPrice, tpPoints, slPoints));
-                Print(string.Format("[EXEC]   TIMEOUT: {0} minutes (expires at {1})", timeoutMinutes, expirationTime.ToString("HH:mm:ss")));
-                Print(string.Format("[EXEC]   BOTH SIDES: {0}", bothSides));
-                Print(string.Format("[EXEC] ========================================"));
-
-                // Place orders on next bar update (thread-safe)
-                lock (orderLock)
-                {
-                    if (bothSides)
-                    {
-                        // Place both SELL and BUY limit orders
-                        PlaceOrderPair(sellPrice, buyPrice, tpPoints, slPoints, expirationTime);
-                    }
-                    else
-                    {
-                        // Place only SELL limit order (mean reversion from high volume)
-                        PlaceSingleOrder("SELL", sellPrice, tpPoints, slPoints, expirationTime);
-                    }
-                }
+                string newOcoGroupId = Guid.NewGuid().ToString("N").Substring(0, 8); // ID único para este par
+                Print(string.Format("[EXEC] NEW COMMAND | OCO Group: {0}", newOcoGroupId));
+                Print(string.Format("[EXEC] SELL @ {0:F2} | BUY @ {1:F2}", sellPrice, buyPrice));
+                
+                // SIEMPRE lanzamos ambas órdenes (Techo y Suelo)
+                // 1. SELL LIMIT (Techo)
+                PlaceUnmanagedOrder("SELL", sellPrice, tpPoints, slPoints, expirationTime, newOcoGroupId, bothSides);
+                // 2. BUY LIMIT (Suelo)
+                PlaceUnmanagedOrder("BUY", buyPrice, tpPoints, slPoints, expirationTime, newOcoGroupId, bothSides);
             }
             catch (Exception ex)
             {
                 Print(string.Format("[EXEC] Error processing command: {0}", ex.Message));
+                Print(string.Format("[EXEC] StackTrace: {0}", ex.StackTrace));
             }
         }
-
-        private void PlaceOrderPair(double sellPrice, double buyPrice, double tpPoints, double slPoints, DateTime expiration)
+        private void PlaceUnmanagedOrder(string side, double entryPrice, double tpPoints, double slPoints, DateTime expiration, string ocoGroupId, bool bothSides)
         {
-            // SELL Limit Order
-            PlaceSingleOrder("SELL", sellPrice, tpPoints, slPoints, expiration);
-
-            // BUY Limit Order
-            PlaceSingleOrder("BUY", buyPrice, tpPoints, slPoints, expiration);
-        }
-
-        private void PlaceSingleOrder(string side, double entryPrice, double tpPoints, double slPoints, DateTime expiration)
-        {
-            orderCounter++;
-            string orderId = string.Format("{0}_{1}", side, orderCounter);
-
-            double tpPrice = 0;
-            double slPrice = 0;
-
-            if (side == "SELL")
+            try 
             {
-                tpPrice = entryPrice - tpPoints;
-                slPrice = entryPrice + slPoints;
+                orderCounter++;
+                string signalName = string.Format("{0}_{1}", side, orderCounter);
+                double tpPrice = 0;
+                double slPrice = 0;
+                OrderAction action = OrderAction.Buy;
+                
+                if (side == "SELL")
+                {
+                    action = OrderAction.SellShort;
+                    tpPrice = entryPrice - tpPoints;
+                    slPrice = entryPrice + slPoints;
+                }
+                else // BUY
+                {
+                    action = OrderAction.Buy;
+                    tpPrice = entryPrice + tpPoints;
+                    slPrice = entryPrice - slPoints;
+                }
+                OrderInfo orderInfo = new OrderInfo
+                {
+                    InternalId = orderCounter,
+                    OcoGroupId = ocoGroupId,
+                    Side = side,
+                    EntryPrice = entryPrice,
+                    TpPrice = tpPrice,
+                    SlPrice = slPrice,
+                    ExpirationTime = expiration,
+                    IsActive = true,
+                    BothSidesAllowed = bothSides
+                };
+                // Guardar en diccionario ANTES de enviar
+                activeOrders[signalName] = orderInfo;
+                Print(string.Format("[ORDER] Submitting UNMANAGED {0} Limit @ {1:F2}", side, entryPrice));
+                // ENVIAR ORDEN UNMANAGED
+                Order order = SubmitOrderUnmanaged(0, action, OrderType.Limit, DefaultQuantity, entryPrice, 0, "", signalName);
+                
+                if (order == null)
+                    Print(string.Format("[ERROR] SubmitOrderUnmanaged returned NULL for {0}", signalName));
+                else
+                    orderInfo.EntryOrder = order;
             }
-            else // BUY
+            catch (Exception ex)
             {
-                tpPrice = entryPrice + tpPoints;
-                slPrice = entryPrice - slPoints;
-            }
-
-            OrderInfo orderInfo = new OrderInfo
-            {
-                OrderId = orderCounter,
-                Side = side,
-                EntryPrice = entryPrice,
-                TpPrice = tpPrice,
-                SlPrice = slPrice,
-                ExpirationTime = expiration,
-                IsActive = true,
-                IsExpired = false
-            };
-
-            activeOrders[orderId] = orderInfo;
-
-            Print(string.Format("[ORDER] Created {0} order #{1} @ {2:F2} | TP: {3:F2} | SL: {4:F2} | Exp: {5}",
-                side, orderCounter, entryPrice, tpPrice, slPrice, expiration.ToString("HH:mm:ss")));
-
-            // DEBUG: Print current market price and position status
-            double currentPrice = Close[0];
-            Print(string.Format("[DEBUG] Current Price: {0:F2} | Position: {1} | Placing {2} Limit @ {3:F2}",
-                currentPrice, Position.MarketPosition, side, entryPrice));
-
-            // Place the limit order entry (UNMANAGED MODE)
-            if (side == "SELL")
-            {
-                Print(string.Format("[DEBUG] Submitting SHORT Limit Order: Qty={0} @ {1:F2} (Tag: {2})", DefaultQuantity, entryPrice, orderId));
-                orderInfo.EntryOrder = SubmitOrderUnmanaged(0, OrderAction.SellShort, OrderType.Limit, DefaultQuantity, entryPrice, 0, orderId, orderId);
-            }
-            else // BUY
-            {
-                Print(string.Format("[DEBUG] Submitting LONG Limit Order: Qty={0} @ {1:F2} (Tag: {2})", DefaultQuantity, entryPrice, orderId));
-                orderInfo.EntryOrder = SubmitOrderUnmanaged(0, OrderAction.Buy, OrderType.Limit, DefaultQuantity, entryPrice, 0, orderId, orderId);
+                 Print(string.Format("[ERROR] PlaceUnmanagedOrder failed: {0}", ex.Message));
             }
         }
-
         #endregion
-
-        #region OnBarUpdate / Order Management
-
-        protected override void OnBarUpdate()
-        {
-            if (CurrentBars[0] < BarsRequiredToTrade)
-                return;
-
-            // Check for expired orders
-            lock (orderLock)
-            {
-                List<string> ordersToRemove = new List<string>();
-
-                foreach (var kvp in activeOrders)
-                {
-                    OrderInfo orderInfo = kvp.Value;
-
-                    if (!orderInfo.IsExpired && DateTime.Now > orderInfo.ExpirationTime)
-                    {
-                        orderInfo.IsExpired = true;
-
-                        // Cancel entry order if still pending
-                        if (orderInfo.EntryOrder != null &&
-                            (orderInfo.EntryOrder.OrderState == OrderState.Working ||
-                             orderInfo.EntryOrder.OrderState == OrderState.Accepted))
-                        {
-                            CancelOrder(orderInfo.EntryOrder);
-                            Print(string.Format("[ORDER] EXPIRED: {0} order #{1} cancelled",
-                                orderInfo.Side, orderInfo.OrderId));
-                        }
-
-                        ordersToRemove.Add(kvp.Key);
-                    }
-                }
-
-                // Remove expired orders from dictionary
-                foreach (string key in ordersToRemove)
-                {
-                    activeOrders.Remove(key);
-                }
-            }
-        }
-
+        #region OnOrderUpdate (Gestión Manual de TP/SL y CSV)
         protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity,
             int filled, double averageFillPrice, OrderState orderState, DateTime time, ErrorCode error, string nativeError)
         {
-            // Find order in active orders
-            lock (orderLock)
+            // Buscar la orden en nuestro diccionario local usando el SignalName
+            string signalName = order.Name;
+            string lookupKey = signalName;
+            // Ajustar key si es una orden hija (TP/SL)
+            if (signalName.EndsWith("_TP"))
+                lookupKey = signalName.Substring(0, signalName.Length - 3);
+            else if (signalName.EndsWith("_SL"))
+                lookupKey = signalName.Substring(0, signalName.Length - 3);
+            
+            if (!activeOrders.ContainsKey(lookupKey)) return;
+            OrderInfo info = activeOrders[lookupKey];
+            // Actualizar referencia si es necesario
+            if (info.EntryOrder == null || info.EntryOrder != order)
             {
-                foreach (var kvp in activeOrders)
+                if (order.OrderState != OrderState.Working && order.OrderState != OrderState.Filled)
+                    // No retornamos inmediatamente para poder loggear estados como Cancelled o Rejected
+                    if (order.OrderState != OrderState.Cancelled && order.OrderState != OrderState.Rejected)
+                        return; 
+            }
+            // --- CSV LOGGING LOGIC ---
+            if (info.EntryOrder != null && info.EntryOrder == order)
+            {
+                string eventType = "";
+                string status = orderState.ToString();
+                string notes = "";
+                
+                if (orderState == OrderState.Submitted)
                 {
-                    OrderInfo orderInfo = kvp.Value;
-
-                    // Check if this is the entry order
-                    if (orderInfo.EntryOrder == null && order.Name == kvp.Key)
+                    eventType = "ORDER_PLACED";
+                    notes = "Entry order submitted";
+                }
+                else if (orderState == OrderState.Accepted)
+                {
+                    eventType = "ORDER_ACCEPTED";
+                    notes = "Entry order accepted by broker";
+                }
+                else if (orderState == OrderState.Working)
+                {
+                    eventType = "ORDER_WORKING";
+                    notes = "Entry order working";
+                }
+                else if (orderState == OrderState.Filled)
+                {
+                    eventType = "ORDER_FILLED";
+                    notes = string.Format("Entry filled @ {0:F2}", averageFillPrice);
+                    info.FillTime = time; // Save fill time
+                }
+                else if (orderState == OrderState.Cancelled)
+                {
+                    eventType = "ORDER_CANCELLED";
+                    notes = error != ErrorCode.NoError ? string.Format("Error: {0}", error) : "Cancelled";
+                }
+                else if (orderState == OrderState.Rejected)
+                {
+                    eventType = "ORDER_REJECTED";
+                    notes = string.Format("Rejected: {0}", nativeError);
+                }
+                
+                if (!string.IsNullOrEmpty(eventType))
+                {
+                    WriteToCSV(
+                        eventType: eventType,
+                        orderId: signalName,
+                        action: order.OrderAction.ToString(),
+                        orderType: order.OrderType.ToString(),
+                        price: limitPrice > 0 ? limitPrice : stopPrice,
+                        quantity: quantity,
+                        status: status,
+                        notes: notes
+                    );
+                }
+            }
+            // -------------------------
+            // 1. Si la orden de entrada se LLENA -> Poner TP y SL
+            if (order == info.EntryOrder && orderState == OrderState.Filled)
+            {
+                Print(string.Format("[FILLED] {0} Order #{1} Filled @ {2:F2}", info.Side, info.InternalId, averageFillPrice));
+                // Lógica OCO: Cancelar la orden hermana si no se permiten ambos lados
+                if (!info.BothSidesAllowed)
+                {
+                    CancelSiblingOrder(info.OcoGroupId, signalName);
+                }
+                // Colocar TP y SL (Unmanaged)
+                if (info.Side == "SELL")
+                {
+                    // Para cerrar Short -> Buy Limit (TP) y Buy Stop (SL)
+                    info.TpOrder = SubmitOrderUnmanaged(0, OrderAction.BuyToCover, OrderType.Limit, quantity, info.TpPrice, 0, "", signalName + "_TP");
+                    // CORREGIDO: OrderType.StopMarket
+                    info.SlOrder = SubmitOrderUnmanaged(0, OrderAction.BuyToCover, OrderType.StopMarket, quantity, 0, info.SlPrice, "", signalName + "_SL");
+                }
+                else // BUY
+                {
+                    // Para cerrar Long -> Sell Limit (TP) y Sell Stop (SL)
+                    info.TpOrder = SubmitOrderUnmanaged(0, OrderAction.Sell, OrderType.Limit, quantity, info.TpPrice, 0, "", signalName + "_TP");
+                    // CORREGIDO: OrderType.StopMarket
+                    info.SlOrder = SubmitOrderUnmanaged(0, OrderAction.Sell, OrderType.StopMarket, quantity, 0, info.SlPrice, "", signalName + "_SL");
+                }
+                
+                Print(string.Format("[ATM] Placed TP @ {0:F2} | SL @ {1:F2}", info.TpPrice, info.SlPrice));
+            }
+            // 2. Si TP o SL se llenan -> Cancelar el otro (OCO de Salida) y Loggear Trade Closed
+            if (order == info.TpOrder && orderState == OrderState.Filled)
+            {
+                Print("[EXIT] TP Hit! Cancelling SL...");
+                if (info.SlOrder != null) CancelOrder(info.SlOrder);
+                info.IsActive = false;
+                // CSV Log Trade Closed (Profit)
+                double duration = (time - info.FillTime).TotalSeconds;
+                double pnl = CalculatePnL(info, averageFillPrice);
+                
+                WriteToCSV(
+                    eventType: "TRADE_CLOSED",
+                    orderId: signalName,
+                    action: order.OrderAction.ToString(),
+                    orderType: "TARGET",
+                    price: averageFillPrice,
+                    quantity: filled,
+                    status: "FILLED",
+                    pnl: pnl,
+                    exitReason: "TARGET",
+                    durationSec: duration,
+                    notes: string.Format("TP hit @ {0:F2}", averageFillPrice)
+                );
+            }
+            else if (order == info.SlOrder && orderState == OrderState.Filled)
+            {
+                Print("[EXIT] SL Hit! Cancelling TP...");
+                if (info.TpOrder != null) CancelOrder(info.TpOrder);
+                info.IsActive = false;
+                // CSV Log Trade Closed (Loss)
+                double duration = (time - info.FillTime).TotalSeconds;
+                double pnl = CalculatePnL(info, averageFillPrice);
+                
+                WriteToCSV(
+                    eventType: "TRADE_CLOSED",
+                    orderId: signalName,
+                    action: order.OrderAction.ToString(),
+                    orderType: "STOP",
+                    price: averageFillPrice,
+                    quantity: filled,
+                    status: "FILLED",
+                    pnl: pnl,
+                    exitReason: "STOP",
+                    durationSec: duration,
+                    notes: string.Format("SL hit @ {0:F2}", averageFillPrice)
+                );
+            }
+        }
+        private void CancelSiblingOrder(string groupId, string currentSignalName)
+        {
+            // Buscar otra orden con el mismo GroupID pero diferente nombre
+            foreach (var kvp in activeOrders)
+            {
+                if (kvp.Value.OcoGroupId == groupId && kvp.Key != currentSignalName)
+                {
+                    if (kvp.Value.EntryOrder != null && kvp.Value.EntryOrder.OrderState == OrderState.Working)
                     {
-                        orderInfo.EntryOrder = order;
-                    }
-
-                    if (orderInfo.EntryOrder == order)
-                    {
-                        if (orderState == OrderState.Filled)
-                        {
-                            Print(string.Format("[ORDER] FILLED: {0} order #{1} @ {2:F2}",
-                                orderInfo.Side, orderInfo.OrderId, averageFillPrice));
-
-                            // Place TP and SL orders (UNMANAGED MODE)
-                            if (orderInfo.Side == "SELL")
-                            {
-                                // For short: TP is lower (Buy to cover at profit), SL is higher (Buy to cover at loss)
-                                orderInfo.TpOrder = SubmitOrderUnmanaged(0, OrderAction.BuyToCover, OrderType.Limit,
-                                    quantity, orderInfo.TpPrice, 0, kvp.Key + "_TP", kvp.Key + "_TP");
-                                orderInfo.SlOrder = SubmitOrderUnmanaged(0, OrderAction.BuyToCover, OrderType.StopMarket,
-                                    quantity, 0, orderInfo.SlPrice, kvp.Key + "_SL", kvp.Key + "_SL");
-                            }
-                            else // BUY
-                            {
-                                // For long: TP is higher (Sell at profit), SL is lower (Sell at loss)
-                                orderInfo.TpOrder = SubmitOrderUnmanaged(0, OrderAction.Sell, OrderType.Limit,
-                                    quantity, orderInfo.TpPrice, 0, kvp.Key + "_TP", kvp.Key + "_TP");
-                                orderInfo.SlOrder = SubmitOrderUnmanaged(0, OrderAction.Sell, OrderType.StopMarket,
-                                    quantity, 0, orderInfo.SlPrice, kvp.Key + "_SL", kvp.Key + "_SL");
-                            }
-
-                            Print(string.Format("[ORDER] TP/SL placed for {0} #{1} | TP: {2:F2} | SL: {3:F2}",
-                                orderInfo.Side, orderInfo.OrderId, orderInfo.TpPrice, orderInfo.SlPrice));
-                        }
-                        else if (orderState == OrderState.Cancelled)
-                        {
-                            Print(string.Format("[ORDER] CANCELLED: {0} order #{1}",
-                                orderInfo.Side, orderInfo.OrderId));
-                        }
+                        Print(string.Format("[OCO] Cancelling sibling order {0}", kvp.Key));
+                        CancelOrder(kvp.Value.EntryOrder);
                     }
                 }
             }
         }
-
-        protected override void OnExecutionUpdate(Execution execution, string executionId, double price,
-            int quantity, MarketPosition marketPosition, string orderId, DateTime time)
-        {
-            Print(string.Format("[EXECUTION] {0} {1} @ {2:F2} | Qty: {3} | Order: {4}",
-                execution.Order.OrderAction, execution.Order.OrderType, price, quantity, execution.Order.Name));
-        }
-
         #endregion
-
+        #region OnBarUpdate (Timeouts)
+        protected override void OnBarUpdate()
+        {
+            // Verificar Timeouts
+            // Nota: En Unmanaged debemos ser cuidadosos al iterar y modificar
+            
+            List<string> toRemove = new List<string>();
+            foreach (var kvp in activeOrders)
+            {
+                OrderInfo info = kvp.Value;
+                // Solo verificar timeout si la orden de entrada sigue Working (no llena)
+                if (info.EntryOrder != null && info.EntryOrder.OrderState == OrderState.Working)
+                {
+                    if (DateTime.Now > info.ExpirationTime)
+                    {
+                        Print(string.Format("[TIMEOUT] Cancelling expired order {0}", kvp.Key));
+                        CancelOrder(info.EntryOrder);
+                        toRemove.Add(kvp.Key);
+                    }
+                }
+            }
+            // Limpieza básica del diccionario (opcional, para no crecer infinito)
+            foreach (string key in toRemove)
+            {
+                // No removemos inmediatamente para mantener logs, pero podríamos marcar como inactiva
+                activeOrders[key].IsActive = false;
+            }
+        }
+        #endregion
         #region Disconnect
-
         private void DisconnectAll()
         {
             running = false;
             connected = false;
-
-            // Wait for thread to finish
-            if (listenerThread != null && listenerThread.IsAlive)
-            {
-                listenerThread.Join(2000);
-            }
-
-            // Close connections
-            if (executionReader != null) { try { executionReader.Close(); } catch { } }
-            if (executionStream != null) { try { executionStream.Close(); } catch { } }
-            if (executionClient != null) { try { executionClient.Close(); } catch { } }
-            if (executionServer != null) { try { executionServer.Stop(); } catch { } }
-
-            Print(string.Format("[STRATEGY] Disconnected. Total orders: {0}", orderCounter));
+            if (listenerThread != null && listenerThread.IsAlive) listenerThread.Join(1000);
+            if (executionReader != null) try { executionReader.Close(); } catch { }
+            if (executionClient != null) try { executionClient.Close(); } catch { }
+            if (executionServer != null) try { executionServer.Stop(); } catch { }
         }
-
         #endregion
-
         #region Properties
-
         [NinjaScriptProperty]
         [Display(Name = "Execution Port", Order = 1, GroupName = "Connection")]
         public int ExecutionPort { get; set; }
-
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "Default Quantity", Order = 2, GroupName = "Parameters")]
         public int DefaultQuantity { get; set; }
-
         #endregion
     }
 }
-
-#region NinjaScript generated code. Neither change nor remove.
-
-namespace NinjaTrader.NinjaScript.Strategies
-{
-	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
-	{
-		private AAStrategyTradingLive[] cacheAAStrategyTradingLive;
-		public AAStrategyTradingLive AAStrategyTradingLive(int executionPort, int defaultQuantity)
-		{
-			return AAStrategyTradingLive(Input, executionPort, defaultQuantity);
-		}
-
-		public AAStrategyTradingLive AAStrategyTradingLive(ISeries<double> input, int executionPort, int defaultQuantity)
-		{
-			if (cacheAAStrategyTradingLive != null)
-				for (int idx = 0; idx < cacheAAStrategyTradingLive.Length; idx++)
-					if (cacheAAStrategyTradingLive[idx] != null && cacheAAStrategyTradingLive[idx].ExecutionPort == executionPort && cacheAAStrategyTradingLive[idx].DefaultQuantity == defaultQuantity && cacheAAStrategyTradingLive[idx].EqualsInput(input))
-						return cacheAAStrategyTradingLive[idx];
-			return CacheStrategy<AAStrategyTradingLive>(new AAStrategyTradingLive(){ ExecutionPort = executionPort, DefaultQuantity = defaultQuantity }, input, ref cacheAAStrategyTradingLive);
-		}
-	}
-}
-
-#endregion

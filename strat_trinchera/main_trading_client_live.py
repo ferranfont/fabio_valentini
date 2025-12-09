@@ -416,8 +416,10 @@ class TickReceiverClientLive:
             if self.tick_count % 100 == 0:
                 elapsed = (datetime.now() - self.start_time).total_seconds()
                 ticks_per_sec = self.tick_count / elapsed if elapsed > 0 else 0
+                GREEN = '\033[92m'
+                RESET = '\033[0m'
                 print(f"[TICK #{self.tick_count:>6}] {timestamp_str} | Price: {price:>10.2f} | "
-                      f"Window Vol: {self.current_window_volume:>3} | Rate: {ticks_per_sec:.2f} tps")
+                      f"Window Vol: {self.current_window_volume:>3} | Rate: {ticks_per_sec:.2f} tps | {GREEN}[🟢 ARMED]{RESET}")
             # Print summary every 1000 ticks
             if self.tick_count % 1000 == 0:
                 self.print_summary()
@@ -443,9 +445,13 @@ class TickReceiverClientLive:
     def receive_loop(self):
         """Main receive loop"""
         buffer = ""
-        print(f"\n{'='*70}")
-        print(f"RECEIVING TICKS FROM NINJATRADER (LIVE MODE)")
-        print(f"{'='*70}\n")
+        GREEN = '\033[92m'
+        RESET = '\033[0m'
+        print(f"\n{GREEN}{'='*70}")
+        print(f"{'='*70}")
+        print(f"  RECEIVING TICKS - MONITORING FOR BIG VOLUME")
+        print(f"{'='*70}")
+        print(f"{'='*70}{RESET}\n")
         self.start_time = datetime.now()
         try:
             while self.running and self.tick_connected:
@@ -471,6 +477,29 @@ class TickReceiverClientLive:
             print("\n[INFO] Interrupted by user")
         finally:
             self.tick_connected = False
+
+    def _print_system_ready_banner(self):
+        """Print colorful system ready banner"""
+        # Green color ANSI code
+        GREEN = '\033[92m'
+        YELLOW = '\033[93m'
+        RESET = '\033[0m'
+        BOLD = '\033[1m'
+
+        print(f"{GREEN}{BOLD}")
+        print("╔════════════════════════════════════════════════════════════╗")
+        print("║          🟢 SYSTEM READY - STRATEGY ARMED 🟢              ║")
+        print("╠════════════════════════════════════════════════════════════╣")
+        print(f"║  Strategy: AAStrategyTradingLive                          ║")
+        print(f"║  Status:   ENABLED and listening                          ║")
+        print(f"║  Trigger:  {self.big_volume_trigger:<3} contracts in {self.aggregation_window_ms}ms window                 ║")
+        print(f"║  Orders:   TP={self.tp_points}pts | SL={self.sl_points}pts | Expand={self.mean_revers_expand}pts          ║")
+        both_sides_text = "BOTH SIDES" if self.both_sides_mean_reverse else "SELL only"
+        print(f"║  Mode:     {both_sides_text:<45} ║")
+        print("╚════════════════════════════════════════════════════════════╝")
+        print(f"{RESET}")
+        print(f"{YELLOW}⏳ Waiting for BIG VOLUME signal...{RESET}\n")
+
     def start(self):
         """Start the live tick receiver"""
         print(f"\n{'#'*70}")
@@ -523,6 +552,10 @@ class TickReceiverClientLive:
         print(f"\n{'='*70}")
         print("[OK] CONNECTIONS ESTABLISHED")
         print(f"{'='*70}\n")
+
+        # SYSTEM READY BANNER
+        self._print_system_ready_banner()
+
         self.running = True
         # Start receive loop in main thread
         try:

@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import sys
 import os
+import csv
 
 # Añadir el directorio actual al path para asegurar que encuentra el config
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -163,6 +164,43 @@ class TickReceiverClientLive:
         self.signals_sent = 0
         self.big_volume_events = 0
         self.last_signal_time = None
+
+        # CSV Tick Recording
+        self.csv_file = None
+        self.csv_writer = None
+        self._init_csv_recording()
+
+        # TPS window calculation (for instantaneous rate)
+        self.tps_window_size = 10  # seconds
+        self.tick_timestamps = []  # Store recent tick timestamps for rolling TPS
+
+    def _init_csv_recording(self):
+        """Initialize CSV file for tick recording"""
+        try:
+            import csv
+            # Create outputs directory if it doesn't exist
+            output_dir = os.path.join(current_dir, 'outputs')
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            csv_filename = os.path.join(output_dir, f'tick_record_{timestamp}.csv')
+
+            # Open CSV file
+            self.csv_file = open(csv_filename, 'w', newline='', encoding='utf-8')
+            self.csv_writer = csv.writer(self.csv_file, delimiter=';')
+
+            # Write header
+            self.csv_writer.writerow(['timestamp', 'price', 'window_vol', 'tps_avg', 'tps_window'])
+            self.csv_file.flush()
+
+            print(f"[CSV] Tick recording initialized: {csv_filename}")
+        except Exception as e:
+            print(f"[CSV ERROR] Failed to initialize tick recording: {e}")
+            self.csv_file = None
+            self.csv_writer = None
+
     def connect_tick_receiver(self, max_attempts=10, retry_delay=2):
         """Connect to NinjaTrader tick server"""
         print(f"\n{'='*70}")
@@ -231,7 +269,16 @@ class TickReceiverClientLive:
         self.running = False
         self.tick_connected = False
         self.signal_connected = False
-        
+
+        # Close CSV file
+        if self.csv_file:
+            try:
+                self.csv_file.flush()
+                self.csv_file.close()
+                print(f"[CSV] Tick recording file closed")
+            except Exception as e:
+                print(f"[CSV ERROR] Failed to close file: {e}")
+
         # Disconnect Execution Client
         self.exec_client.disconnect()
         if self.tick_socket:
@@ -412,14 +459,46 @@ class TickReceiverClientLive:
                 self.current_window_ask += volume
             self.current_window_close = price
             self.current_window_ticks += 1
+
+            # Calculate ticks per second (average from start)
+            elapsed = (datetime.now() - self.start_time).total_seconds()
+            ticks_per_sec_avg = self.tick_count / elapsed if elapsed > 0 else 0
+
+            # Calculate instantaneous TPS (rolling window)
+            current_time = datetime.now()
+            self.tick_timestamps.append(current_time)
+
+            # Remove ticks older than window_size
+            cutoff_time = current_time - timedelta(seconds=self.tps_window_size)
+            self.tick_timestamps = [t for t in self.tick_timestamps if t > cutoff_time]
+
+            # Calculate TPS in window
+            window_duration = (current_time - self.tick_timestamps[0]).total_seconds() if len(self.tick_timestamps) > 1 else 1
+            ticks_per_sec_window = len(self.tick_timestamps) / window_duration if window_duration > 0 else 0
+
+            # Write to CSV every tick
+            if self.csv_writer:
+                try:
+                    self.csv_writer.writerow([
+                        timestamp_str,
+                        f"{price:.2f}",
+                        self.current_window_volume,
+                        f"{ticks_per_sec_avg:.2f}",
+                        f"{ticks_per_sec_window:.2f}"
+                    ])
+                    # Flush every 100 ticks to ensure data is written
+                    if self.tick_count % 100 == 0:
+                        self.csv_file.flush()
+                except Exception as e:
+                    print(f"[CSV ERROR] Failed to write tick: {e}")
+
             # Print tick info every 100 ticks for monitoring
             if self.tick_count % 100 == 0:
-                elapsed = (datetime.now() - self.start_time).total_seconds()
-                ticks_per_sec = self.tick_count / elapsed if elapsed > 0 else 0
                 GREEN = '\033[92m'
+                YELLOW = '\033[93m'
                 RESET = '\033[0m'
                 print(f"[TICK #{self.tick_count:>6}] {timestamp_str} | Price: {price:>10.2f} | "
-                      f"Window Vol: {self.current_window_volume:>3} | Rate: {ticks_per_sec:.2f} tps | {GREEN}[🟢 ARMED]{RESET}")
+                      f"Window Vol: {self.current_window_volume:>3} | {YELLOW}Rate: {ticks_per_sec_window:.2f} tps (10s){RESET} | {GREEN}[🟢 ARMED]{RESET}")
             # Print summary every 1000 ticks
             if self.tick_count % 1000 == 0:
                 self.print_summary()

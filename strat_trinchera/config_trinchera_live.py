@@ -6,7 +6,7 @@ Shared configuration for all trinchera scripts
 # ============================================================================
 # DATA SOURCE
 # ============================================================================
-DATE = "20251104"  # Date for time_and_sales_nq_{DATE}.csv file
+DATE = "20251211"  # Date for time_and_sales_nq_{DATE}.csv file
 
 # ============================================================================
 # BIG VOLUME DETECTION

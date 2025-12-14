@@ -6,7 +6,7 @@ Shared configuration for all trinchera scripts
 # ============================================================================
 # DATA SOURCE
 # ============================================================================
-DATE = "20251104"  # Date for time_and_sales_nq_{DATE}.csv file
+DATE = "20251211"  # Date for time_and_sales_nq_{DATE}.csv file
 
 # ============================================================================
 # BIG VOLUME DETECTION
@@ -25,7 +25,7 @@ SMA_PERIOD = 200  # Simple Moving Average period
 TP_POINTS = 5.0   # Take profit in points, usar 4 oara scalping and 20 for swing
 SL_POINTS = 9.0  # Stop loss in points, usar 9 para scalping
 
-MEAN_REVERS_EXPAND = 14        # Points to expand mean reversion levels up/down. 10 standard
+MEAN_REVERS_EXPAND = 10        # Points to expand mean reversion levels up/down. 10 standard
 MEAN_REVERSE_TIMEOUT_ORDER = 3   # Timeout in minutes for mean reversion order lines (red/green). 3
 
 # ============================================================================
